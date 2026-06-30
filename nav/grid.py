@@ -41,6 +41,12 @@ def draw_grid(screen):
             pygame.draw.rect(screen, GRAY, rect, 1)  # cell border
 
 
+# Clear grid
+def clear_grid(screen):
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE):
+            grid[row][col] = 0
+
 # Handling input (mouse clicks)
 def handle_click(pos):
     x, y = pos
@@ -64,10 +70,18 @@ def main():
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 handle_click(event.pos)
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_c:
+                    clear_grid(screen)
 
         # Draw
         screen.fill(WHITE)
         draw_grid(screen)
+
+        # # Clear screen
+        # keys = pygame.key.get_pressed()
+        # if keys[pygame.K_c]:
+        #     clear_grid(screen)
         
         # flip() the display to put work on screen
         pygame.display.flip()
