@@ -4,6 +4,7 @@ GRID_SIZE = 20
 CELL_SIZE = 30          # Pixels per cell
 WINDOW_SIZE = GRID_SIZE * CELL_SIZE
 
+
 # Cell colors
 
 # Free cell
