@@ -72,7 +72,7 @@ def print_grid(path):
                 row_str += "* "
             else:
                 row_str += symbols[GRID[r][c]] + " "
-    print(row_str)
+        print(row_str)
 
 
 if __name__ == "__main__":
