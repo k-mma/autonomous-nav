@@ -33,14 +33,20 @@ def get_neighbors(row, col):
     return neighbors
 
 
-def dijkstra(start, goal):
-    dist = {start: 0}
+def heuristic(row, col):
+    return abs(row - GOAL[0]) + abs(col - GOAL[1])
+
+
+def astar(start, goal):
+    g_score = {start: 0}
     came_from = {}
-    # pq: cost, row, col
-    pq = [(0, start[0], start[1])]
+    # pq: (f, g, row, col)
+    # f = g + h (heuristic estimate to goal)
+    # g = cost so far
+    pq = [(heuristic(start[0], start[1]), 0, start[0], start[1])]
     cells_explored = 0
     while pq:
-        cost, row, col = heapq.heappop(pq)
+        f, g, row, col = heapq.heappop(pq)
         cells_explored += 1
         if (row, col) == goal:
             path = []
@@ -51,14 +57,15 @@ def dijkstra(start, goal):
             path.append(start)
             path.reverse()
             return path, cells_explored
-        if cost > dist.get((row, col), float('inf')):
+        if g > g_score.get((row, col), float('inf')):
             continue
         for neighbor in get_neighbors(row, col):
-            new_cost = cost + 1
-            if new_cost < dist.get(neighbor, float('inf')):
-                dist[neighbor] = new_cost
+            new_g = g + 1
+            if new_g < g_score.get(neighbor, float('inf')):
+                g_score[neighbor] = new_g
                 came_from[neighbor] = (row, col)
-                heapq.heappush(pq, (new_cost, neighbor[0], neighbor[1]))
+                new_f = new_g + heuristic(neighbor[0], neighbor[1])
+                heapq.heappush(pq, (new_f, new_g, neighbor[0], neighbor[1]))
     return None, cells_explored
 
 
@@ -83,7 +90,7 @@ def print_grid(path):
 
 
 if __name__ == "__main__":
-    path, explored = dijkstra(START, GOAL)
+    path, explored = astar(START, GOAL)
     if path:
         print(f"Path found! Length: {len(path)} steps, Cells explored: {explored}\n")
         print_grid(path)
