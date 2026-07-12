@@ -40,10 +40,13 @@ class Grid:
     def toggle_obstacle(self, row, col):
         if not self.is_valid(row, col):
             return
+        
         if self.cells[row][col] == Grid.START or self.cells[row][col] == Grid.GOAL:
             return
+        
         if self.cells[row][col] == Grid.FREE:
             self.cells[row][col] = Grid.OBSTACLE
+        
         else:
             self.cells[row][col] = Grid.FREE
 
@@ -51,11 +54,14 @@ class Grid:
     def place_start(self, row, col):
         if not self.is_valid(row, col) or self.cells[row][col] == Grid.OBSTACLE:
             return
+        
         if self.start is not None:
             start_row, start_col = self.start
             self.cells[start_row][start_col] = Grid.FREE
+        
         if (row, col) == self.goal:
             self.goal = None
+        
         self.cells[row][col] = Grid.START
         self.start = (row, col)
 
@@ -63,11 +69,14 @@ class Grid:
     def place_goal(self, row, col):
         if not self.is_valid(row, col) or self.cells[row][col] == Grid.OBSTACLE:
             return
+        
         if self.goal is not None:
             goal_row, goal_col = self.goal
             self.cells[goal_row][goal_col] = Grid.FREE
+        
         if (row, col) == self.start:
             self.start = None
+        
         self.cells[row][col] = Grid.GOAL
         self.goal = (row, col)
 

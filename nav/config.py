@@ -1,9 +1,9 @@
 # Grid dimensions
 
-GRID_SIZE = 20
-CELL_SIZE = 30          # Pixels per cell
+GRID_SIZE = 25
+CELL_SIZE = 28          # Pixels per cell
 WINDOW_WIDTH = GRID_SIZE * CELL_SIZE
-STATUS_BAR_HEIGHT = 48
+STATUS_BAR_HEIGHT = 72
 WINDOW_HEIGHT = WINDOW_WIDTH + STATUS_BAR_HEIGHT
 
 
@@ -19,8 +19,10 @@ GRAY = (200, 200, 200)
 GREEN = (50, 200, 100)
 # Goal cell
 RED = (220, 60, 60)
-# Explored cells
+# Explored cells, Dijkstra
 LIGHT_BLUE = (100, 180, 255)
+# Explored cells, A*
+LIGHT_PURPLE = (190, 160, 255)
 # Path cells
 YELLOW = (255, 210, 50)
 # Unreachable goal
