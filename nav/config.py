@@ -27,6 +27,16 @@ LIGHT_PURPLE = (190, 160, 255)
 YELLOW = (255, 210, 50)
 # Unreachable goal
 DARK_RED = (160, 30, 30)
+# Moving obstacle cells
+ORANGE = (255, 140, 0)
+# Robot marker
+CYAN = (0, 190, 190)
 
 STATUS_BG = (245, 245, 245)
 STATUS_TEXT = (60, 60, 60)
+
+# Moving obstacles + robot animation
+
+OBSTACLE_PERIOD_MS = 700
+ROBOT_STEP_MS = 300
+REPLAN_FLASH_MS = 700

@@ -79,3 +79,40 @@ def reconstruct(came_from, start, goal):
     path.append(start)
     path.reverse()
     return path
+
+
+ALGORITHMS = {"dijkstra": dijkstra, "astar": astar}
+
+
+def validate_endpoints(grid, start, goal):
+    """Reason a search from start to goal can't even be attempted, or None if it's fine."""
+    if start == goal:
+        return "same_cell"
+    if grid.is_obstacle(*start):
+        return "start_blocked"
+    if grid.is_obstacle(*goal):
+        return "goal_blocked"
+    return None
+
+
+def find_path(grid, algo_name, start, goal):
+    """
+    Run dijkstra/astar from start to goal, handling the edge cases the raw
+    algorithms don't check for: same start/goal cell, and either endpoint
+    sitting on an obstacle.
+
+    Returns (path, explored, reason). reason is None on an ordinary run,
+    "no_path" if the search exhausted the grid without reaching goal, and
+    "same_cell" / "start_blocked" / "goal_blocked" if the endpoints stopped
+    the search from running at all.
+    """
+    reason = validate_endpoints(grid, start, goal)
+    if reason == "same_cell":
+        return [start], set(), reason
+    if reason is not None:
+        return None, set(), reason
+
+    path, explored, _ = ALGORITHMS[algo_name](grid, start, goal)
+    if path is None:
+        return None, explored, "no_path"
+    return path, explored, None
