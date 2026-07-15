@@ -1,4 +1,10 @@
+import math
+
 from nav.config import GRID_SIZE
+
+DIAGONAL_COST = math.sqrt(2)
+CARDINAL_DIRS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+DIAGONAL_DIRS = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
 
 
 class Grid:
@@ -17,12 +23,16 @@ class Grid:
             self.cells.append(row)
         self.start = None
         self.goal = None
-    
+        # 4-directional (False) or 8-directional (True) movement
+        self.diagonal = False
+
 
     def clear(self):
         for row in range(GRID_SIZE):
             for col in range(GRID_SIZE):
                 self.cells[row][col] = Grid.FREE
+        self.start = None
+        self.goal = None
     
 
     def is_valid(self, row, col):
@@ -82,11 +92,27 @@ class Grid:
 
     
     def get_neighbors(self, row, col):
-        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        """
+        Passable neighbors of (row, col) as (cell, step_cost) pairs.
+        Cardinal steps always cost 1. Diagonal steps (only when
+        self.diagonal is on) cost sqrt(2), and are skipped if either
+        of the two orthogonal cells they'd cut past is an obstacle --
+        otherwise a "diagonal" move could clip straight through a
+        solid wall corner.
+        """
         neighbors = []
-        for dr, dc in directions:
-            r = row + dr
-            c = col + dc
+        for dr, dc in CARDINAL_DIRS:
+            r, c = row + dr, col + dc
             if self.is_valid(r, c) and not self.is_obstacle(r, c):
-                neighbors.append((r, c))
+                neighbors.append(((r, c), 1))
+
+        if self.diagonal:
+            for dr, dc in DIAGONAL_DIRS:
+                r, c = row + dr, col + dc
+                if not self.is_valid(r, c) or self.is_obstacle(r, c):
+                    continue
+                if self.is_obstacle(row + dr, col) or self.is_obstacle(row, col + dc):
+                    continue
+                neighbors.append(((r, c), DIAGONAL_COST))
+
         return neighbors

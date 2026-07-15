@@ -2,14 +2,24 @@ import sys
 import pygame
 
 from nav.config import (
-    GRID_SIZE, CELL_SIZE, WINDOW_WIDTH, WINDOW_HEIGHT, STATUS_BAR_HEIGHT,
+    GRID_SIZE, CELL_SIZE, WINDOW_WIDTH, WINDOW_HEIGHT, STATUS_BAR_HEIGHT, STATUS_LINE_HEIGHT,
     WHITE, BLACK, GRAY, GREEN, RED, LIGHT_BLUE, LIGHT_PURPLE, YELLOW, DARK_RED,
     ORANGE, CYAN, STATUS_BG, STATUS_TEXT,
     OBSTACLE_PERIOD_MS, ROBOT_STEP_MS, REPLAN_FLASH_MS
 )
 from nav.grid import Grid
-from nav.algorithms import find_path
+from nav.algorithms import find_path, path_cost
+from nav.heuristics import euclidean, manhattan, octile, scaled
+from nav.maze import generate_maze
 from nav.obstacles import MovingObstacle, find_free_neighbor
+
+# Cycled through with the H key while A* is active
+HEURISTICS = [
+    ("manhattan", manhattan),
+    ("euclidean", euclidean),
+    ("octile", octile),
+    ("inadmissible (1.5x manhattan)", scaled(manhattan, 1.5)),
+]
 
 
 # DRAWING
@@ -64,7 +74,7 @@ def draw_status(screen, font, lines):
     pygame.draw.rect(screen, STATUS_BG, bar_rect)
     for i, line in enumerate(lines):
         text_surf = font.render(line, True, STATUS_TEXT)
-        screen.blit(text_surf, (10, WINDOW_WIDTH + 6 + i * 21))
+        screen.blit(text_surf, (10, WINDOW_WIDTH + 6 + i * STATUS_LINE_HEIGHT))
 
 
 # INPUT
@@ -98,6 +108,9 @@ def main():
     ran = False
     # Most recent output from both algorithms
     last_results = {}
+
+    # Which heuristic astar uses (irrelevant to dijkstra)
+    heuristic_idx = 0
 
     # Obstacles that bounce between two cells
     moving_obstacles = []
@@ -167,11 +180,33 @@ def main():
         cell = (row, col)
         return any(cell in (obs.cell_a, obs.cell_b) for obs in moving_obstacles)
 
+    def current_heuristic():
+        return HEURISTICS[heuristic_idx][1] if active_algo == "astar" else None
+
+    def cycle_heuristic():
+        nonlocal heuristic_idx
+        heuristic_idx = (heuristic_idx + 1) % len(HEURISTICS)
+        if "astar" in last_results:
+            del last_results["astar"]
+        if active_algo == "astar":
+            reset_algorithm()
+
+    def toggle_diagonal():
+        grid.diagonal = not grid.diagonal
+        reset_algorithm()
+        stop_robot()
+
+    def generate_new_maze():
+        generate_maze(grid)
+        moving_obstacles.clear()
+        reset_algorithm()
+        stop_robot()
+
     def run_active():
         nonlocal explored, path, ran, reason
         if grid.start is None or grid.goal is None:
             return
-        path, explored, reason = find_path(grid, active_algo, grid.start, grid.goal)
+        path, explored, reason = find_path(grid, active_algo, grid.start, grid.goal, current_heuristic())
         last_results[active_algo] = (path, explored, reason)
         ran = True
 
@@ -189,7 +224,9 @@ def main():
 
     def replan_from_robot():
         nonlocal path, explored, reason, robot_index, robot_blocked, replan_flash_until
-        new_path, new_explored, new_reason = find_path(grid, active_algo, robot_pos, grid.goal)
+        new_path, new_explored, new_reason = find_path(
+            grid, active_algo, robot_pos, grid.goal, current_heuristic()
+        )
         explored = new_explored
         reason = new_reason
         if new_path is None:
@@ -203,12 +240,13 @@ def main():
 
     CONTROLS_1 = "D: Dijkstra  A: A*  |  Space: run  |  C: clear  |  R: robot"
     CONTROLS_2 = "LClick: obstacle (Shift: moving)  |  RClick: start (Shift: goal)"
+    CONTROLS_3 = "H: heuristic  |  X: diagonal move  |  M: new maze"
 
     def status_lines():
         if active_algo == "dijkstra":
             algo_label = "Dijkstra"
         else:
-            algo_label = "A*"
+            algo_label = f"A* ({HEURISTICS[heuristic_idx][0]})"
 
         if grid.start is None and grid.goal is None:
             return [f"Place a start (RClick) and goal (Shift+RClick) to begin."]
@@ -229,10 +267,8 @@ def main():
         elif reason == "no_path":
             line_1 = f"[{algo_label}] No path found. Cells explored: {len(explored)}"
         else:
-            line_1 = (
-                f"[{algo_label}] Path: {len(path) - 1} steps | "
-                f"Cells explored: {len(explored)}"
-            )
+            distance = f"cost {path_cost(path):.2f}" if grid.diagonal else f"{len(path) - 1} steps"
+            line_1 = f"[{algo_label}] Path: {distance} | Cells explored: {len(explored)}"
 
         if "dijkstra" in last_results and "astar" in last_results:
             d_explored = last_results["dijkstra"][1]
@@ -249,8 +285,8 @@ def main():
             )
         else:
             line_2 = CONTROLS_1
-        
-        return [line_1, line_2, CONTROLS_2]
+
+        return [line_1, line_2, CONTROLS_2, CONTROLS_3]
 
     running = True
     while running:
@@ -289,6 +325,12 @@ def main():
                     switch_algo("astar")
                 elif event.key == pygame.K_r:
                     toggle_robot()
+                elif event.key == pygame.K_h:
+                    cycle_heuristic()
+                elif event.key == pygame.K_x:
+                    toggle_diagonal()
+                elif event.key == pygame.K_m:
+                    generate_new_maze()
                 elif event.key == pygame.K_c:
                     grid.clear()
                     moving_obstacles.clear()

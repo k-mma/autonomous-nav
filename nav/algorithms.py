@@ -1,7 +1,18 @@
 import heapq
 
+from nav.grid import DIAGONAL_COST
+from nav.heuristics import manhattan
+
 
 def dijkstra(grid, start, goal):
+    """
+    Shortest path from start to goal by cost, expanding the cheapest known
+    cell first. Guaranteed optimal for any grid.get_neighbors() step costs.
+
+    Returns (path, settled, came_from). path is None if goal is unreachable.
+    settled is every cell the search finished expanding (for visualizing
+    and comparing search effort against astar).
+    """
     dist = {start: 0}
     came_from = {}
     settled = set()
@@ -19,58 +30,65 @@ def dijkstra(grid, start, goal):
 
         if current == goal:
             return reconstruct(came_from, start, goal), settled, came_from
-        
-        for neighbor in grid.get_neighbors(row, col):
-            new_cost = cost + 1
-            
+
+        for neighbor, step_cost in grid.get_neighbors(row, col):
+            new_cost = cost + step_cost
+
             if new_cost < dist.get(neighbor, float('inf')):
                 dist[neighbor] = new_cost
                 came_from[neighbor] = current
                 heapq.heappush(pq, (new_cost, neighbor[0], neighbor[1]))
-    
+
     # Return if no path found (queue is exhausted)
     return None, settled, came_from
 
 
-def astar(grid, start, goal):
+def astar(grid, start, goal, heuristic=manhattan):
+    """
+    Like dijkstra, but expands the cell with the lowest f = g + h first,
+    where g is the cost so far and h = heuristic(cell, goal) estimates the
+    remaining cost. Only guaranteed optimal if `heuristic` never
+    overestimates the true remaining cost (see nav/heuristics.py) -- an
+    inadmissible heuristic can make it settle for a longer path (see
+    WRITEUPS.md).
 
-    def heuristic(row, col):
-        return abs(row - goal[0]) + abs(col - goal[1])
-    
+    Returns (path, settled, came_from). path is None if goal is unreachable.
+    """
     g_score = {start: 0}
     came_from = {}
     settled = set()
     # pq: (f, g, row, col)
     # f = g + h (heuristic estimate to goal)
     # g = cost so far
-    pq = [(heuristic(start[0], start[1]), 0, start[0], start[1])]
+    pq = [(heuristic(start, goal), 0, start[0], start[1])]
 
     while pq:
         f, g, row, col = heapq.heappop(pq)
         current = (row, col)
-        
+
         # Ignore cell already explored with a lower cost
         if current in settled:
             continue
         settled.add(current)
-        
+
         if current == goal:
             return reconstruct(came_from, start, goal), settled, came_from
-        
-        for neighbor in grid.get_neighbors(row, col):
-            new_g = g + 1
-            
+
+        for neighbor, step_cost in grid.get_neighbors(row, col):
+            new_g = g + step_cost
+
             if new_g < g_score.get(neighbor, float('inf')):
                 g_score[neighbor] = new_g
-                new_f = new_g + heuristic(neighbor[0], neighbor[1])
+                new_f = new_g + heuristic(neighbor, goal)
                 came_from[neighbor] = current
                 heapq.heappush(pq, (new_f, new_g, neighbor[0], neighbor[1]))
-    
+
     # Return if no path found (queue is exhausted)
     return None, settled, came_from
 
 
 def reconstruct(came_from, start, goal):
+    """Walk came_from backwards from goal to start and return start->goal order."""
     path = []
     cell = goal
     while cell != start:
@@ -81,7 +99,12 @@ def reconstruct(came_from, start, goal):
     return path
 
 
-ALGORITHMS = {"dijkstra": dijkstra, "astar": astar}
+def path_cost(path):
+    """Total movement cost along path, counting diagonal steps as sqrt(2)."""
+    cost = 0
+    for (r1, c1), (r2, c2) in zip(path, path[1:]):
+        cost += DIAGONAL_COST if r1 != r2 and c1 != c2 else 1
+    return cost
 
 
 def validate_endpoints(grid, start, goal):
@@ -95,11 +118,12 @@ def validate_endpoints(grid, start, goal):
     return None
 
 
-def find_path(grid, algo_name, start, goal):
+def find_path(grid, algo_name, start, goal, heuristic=None):
     """
     Run dijkstra/astar from start to goal, handling the edge cases the raw
     algorithms don't check for: same start/goal cell, and either endpoint
-    sitting on an obstacle.
+    sitting on an obstacle. `heuristic` is only used when algo_name is
+    "astar"; it defaults to Manhattan distance.
 
     Returns (path, explored, reason). reason is None on an ordinary run,
     "no_path" if the search exhausted the grid without reaching goal, and
@@ -112,7 +136,11 @@ def find_path(grid, algo_name, start, goal):
     if reason is not None:
         return None, set(), reason
 
-    path, explored, _ = ALGORITHMS[algo_name](grid, start, goal)
+    if algo_name == "astar":
+        path, explored, _ = astar(grid, start, goal, heuristic=heuristic or manhattan)
+    else:
+        path, explored, _ = dijkstra(grid, start, goal)
+
     if path is None:
         return None, explored, "no_path"
     return path, explored, None
