@@ -1,17 +1,27 @@
 # autonomous-nav
 
-A pygame grid-pathfinding visualizer comparing Dijkstra and A\*, with dynamic
-obstacles, automatic replanning, and a benchmark suite. Built as the first
-leg of a longer autonomous-navigation project that continues into ROS 2 /
-Nav2 (see `WRITEUPS.md` for the full narrative and the algorithm/interview
+A pygame grid-pathfinding visualizer comparing Dijkstra, A\*, and RRT, with
+weighted terrain, a simulated lidar sensor, dynamic obstacles, automatic
+replanning, and a benchmark suite. Built as the first leg of a longer
+autonomous-navigation project that continues into PyBullet and ROS 2 / Nav2
+(see `WRITEUPS.md` for the full narrative and the algorithm/interview
 explanations behind the code).
 
 ## What it does
 
 - Click to draw obstacles on a 25x25 grid, place a start and goal, and run
-  Dijkstra or A\* to watch the search expand cell by cell.
+  Dijkstra, A\*, or RRT to watch the search expand cell by cell (or, for
+  RRT, watch its tree grow edge by edge).
 - Handles the edge cases a naive search would crash on: start/goal on an
   obstacle, no path to the goal, start == goal.
+- Toggle a weighted-terrain cost map: obstacles get an inflated-cost
+  "buffer zone" (like Nav2's costmap), and A\*/Dijkstra route around them
+  with clearance instead of hugging every wall.
+- Toggle a simulated lidar sensor: the robot only knows about obstacles
+  within its sensor radius, plans against that partial knowledge, and
+  replans live as it discovers new obstacles -- real obstacles it hasn't
+  sensed yet are drawn as free with a faint outline, so you can see the
+  gap between what's true and what the robot knows.
 - Drop moving obstacles that bounce between two cells; send a robot down
   the computed path and watch it automatically replan when an obstacle
   blocks its route.
@@ -20,8 +30,8 @@ explanations behind the code).
   change.
 - Toggle 8-directional movement, or generate a fresh maze with recursive
   backtracking.
-- `nav/benchmark.py` runs both algorithms across 20 random grids and plots
-  the comparison (see results below).
+- `nav/benchmark.py` runs all three algorithms across 20 random grids and
+  plots the comparison (see results below).
 
 ## How to run
 
@@ -42,12 +52,14 @@ python3 -m nav.benchmark     # regenerate benchmark_results/
 | Shift + Left-click | Place/remove a moving obstacle |
 | Right-click | Place start |
 | Shift + Right-click | Place goal |
-| `D` / `A` | Switch active algorithm |
+| `D` / `A` / `R` | Switch active algorithm (Dijkstra / A\* / RRT) |
 | Space | Run the active algorithm |
-| `R` | Start/stop the robot walking the current path |
+| `W` | Start/stop the robot walking the current path |
 | `H` | Cycle A\*'s heuristic |
 | `X` | Toggle 8-directional movement |
 | `M` | Generate a new maze |
+| `K` | Toggle the weighted-terrain cost map |
+| `S` | Toggle the lidar sensor model |
 | `C` | Clear the grid |
 
 ## The algorithms, briefly
@@ -64,58 +76,76 @@ cost. As long as `h` never overestimates the true remaining cost
 fewer cells because the heuristic steers it toward the goal instead of
 outward in every direction.
 
-Full mechanics, the admissibility argument, the replanning policy, and the
-heuristic-breaking experiments are written up in `WRITEUPS.md`.
+**RRT** (Rapidly-exploring Random Tree) doesn't search a fixed neighbor
+graph at all: it grows a tree from the start by repeatedly sampling a
+random free point, stepping toward it from the tree's nearest node, and
+keeping that step if it doesn't cross an obstacle, until a node lands near
+the goal. It finds *a* path fast in open space and isn't restricted to
+grid-aligned moves, but -- unlike Dijkstra/A\* here -- it gives up
+optimality and determinism: the same grid produces a different tree, and a
+different path, every run.
 
-## Dijkstra vs A\*: benchmark results
+Full mechanics, the admissibility argument, the replanning policy, the
+cost-map/sensor-model design, and the heuristic-breaking experiments are
+written up in `WRITEUPS.md`.
 
-20 random 25x25 grids, 10-35% obstacle density, both algorithms run on the
-identical grid/start/goal. Full data in `benchmark_results/results.csv`,
+## Dijkstra vs A\* vs RRT: benchmark results
+
+20 random 25x25 grids, 10-35% obstacle density, all three algorithms run on
+the identical grid/start/goal. Full data in `benchmark_results/results.csv`,
 plot in `benchmark_results/comparison.png`, analysis in
 `benchmark_results/writeup.md`.
 
-| Trial | Obstacle density | Path length | Dijkstra cells | A\* cells | Dijkstra ms | A\* ms |
-|---:|---:|---:|---:|---:|---:|---:|
-| 1  | 0.260 | 11 | 79  | 20  | 0.24 | 0.07 |
-| 2  | 0.154 | 33 | 455 | 163 | 1.34 | 0.50 |
-| 3  | 0.327 | 27 | 292 | 76  | 0.74 | 0.21 |
-| 4  | 0.178 | 27 | 402 | 81  | 1.10 | 0.25 |
-| 5  | 0.214 | 33 | 450 | 152 | 1.26 | 0.57 |
-| 6  | 0.193 | 24 | 390 | 115 | 1.12 | 0.35 |
-| 7  | 0.234 | 5  | 30  | 11  | 0.08 | 0.03 |
-| 8  | 0.171 | 7  | 85  | 12  | 0.23 | 0.04 |
-| 9  | 0.298 | 19 | 108 | 40  | 0.27 | 0.15 |
-| 10 | 0.111 | 21 | 212 | 62  | 0.76 | 0.23 |
-| 11 | 0.172 | 12 | 153 | 29  | 0.42 | 0.09 |
-| 12 | 0.158 | 29 | 350 | 97  | 1.23 | 0.58 |
-| 13 | 0.137 | 18 | 244 | 25  | 0.64 | 0.08 |
-| 14 | 0.177 | 15 | 286 | 52  | 0.93 | 0.16 |
-| 15 | 0.180 | 25 | 310 | 91  | 0.80 | 0.27 |
-| 16 | 0.330 | 7  | 34  | 15  | 0.17 | 0.04 |
-| 17 | 0.231 | 14 | 257 | 33  | 0.68 | 0.10 |
-| 18 | 0.306 | 43 | 399 | 321 | 1.04 | 0.90 |
-| 19 | 0.151 | 8  | 88  | 19  | 0.24 | 0.06 |
-| 20 | 0.203 | 22 | 187 | 84  | 0.47 | 0.24 |
+| Trial | Density | Path len | Dijkstra cells | A\* cells | RRT nodes | RRT waypoints | RRT path len | Dijkstra ms | A\* ms | RRT ms |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.260 | 11 | 79 | 20 | 32 | 12 | 21.666 | 0.25 | 0.07 | 0.64 |
+| 2 | 0.154 | 33 | 455 | 163 | 29 | 15 | 30.416 | 1.28 | 0.51 | 0.24 |
+| 3 | 0.327 | 27 | 292 | 76 | 50 | 15 | 27.895 | 0.77 | 0.23 | 1.08 |
+| 4 | 0.178 | 27 | 402 | 81 | 34 | 12 | 24.125 | 1.10 | 0.26 | 0.25 |
+| 5 | 0.214 | 33 | 450 | 152 | 117 | 17 | 32.724 | 1.62 | 0.49 | 3.27 |
+| 6 | 0.193 | 24 | 390 | 115 | 28 | 11 | 20.601 | 1.10 | 0.36 | 0.26 |
+| 7 | 0.234 | 5 | 30 | 11 | 4 | 2 | 4.236 | 0.08 | 0.03 | 0.02 |
+| 8 | 0.171 | 7 | 85 | 12 | 6 | 3 | 6.236 | 0.24 | 0.04 | 0.02 |
+| 9 | 0.298 | 19 | 108 | 40 | 179 | 19 | 38.125 | 0.28 | 0.11 | 6.37 |
+| 10 | 0.111 | 21 | 212 | 62 | 23 | 12 | 23.18 | 0.57 | 0.20 | 0.15 |
+| 11 | 0.172 | 12 | 153 | 29 | 21 | 6 | 11.122 | 0.42 | 0.09 | 0.18 |
+| 12 | 0.158 | 29 | 350 | 97 | 59 | 14 | 27.309 | 1.17 | 0.34 | 0.86 |
+| 13 | 0.137 | 18 | 244 | 25 | 24 | 10 | 20.067 | 0.66 | 0.08 | 0.18 |
+| 14 | 0.177 | 15 | 286 | 52 | 20 | 8 | 16.122 | 0.78 | 0.18 | 0.15 |
+| 15 | 0.180 | 25 | 310 | 91 | 42 | 13 | 28.597 | 0.83 | 0.28 | 0.53 |
+| 16 | 0.330 | 7 | 34 | 15 | 13 | 3 | 5.064 | 0.10 | 0.04 | 0.18 |
+| 17 | 0.231 | 14 | 257 | 33 | 23 | 7 | 13.301 | 0.70 | 0.12 | 0.17 |
+| 18 | 0.306 | 43 | 399 | 321 | 132 | 20 | 36.674 | 1.04 | 0.95 | 4.91 |
+| 19 | 0.151 | 8 | 88 | 19 | 129 | 8 | 14.537 | 0.25 | 0.06 | 3.09 |
+| 20 | 0.203 | 22 | 187 | 84 | 75 | 9 | 16.715 | 0.51 | 0.25 | 1.38 |
 
-A\* explored 68.9% fewer cells than Dijkstra on average. The gap collapses
+A\* explored 68.9% fewer cells than Dijkstra on average; the gap collapses
 on trial 18 -- the longest, most obstacle-dense route in the set -- because
 a forced detour makes Manhattan distance a much weaker predictor of true
-travel cost. See `benchmark_results/writeup.md` for the full breakdown.
+travel cost. RRT found *a* path in all 20/20 trials (3,000-iteration
+budget), but averaged 9.1% longer paths than the optimal Dijkstra/A* route
+-- and its own path length swings from -27.7% to +100.7% run to run on
+grids of similar difficulty, since tree growth depends on where random
+samples happen to land rather than on the grid itself. Full breakdown,
+including why RRT sometimes beats "optimal" (it isn't grid-constrained the
+way Dijkstra/A* are here), in `benchmark_results/writeup.md`.
 
 ## Repo layout
 
 ```
 nav/
-  grid.py          Grid model: cells, obstacles, start/goal, neighbors
-  algorithms.py     Dijkstra, A*, edge-case handling, path cost
-  heuristics.py     Manhattan / Euclidean / Chebyshev / Octile / scaled
-  obstacles.py      Moving obstacles + the replanning policy
-  maze.py           Recursive-backtracking maze generator
-  visualizer.py     The pygame app
-  benchmark.py      20-trial Dijkstra vs A* benchmark -> CSV + plot
-  scratch/          Standalone throwaway scripts used to prove each piece
-                     works before it was wired into the visualizer
+  grid.py          Grid model: cells, obstacles, start/goal, neighbors, cost map
+  algorithms.py    Dijkstra, A*, edge-case handling, path cost
+  rrt.py           RRT (Rapidly-exploring Random Tree)
+  sensor.py        Simulated lidar + the KnownGrid the robot plans against
+  heuristics.py    Manhattan / Euclidean / Chebyshev / Octile / scaled
+  obstacles.py     Moving obstacles + the replanning policy
+  maze.py          Recursive-backtracking maze generator
+  visualizer.py    The pygame app
+  benchmark.py     20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
+  scratch/         Standalone throwaway scripts used to prove each piece
+                    works before it was wired into the visualizer
 benchmark_results/  Generated CSV, plot, and writeup from benchmark.py
-WRITEUPS.md         Algorithm explanations, replanning policy, and the
-                     heuristic experiments' findings
+WRITEUPS.md         Algorithm explanations, replanning policy, cost map,
+                     sensor model, and the heuristic experiments' findings
 ```

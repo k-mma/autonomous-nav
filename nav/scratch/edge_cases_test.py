@@ -14,7 +14,7 @@ def wall_off(grid, cell):
 
 
 def run_case(name, grid, start, goal):
-    path, explored, reason = find_path(grid, "dijkstra", start, goal)
+    path, explored, reason, _ = find_path(grid, "dijkstra", start, goal)
     print(f"--- {name} ---")
     print(f"start={start} goal={goal} -> path={path}")
     print(f"reason={reason} cells_explored={len(explored)}\n")

@@ -17,7 +17,7 @@ if __name__ == "__main__":
     obstacle = MovingObstacle(OBSTACLE_A, OBSTACLE_B, period_ms=FRAMES_PER_MOVE)
     obstacle.start(0)
 
-    path, _, reason = find_path(grid, "astar", START, GOAL)
+    path, _, reason, _ = find_path(grid, "astar", START, GOAL)
     print(f"initial path ({reason}): {path}\n")
 
     for frame in range(TOTAL_FRAMES):
@@ -31,7 +31,7 @@ if __name__ == "__main__":
             continue
 
         print(f"  path blocked, replanning from {START}...")
-        path, _, reason = find_path(grid, "astar", START, GOAL)
+        path, _, reason, _ = find_path(grid, "astar", START, GOAL)
         if path is None:
             print(f"  no path found (reason={reason})")
         else:

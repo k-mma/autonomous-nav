@@ -62,7 +62,73 @@ either crash or silently do the wrong thing:
 Verified in `nav/scratch/edge_cases_test.py` -- each case is forced on a
 hand-built grid and prints its own reason with zero UI involved.
 
-## Week 2 -- Replanning
+## Week 2 -- RRT, cost map, and replanning
+
+### How RRT works, and why it's fundamentally different from grid search
+
+Dijkstra and A* both search a *fixed* graph: every grid cell is a node,
+every adjacent free cell is an edge, decided in advance by `get_neighbors`.
+RRT doesn't search a graph at all -- it builds one, on the fly, out of
+randomness:
+
+1. Sample a random free point (occasionally the goal itself, 10% of the
+   time -- `RRT_GOAL_SAMPLE_RATE` -- which biases the tree to eventually
+   grow toward it instead of wandering forever).
+2. Find the tree's existing node nearest that sample.
+3. Step from that nearest node toward the sample by a fixed distance
+   (`RRT_STEP_SIZE`), landing on a new point.
+4. Add the new point as a tree node -- *if* the straight edge from nearest
+   to new doesn't cross an obstacle (checked cell-by-cell with Bresenham's
+   line algorithm, `nav/rrt.py: _clear_line`, same corner-safety concern
+   as the diagonal-movement collision check).
+5. Repeat until some new node lands within `RRT_GOAL_RADIUS` of the goal,
+   or `RRT_MAX_ITERS` is exhausted.
+
+This is why RRT "explores" completely differently from Dijkstra/A*: it
+doesn't expand outward from the start in any organized order, and it
+isn't confined to the grid's 4/8-directional step rule -- it connects
+points with straight lines through open space. Verified in
+`nav/scratch/rrt_test.py`, which grows a tree on a hardcoded grid with a
+wall and prints the resulting node count and path.
+
+The tradeoff for that flexibility: no completeness or optimality
+guarantee in a fixed iteration budget, and no determinism -- rerun it on
+the identical grid and you get a different tree and a different path
+every time (unless you pin the RNG, which the benchmark does). See the
+benchmark writeup (`benchmark_results/writeup.md`) for exactly how much
+that costs it against Dijkstra/A* on this domain.
+
+### Cost map / weighted terrain (`Grid.compute_cost_map`)
+
+Through Week 1, the grid was strictly binary: a cell was either free
+(cost 1 to enter) or an obstacle (impassable). `compute_cost_map` adds a
+third state in spirit, without adding a third cell type: free cells
+*near* an obstacle get a cost between 1.0 and `1 + COST_MAX_EXTRA`,
+decreasing linearly to the 1.0 baseline at `COST_INFLUENCE_RADIUS` cells
+away. This is exactly what Nav2's costmap inflation layer does --
+obstacles project an increasing-cost "buffer zone" outward, so a
+cost-aware planner prefers routes with clearance over routes that hug a
+wall, without needing a hard-coded minimum-distance rule.
+
+Mechanically, `Grid.get_neighbors` already returned `(cell, step_cost)`
+pairs (1 or `sqrt(2)` for diagonal); cost-map mode just multiplies that
+step cost by `self.cost[r][c]`, the terrain weight of the cell being
+entered. Dijkstra and A* need zero code changes to respect it -- they
+already treat step cost as data, not a hardcoded constant. Admissibility
+survives too: Manhattan/octile estimate the *minimum possible* cost
+(assuming every step costs exactly 1 or `sqrt(2)`), and terrain weight
+only ever raises the true cost above that baseline, never below it, so
+the heuristic still never overestimates.
+
+**Observed effect on RRT: none.** This RRT implementation has no notion
+of edge cost at all -- it only asks "does this line cross an obstacle,"
+never "how expensive is this line" -- so a cost map that leaves every
+free cell passable (just pricier) doesn't change which edges RRT is
+willing to add, and its tree grows identically with cost-map mode on or
+off. This is a real, structural limitation of plain RRT versus RRT*
+(which does incorporate edge cost into which parent it connects to), not
+a bug -- worth being able to say cold if asked "does your cost map affect
+all three planners."
 
 ### Replanning policy
 
@@ -98,7 +164,53 @@ robot marker actually advances across the grid, and it detours through an
 adjacent row exactly when the obstacle blocks its planned path -- i.e. the
 replanning isn't just "doesn't crash," it visibly reroutes.
 
-## Week 3 -- heuristics and diagonal movement
+## Week 3 -- sensor model, heuristics, and diagonal movement
+
+### Why sensor uncertainty matters, and how the simulated lidar works
+
+Every planner up to this point assumed perfect map knowledge -- the
+robot's `grid.start`, its `grid.cells`, and the true obstacle layout were
+all the same object. That's not how a real robot works: it only knows
+what its sensors have actually reached. Once that gap exists, planning
+stops being "find the shortest path on a known graph" and becomes
+planning-under-uncertainty -- a plan that looks perfectly safe can turn
+out to be wrong the moment the robot gets close enough to see further.
+
+`nav/sensor.py` models this with two pieces:
+
+- **`LidarSensor`**: `sense(grid, position)` reveals every real obstacle
+  within `radius` cells of `position` (Euclidean, not Chebyshev -- a
+  circle, not a square) and adds it to `known_obstacles`, a set that only
+  ever grows. It returns just the *newly* seen obstacles, which is what
+  the caller needs to decide whether to replan.
+- **`KnownGrid`**: a `Grid` subclass built entirely from
+  `known_obstacles` -- every cell the sensor hasn't seen is assumed free.
+  That's the only assumption a robot without a perfect map can honestly
+  make; it also means a route can plan straight through a cell that's
+  actually an obstacle, right up until the robot gets close enough to
+  discover otherwise. Because it's a `Grid` subclass, `dijkstra`/`astar`/
+  `rrt` run against it completely unmodified -- none of them know or
+  care whether the grid they were handed is the ground truth or a
+  partial belief about it.
+
+`nav/scratch/lidar_test.py` proves the discover-and-replan loop with no
+UI: a robot moving toward a goal along a corridor with three obstacles
+hidden until it's within sensor radius. It plans an initially-optimistic
+straight path (nothing sensed yet), then replans twice as it advances and
+each obstacle enters range, and reaches the goal having discovered
+exactly the obstacles that were actually in its path -- confirmed by
+diffing `sensor.known_obstacles` against the hardcoded ground truth at
+the end of the run.
+
+**Known simplification:** `known_obstacles` only grows -- a cell once
+seen as an obstacle is never un-sensed, even if (in the visualizer, with
+moving obstacles + sensor mode both on) it later moves away. A real
+sensor would see it's gone; this one remembers stale information
+forever. Left as-is because handling it properly means tracking sensed
+*free* cells too, not just obstacles, which is real added complexity for
+a case the project's moving obstacles don't actually create in practice
+(the robot re-senses its surroundings every step it takes, so a stale
+belief only lingers for cells outside current sensor range).
 
 ### Inadmissible heuristics: does 1.5x actually break anything?
 

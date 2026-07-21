@@ -42,3 +42,29 @@ STATUS_TEXT = (60, 60, 60)
 OBSTACLE_PERIOD_MS = 700
 ROBOT_STEP_MS = 300
 REPLAN_FLASH_MS = 700
+
+
+# RRT
+
+RRT_MAX_ITERS = 5000
+RRT_STEP_SIZE = 2.0
+RRT_GOAL_SAMPLE_RATE = 0.1
+RRT_GOAL_RADIUS = 1.5
+# Tree edges/nodes
+RRT_TREE_COLOR = (0, 150, 130)
+
+
+# Cost map (weighted terrain / obstacle inflation, like Nav2's costmap)
+
+COST_INFLUENCE_RADIUS = 3
+COST_MAX_EXTRA = 4.0
+# Free-cell tint at maximum cost; blends toward WHITE as cost drops to 1.0
+COST_TINT = (255, 205, 150)
+
+
+# Lidar sensor model
+
+LIDAR_RADIUS = 5
+# Outline drawn around a real obstacle the robot hasn't sensed yet
+HIDDEN_OBSTACLE_OUTLINE = (170, 170, 170)
+SENSOR_RING_COLOR = (0, 140, 200)

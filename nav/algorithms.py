@@ -99,11 +99,15 @@ def reconstruct(came_from, start, goal):
     return path
 
 
-def path_cost(path):
-    """Total movement cost along path, counting diagonal steps as sqrt(2)."""
+def path_cost(grid, path):
+    """Total movement cost along path: sqrt(2) for a diagonal step else 1,
+    each scaled by the terrain cost of the cell being entered (see
+    Grid.cost / compute_cost_map -- 1.0 everywhere when cost-map mode is
+    off, so this collapses to the old diagonal-only cost in that case)."""
     cost = 0
     for (r1, c1), (r2, c2) in zip(path, path[1:]):
-        cost += DIAGONAL_COST if r1 != r2 and c1 != c2 else 1
+        step = DIAGONAL_COST if r1 != r2 and c1 != c2 else 1
+        cost += step * grid.cost[r2][c2]
     return cost
 
 
@@ -120,27 +124,35 @@ def validate_endpoints(grid, start, goal):
 
 def find_path(grid, algo_name, start, goal, heuristic=None):
     """
-    Run dijkstra/astar from start to goal, handling the edge cases the raw
-    algorithms don't check for: same start/goal cell, and either endpoint
-    sitting on an obstacle. `heuristic` is only used when algo_name is
-    "astar"; it defaults to Manhattan distance.
+    Run dijkstra/astar/rrt from start to goal, handling the edge cases the
+    raw algorithms don't check for: same start/goal cell, and either
+    endpoint sitting on an obstacle. `heuristic` is only used when
+    algo_name is "astar"; it defaults to Manhattan distance.
 
-    Returns (path, explored, reason). reason is None on an ordinary run,
-    "no_path" if the search exhausted the grid without reaching goal, and
-    "same_cell" / "start_blocked" / "goal_blocked" if the endpoints stopped
-    the search from running at all.
+    Returns (path, explored, reason, came_from). reason is None on an
+    ordinary run, "no_path" if the search exhausted its budget without
+    reaching goal, and "same_cell" / "start_blocked" / "goal_blocked" if
+    the endpoints stopped the search from running at all. came_from is the
+    raw parent map each algorithm builds -- the visualizer uses it to draw
+    RRT's tree edges.
     """
     reason = validate_endpoints(grid, start, goal)
     if reason == "same_cell":
-        return [start], set(), reason
+        return [start], set(), reason, {}
     if reason is not None:
-        return None, set(), reason
+        return None, set(), reason, {}
 
     if algo_name == "astar":
-        path, explored, _ = astar(grid, start, goal, heuristic=heuristic or manhattan)
+        path, explored, came_from = astar(grid, start, goal, heuristic=heuristic or manhattan)
+    elif algo_name == "rrt":
+        # Imported here, not at module level, because nav.rrt imports
+        # `reconstruct` from this module -- a top-level import here would
+        # be circular.
+        from nav.rrt import rrt
+        path, explored, came_from = rrt(grid, start, goal)
     else:
-        path, explored, _ = dijkstra(grid, start, goal)
+        path, explored, came_from = dijkstra(grid, start, goal)
 
     if path is None:
-        return None, explored, "no_path"
-    return path, explored, None
+        return None, explored, "no_path", came_from
+    return path, explored, None, came_from
