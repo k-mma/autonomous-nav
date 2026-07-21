@@ -300,3 +300,159 @@ route between any two open cells, no loops. That property is exactly what
 made it the wrong test bed for the heuristic experiments above, but it's
 useful on its own as an interesting, always-solvable stress test for the
 visualizer and the replanning logic.
+
+## Week 4 -- PyBullet port
+
+### What actually had to be new code
+
+The exit goal was "a robot navigating a 3D environment using the same A*
+code from pygame," and it's worth being precise about how literal that
+is: `pybullet_main.py` imports `nav.grid.Grid` and
+`nav.algorithms.find_path` directly, unmodified, and calls them exactly
+the way `nav/visualizer.py` does. Every new file lives under
+`nav/sim3d/` and is strictly about the physics interface -- turning grid
+cells into 3D bodies, turning a cell path into a driveable trajectory,
+and turning that trajectory into motor commands. Planning logic and 3D
+plumbing never touch the same file.
+
+### Grid-to-world coordinates (`nav/sim3d/coords.py`)
+
+`grid_to_world(row, col)` maps `col -> x`, `row -> y`, `z = 0` at
+`WORLD_CELL_SIZE = 1.0` meter per cell -- the same `col`-is-horizontal,
+`row`-is-vertical convention `nav/visualizer.py` uses for pixels, just
+with meters instead of pixels and an explicit up-axis. Every obstacle
+body, path debug-line, and waypoint in `nav/sim3d/world.py` goes through
+this one function, so the 3D obstacle layout lines up with the grid A*
+actually searched, cell for cell.
+
+### Why `resetBaseVelocity`, not teleporting the robot
+
+The plan is explicit that Days 17-18 should "drive the robot along A*
+waypoints using velocity control" and that it "won't move smoothly yet."
+The tempting shortcut is `p.resetBasePositionAndOrientation(robot_id,
+waypoint, ...)` every frame -- it would "work" in the sense of the robot
+visibly moving along the path, but it's not driving, it's teleporting;
+PyBullet's physics engine never gets a velocity to integrate, so nothing
+about the motion is actually simulated. `Robot.drive_toward`
+(`nav/sim3d/robot.py`) instead computes a heading error to the target and
+calls `p.resetBaseVelocity(body_id, linearVelocity=[...],
+angularVelocity=[...])` every step -- a real (if simplified) velocity
+command the physics engine has to integrate into position over time, the
+same category of control a differential-drive base actually uses.
+
+It turns in place before driving forward (`FACE_TARGET_TOLERANCE`)
+specifically because `resetBaseVelocity` has no concept of "forward" --
+without that check the robot would happily strafe sideways toward a
+waypoint behind it, which no real wheeled base can do.
+
+### Path smoothing: corner-cutting, then a spline (`nav/sim3d/smoothing.py`)
+
+Three functions, used in sequence:
+
+1. **`simplify_collinear`** -- A* on a 4-directional grid emits one
+   waypoint *per cell*, so a straight 10-cell run is 10 collinear points.
+   Collapsing runs like that to their two endpoints (cross-product test:
+   `(p1-p0) x (p2-p0) == 0` means collinear) gives the smoothers below a
+   handful of real corners to work with instead of dozens of redundant
+   knots along every straight stretch. Not smoothing by itself -- pure
+   cleanup before smoothing.
+2. **`chaikin_smooth`** -- the "simple corner-cutting" the plan asks for
+   first. Each pass replaces every corner with two points 1/4 and 3/4 of
+   the way along its adjacent edges; repeated a few times this rounds
+   every corner into a curve. Cheap, easy to reason about, and the
+   result only *approaches* the original path -- except the two
+   endpoints, which are kept exact here (unlike the textbook version of
+   Chaikin, which cuts those too) so the robot still starts and ends in
+   the actual start/goal cell instead of near it.
+3. **`catmull_rom_spline`** -- the "spline fit if time allows" upgrade.
+   Unlike Chaikin, a Catmull-Rom spline passes *exactly* through every
+   control point, not just the endpoints, while still arriving at each
+   one smoothly instead of on a sharp corner. This is what
+   `pybullet_main.py` drives by default (`--smooth spline`); `--smooth
+   corner_cut` and `--smooth raw` (no smoothing at all -- the literal
+   Days 17-18 behavior) are there specifically so the difference is easy
+   to see and describe, not just claimed.
+
+The one thing that never changes across all three modes is
+`Robot.drive_toward` -- same controller, same heading-error logic, every
+time. The robot looks jerky on `--smooth raw` and smooth on `--smooth
+spline` purely because of how far apart consecutive waypoints are and
+how sharply the heading has to change between them, not because of
+anything mode-specific in the driving code. That's the actual argument
+for why smoothing matters, demonstrated rather than asserted.
+
+### Porting the cost map, and why this demo grid isn't a maze
+
+`grid.cost_map_enabled` / `grid.refresh_cost_map()` (`nav/grid.py`) are
+already grid-generic -- Week 2 built them to work through
+`get_neighbors`, independent of who's rendering the grid -- so "porting"
+the cost map to PyBullet took zero new code. `pybullet_main.py` just
+plans twice, once with `cost_map_enabled = False` and once `True`, and
+draws both routes as PyBullet debug lines (red = binary-obstacle route,
+blue = cost-map route) so the difference in path *shape* the plan asks
+to observe is directly visible in the GUI instead of inferred from
+numbers.
+
+That comparison needs room to actually differ, which is why
+`build_demo_grid()` places one large 9x9 obstacle block instead of
+reusing `nav/maze.py`'s recursive-backtracking maze (the same reason it
+was the wrong test bed for the heuristic experiments in Week 3, see
+above): a perfect maze's corridors are exactly one cell wide everywhere,
+so there's no free space *around* an obstacle to route through with
+clearance -- inflating obstacle cost there mostly just makes the one
+available corridor pricier, not differently shaped. An open block with
+room on every side is what actually exercises the feature.
+
+It also needs start and goal placed so the block is unavoidable, which
+the first version of this demo got wrong: start and goal in opposite
+corners of the grid let a 4-directional Manhattan-optimal search route
+along the *outer* boundary of the grid, arbitrarily far from the block,
+since every monotone staircase path between two corners has identical
+Manhattan cost -- the binary and cost-map searches picked the exact same
+40-step outer-edge route and there was nothing to compare (confirmed by
+diffing the two returned paths: identical, cell for cell). Fixed by
+putting start and goal on the *same row*, with the block sitting
+directly between them -- now the straight route is genuinely blocked,
+a detour is mandatory, and the block is placed off-center on that row
+(2 rows below its top edge, 6 above its bottom) so going around the top
+edge is the unambiguously shorter option instead of a coin-flip between
+two equally-good detours. With that fix, the binary search hugs the
+block's top edge by exactly one cell (the closest legal cell to it),
+while the cost-map search bows out to a row fully outside the
+`COST_INFLUENCE_RADIUS = 3` inflation zone -- a real, visibly different
+detour, not just a different cell count.
+
+### A build problem worth documenting: `pip install pybullet` didn't just work
+
+On this machine (a very new macOS/Xcode Command Line Tools combination),
+`pip install pybullet` fails building from source -- there's no
+prebuilt wheel for this platform/Python combination, so pip falls back
+to compiling PyBullet's bundled C++ sources, and that build hits a real
+compiler error, not a flaky one:
+
+```
+_stdio.h:322:7: error: expected identifier or '('
+FILE *fdopen(int, const char *) __DARWIN_ALIAS_STARTING(...);
+        ^
+zutil.h:128:26: note: expanded from macro 'fdopen'
+#define fdopen(fd, mode) NULL /* No fdopen() */
+```
+
+PyBullet vendors an old fork of zlib (`examples/ThirdPartyLibs/zlib/`)
+whose `zutil.h` `#define`s `fdopen` to `NULL` on `MACOS`/`TARGET_OS_MAC`
+-- a workaround from the classic (pre-OS X) Mac Toolbox era, when there
+genuinely was no POSIX `fdopen`. Modern Darwin very much has one, and
+this macro get textually substituted into `_stdio.h`'s own *declaration*
+of `fdopen` the next time any translation unit includes zutil.h before
+stdio.h -- turning `FILE *fdopen(...)` into `FILE *NULL(...)`, a syntax
+error, not a linker or logic issue. It's a genuine bug in ~15-year-old
+vendored code that happens to have gone unnoticed on toolchains where
+header inclusion order didn't provoke it.
+
+Fix: download the sdist (`pip download pybullet==3.2.7 --no-binary=:all:
+--no-deps`), delete that one obsolete macro block from
+`examples/ThirdPartyLibs/zlib/zutil.h` (Darwin doesn't need a stub for a
+function it actually has), and `pip install` the patched source tree
+directly. Worth recording here rather than just fixing silently, since
+"the install didn't work out of the box" is itself a real thing to be
+able to explain if asked about the PyBullet leg of this project.

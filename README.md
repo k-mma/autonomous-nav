@@ -2,9 +2,11 @@
 
 A pygame grid-pathfinding visualizer comparing Dijkstra, A\*, and RRT, with
 weighted terrain, a simulated lidar sensor, dynamic obstacles, automatic
-replanning, and a benchmark suite. Built as the first leg of a longer
-autonomous-navigation project that continues into PyBullet and ROS 2 / Nav2
-(see `WRITEUPS.md` for the full narrative and the algorithm/interview
+replanning, and a benchmark suite -- plus a PyBullet port that drives a
+real 3D robot along the *same* A* planning code, with path smoothing and
+cost-map-aware routing. Built as the first two legs of a longer
+autonomous-navigation project that continues toward ROS 2 / Nav2 (see
+`WRITEUPS.md` for the full narrative and the algorithm/interview
 explanations behind the code).
 
 ## What it does
@@ -32,6 +34,11 @@ explanations behind the code).
   backtracking.
 - `nav/benchmark.py` runs all three algorithms across 20 random grids and
   plots the comparison (see results below).
+- `pybullet_main.py` ports the grid into a real 3D PyBullet world: the
+  same `find_path`/A* code plans a route around a 3D obstacle block, a
+  Catmull-Rom spline smooths it into something a robot base can actually
+  follow, and an r2d2 robot drives it with velocity control (not
+  teleportation). See "PyBullet 3D port" below.
 
 ## How to run
 
@@ -40,9 +47,16 @@ python3 -m venv nav-env
 source nav-env/bin/activate
 pip install -r requirements.txt
 
-python3 main.py              # the visualizer
+python3 main.py              # the pygame visualizer
 python3 -m nav.benchmark     # regenerate benchmark_results/
+python3 pybullet_main.py     # the PyBullet 3D demo
 ```
+
+If `pip install` fails building `pybullet` from source (no prebuilt wheel
+for your platform/Python combo, common on very new macOS/Xcode Command
+Line Tools), see "A build problem worth documenting" in `WRITEUPS.md` for
+the exact fix -- it's a one-line patch to a bundled third-party header,
+not an issue with this repo's code.
 
 ### Controls
 
@@ -130,6 +144,45 @@ samples happen to land rather than on the grid itself. Full breakdown,
 including why RRT sometimes beats "optimal" (it isn't grid-constrained the
 way Dijkstra/A* are here), in `benchmark_results/writeup.md`.
 
+## PyBullet 3D port
+
+`pybullet_main.py` builds the identical `nav.grid.Grid` the pygame
+visualizer uses -- a 25x25 grid with a 9x9 obstacle block sitting
+directly between a start and goal placed on the same row, forcing a
+detour around it -- projects it into a 3D PyBullet world (one static box
+per obstacle cell, 1 grid cell = 1 meter), and plans across it with
+`nav.algorithms.find_path`, completely unmodified from Week 1-3. It then:
+
+1. Plans the route **twice**: once with the cost map off (binary
+   obstacles) and once with it on, and draws both as debug lines in the
+   GUI (red vs blue) so you can see the clearance routing directly.
+2. Smooths the chosen route -- corner-cutting first, then a Catmull-Rom
+   spline (`nav/sim3d/smoothing.py`) -- since A*'s sharp 90-degree grid
+   waypoints aren't something a robot base can track without stopping to
+   pivot at every one.
+3. Drives an r2d2 robot along the result using **velocity control**
+   (`pybullet.resetBaseVelocity`, not teleportation) -- the same
+   turn-then-drive controller for every smoothing mode; the visible
+   smoothness difference comes entirely from how closely spaced the
+   waypoints it's given are, not from anything robot-specific.
+
+```bash
+python3 pybullet_main.py                     # cost-map path, spline-smoothed (default)
+python3 pybullet_main.py --smooth raw        # Days 17-18: raw A* waypoints, sharp turns
+python3 pybullet_main.py --smooth corner_cut # Chaikin corner-cutting instead of a spline
+python3 pybullet_main.py --no-cost-map       # binary obstacles only, no clearance routing
+python3 pybullet_main.py --headless          # DIRECT mode, no GUI window
+```
+
+`nav/scratch/pybullet_setup_test.py` is the Day 16 mini-MVP this was
+built on top of: load `plane.urdf` + `r2d2.urdf`, let it settle, confirm
+the GUI window actually opens.
+
+Full writeup -- the grid-to-world coordinate mapping, why velocity
+control instead of teleporting, the corner-cutting/spline math, and why
+this specific obstacle layout (not a maze) was needed to make the
+cost-map routing visible -- is in `WRITEUPS.md`.
+
 ## Repo layout
 
 ```
@@ -143,9 +196,16 @@ nav/
   maze.py          Recursive-backtracking maze generator
   visualizer.py    The pygame app
   benchmark.py     20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
+  sim3d/           PyBullet world-building, path smoothing, robot control
+    coords.py        Grid-cell <-> world-meter conversion
+    world.py         Ground plane, obstacle bodies, debug-line path drawing
+    smoothing.py     Collinear simplification, Chaikin corner-cutting, Catmull-Rom spline
+    robot.py         Robot: drives an r2d2 body toward waypoints via velocity control
   scratch/         Standalone throwaway scripts used to prove each piece
-                    works before it was wired into the visualizer
+                    works before it was wired into the visualizer/pybullet_main
 benchmark_results/  Generated CSV, plot, and writeup from benchmark.py
+pybullet_main.py    The PyBullet 3D demo (plan -> smooth -> drive)
 WRITEUPS.md         Algorithm explanations, replanning policy, cost map,
-                     sensor model, and the heuristic experiments' findings
+                     sensor model, PyBullet port, and the heuristic
+                     experiments' findings
 ```
