@@ -19,16 +19,18 @@ import time
 
 import pybullet as p
 
-from nav.algorithms import find_path
+from nav.algorithms import find_path, path_cost
 from nav.grid import Grid
 from nav.sensor import KnownGrid
 from nav.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
+from nav.sim3d.hud import Hud
 from nav.sim3d.lidar import Lidar3D
-from nav.sim3d.robot import Robot
+from nav.sim3d.robot import Robot, DEFAULT_SPEED
 from nav.sim3d.smoothing import simplify_collinear, chaikin_smooth, catmull_rom_spline
 from nav.sim3d.world import (
-    connect, build_obstacles, mark_cell, draw_path, draw_waypoints,
-    BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, START_COLOR, GOAL_COLOR,
+    connect, build_obstacles, hide_obstacles, reveal_obstacles, mark_cell, draw_path,
+    draw_xy_path, draw_waypoints, draw_cost_map_tint, remove_debug_items,
+    BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, SENSOR_PATH_COLOR, START_COLOR, GOAL_COLOR,
 )
 
 START = (12, 1)
@@ -37,6 +39,15 @@ SIM_HZ = 240
 SENSOR_SCAN_PERIOD_S = 0.3
 SENSOR_NUM_RAYS = 48
 SENSOR_RANGE = 6.0
+# How often the HUD text / debug-parameter sliders actually get read and
+# redrawn -- doing it every physics step (240/s) would spam PyBullet's
+# debug-item pipeline for no visible benefit; a human can't perceive HUD
+# updates faster than this anyway.
+HUD_UPDATE_PERIOD_S = 0.1
+# How long the "REPLANNING..." indicator stays lit after a real replan,
+# mirroring nav/visualizer.py's REPLAN_FLASH_MS.
+REPLAN_FLASH_S = 0.7
+HUD_POSITION = (4, 4, 6)
 
 
 def build_demo_grid():
@@ -101,13 +112,19 @@ def run_static_demo(args, grid, gui):
     robot already has a perfect map -- there's nothing to discover, so
     nothing to replan."""
     binary_path = plan(grid, use_cost_map=False)
+    binary_cost = path_cost(grid, binary_path)
     cost_map_path = plan(grid, use_cost_map=True)
+    cost_map_cost = path_cost(grid, cost_map_path)
     draw_path(binary_path, BINARY_PATH_COLOR, z=0.03, gui=gui)
     draw_path(cost_map_path, COST_MAP_PATH_COLOR, z=0.06, gui=gui)
-    print(f"binary-obstacle path:  {len(binary_path)} cells")
-    print(f"cost-map path:         {len(cost_map_path)} cells (drawn in blue, red = binary)")
+    if not args.no_cost_map:
+        draw_cost_map_tint(grid, gui=gui)
+    print(f"binary-obstacle path:  {len(binary_path)} cells, cost {binary_cost:.2f}")
+    print(f"cost-map path:         {len(cost_map_path)} cells, cost {cost_map_cost:.2f} "
+          f"(drawn in blue, red = binary)")
 
     chosen_path = binary_path if args.no_cost_map else cost_map_path
+    chosen_cost = binary_cost if args.no_cost_map else cost_map_cost
     drive_waypoints = build_drive_waypoints(chosen_path, args.smooth)
     corner_waypoints = set(simplify_collinear(to_world_xy(chosen_path)))
     draw_waypoints(drive_waypoints, gui=gui)
@@ -119,9 +136,13 @@ def run_static_demo(args, grid, gui):
     print(f"driving {len(drive_waypoints)} waypoints "
           f"(smoothing={args.smooth}, cost_map={not args.no_cost_map})")
 
+    hud = Hud(HUD_POSITION, gui)
+    speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
+
     idx = 0
     steps = 0
     max_steps = int(args.max_seconds * SIM_HZ)
+    next_hud_step = 0
     while idx < len(drive_waypoints) and steps < max_steps:
         arrived = robot.drive_toward(drive_waypoints[idx])
         p.stepSimulation()
@@ -133,13 +154,24 @@ def run_static_demo(args, grid, gui):
                 print(f"  reached waypoint {tuple(round(v, 2) for v in drive_waypoints[idx])}")
             idx += 1
 
+        if steps >= next_hud_step:
+            next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            if speed_param is not None:
+                robot.speed = p.readUserDebugParameter(speed_param)
+            status = "reached goal" if idx >= len(drive_waypoints) else "driving"
+            hud.update([
+                f"[static] A* | cost_map={'on' if not args.no_cost_map else 'off'} | smoothing={args.smooth}",
+                f"path: {len(chosen_path)} cells, cost {chosen_cost:.2f} | waypoint {idx}/{len(drive_waypoints)}",
+                f"{status} | t={steps / SIM_HZ:.1f}s",
+            ])
+
     if idx >= len(drive_waypoints):
         print("reached goal")
     else:
         print(f"stopped after {args.max_seconds}s safety cap ({idx}/{len(drive_waypoints)} waypoints)")
 
 
-def run_sensor_demo(args, grid, gui):
+def run_sensor_demo(args, grid, gui, obstacle_bodies):
     """The robot only knows about obstacles nav/sim3d/lidar.py has
     actually raycast-hit. It plans against a KnownGrid (the exact same
     class the pygame sensor mode uses -- unseen cells assumed
@@ -149,11 +181,25 @@ def run_sensor_demo(args, grid, gui):
     reason it is in pygame's sensor mode: KnownGrid doesn't carry the
     real grid's terrain weights, so mixing "unknown obstacles" with
     "unknown terrain cost" is a second, separate problem this demo
-    doesn't try to solve at the same time."""
+    doesn't try to solve at the same time.
+
+    Real obstacles start dimmed to near-invisible (see
+    hide_obstacles/reveal_obstacles) and only turn solid once the lidar
+    actually raycasts them -- matching nav/visualizer.py's sensor mode,
+    which draws an undiscovered obstacle as a free cell with just a faint
+    outline instead of its real fill color."""
+    total_obstacles = sum(row.count(Grid.OBSTACLE) for row in grid.cells)
+    hide_obstacles(obstacle_bodies)
+
     start_xy = grid_to_world(*START)[:2]
     robot_id = p.loadURDF("r2d2.urdf", basePosition=[start_xy[0], start_xy[1], 0.4])
     robot = Robot(robot_id)
     lidar = Lidar3D(num_rays=SENSOR_NUM_RAYS, max_range=SENSOR_RANGE, ignore_body_id=robot_id)
+
+    hud = Hud(HUD_POSITION, gui)
+    speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
+    full_map_param = p.addUserDebugParameter("reveal full map (visual only)", 0, 1, 0) if gui else None
+    path_line_ids = []
 
     def replan_from(position):
         cell = world_to_grid(position[0], position[1])
@@ -165,14 +211,20 @@ def run_sensor_demo(args, grid, gui):
         return build_drive_waypoints(path, args.smooth)
 
     lidar.scan(start_xy, gui=gui)
+    reveal_obstacles(obstacle_bodies, lidar.known_obstacles)
     drive_waypoints = replan_from(start_xy)
+    if drive_waypoints:
+        path_line_ids = draw_xy_path(drive_waypoints, SENSOR_PATH_COLOR, gui=gui)
     print(f"initial scan: {len(lidar.known_obstacles)} obstacle cells sensed")
 
     idx = 0
     steps = 0
     max_steps = int(args.max_seconds * SIM_HZ)
     next_scan_step = int(SENSOR_SCAN_PERIOD_S * SIM_HZ)
+    next_hud_step = 0
+    replan_flash_until_step = 0
     reached_goal = False
+    full_map_revealed = False
 
     while steps < max_steps:
         if drive_waypoints is None:
@@ -195,16 +247,51 @@ def run_sensor_demo(args, grid, gui):
             next_scan_step += int(SENSOR_SCAN_PERIOD_S * SIM_HZ)
             newly_seen = lidar.scan(robot.position(), gui=gui)
             if newly_seen:
+                reveal_obstacles(obstacle_bodies, newly_seen)
                 print(f"  sensed {len(newly_seen)} new obstacle cell(s) at t={steps / SIM_HZ:.1f}s -- replanning")
                 drive_waypoints = replan_from(robot.position())
                 idx = 0
+                replan_flash_until_step = steps + int(REPLAN_FLASH_S * SIM_HZ)
+                if drive_waypoints:
+                    path_line_ids = draw_xy_path(
+                        drive_waypoints, SENSOR_PATH_COLOR, gui=gui, existing_ids=path_line_ids
+                    )
+                else:
+                    remove_debug_items(path_line_ids)
+                    path_line_ids = []
+
+        if steps >= next_hud_step:
+            next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            if speed_param is not None:
+                robot.speed = p.readUserDebugParameter(speed_param)
+            if full_map_param is not None:
+                want_full_map = p.readUserDebugParameter(full_map_param) > 0.5
+                if want_full_map != full_map_revealed:
+                    if want_full_map:
+                        reveal_obstacles(obstacle_bodies, obstacle_bodies.keys())
+                    else:
+                        hide_obstacles(obstacle_bodies)
+                        reveal_obstacles(obstacle_bodies, lidar.known_obstacles)
+                    full_map_revealed = want_full_map
+            if steps < replan_flash_until_step:
+                status = "REPLANNING..."
+            elif drive_waypoints is None:
+                status = "waiting for map"
+            elif reached_goal or idx >= len(drive_waypoints):
+                status = "reached goal"
+            else:
+                status = f"driving waypoint {idx}/{len(drive_waypoints)}"
+            hud.update([
+                f"[sensor] A* | lidar-limited | smoothing={args.smooth}",
+                status,
+                f"sensed {len(lidar.known_obstacles)}/{total_obstacles} obstacles | t={steps / SIM_HZ:.1f}s",
+            ])
 
     if reached_goal:
         print("reached goal")
     else:
         print(f"stopped after {args.max_seconds}s safety cap")
-    print(f"final known map: {len(lidar.known_obstacles)} obstacle cells sensed out of "
-          f"{sum(row.count(Grid.OBSTACLE) for row in grid.cells)} actual")
+    print(f"final known map: {len(lidar.known_obstacles)} obstacle cells sensed out of {total_obstacles} actual")
 
 
 def main():
@@ -213,12 +300,12 @@ def main():
     connect(gui=gui)
 
     grid = build_demo_grid()
-    build_obstacles(grid)
+    obstacle_bodies = build_obstacles(grid)
     mark_cell(*START, color=START_COLOR)
     mark_cell(*GOAL, color=GOAL_COLOR)
 
     if args.sensor:
-        run_sensor_demo(args, grid, gui)
+        run_sensor_demo(args, grid, gui, obstacle_bodies)
     else:
         run_static_demo(args, grid, gui)
 

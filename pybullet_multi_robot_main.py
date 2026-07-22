@@ -58,9 +58,11 @@ from nav.algorithms import find_path
 from nav.grid import Grid
 from pybullet_main import build_drive_waypoints
 from nav.sim3d.coords import grid_to_world, world_to_grid
-from nav.sim3d.robot import Robot
+from nav.sim3d.hud import Hud, FollowLabel
+from nav.sim3d.robot import Robot, DEFAULT_SPEED
 from nav.sim3d.world import (
-    connect, build_obstacles, mark_cell, mark_goal_cell, label_cell, ROBOT_A_COLOR, ROBOT_B_COLOR,
+    connect, build_obstacles, mark_cell, mark_goal_cell, label_cell, draw_xy_path,
+    ROBOT_A_COLOR, ROBOT_B_COLOR,
 )
 
 SIM_HZ = 240
@@ -70,6 +72,14 @@ SIM_HZ = 240
 REPLAN_PERIOD_S = 0.05
 BLOCK_RADIUS = 1
 SAFETY_STOP_RADIUS = 0.55
+# How often the HUD text / debug-parameter sliders actually get read and
+# redrawn -- see pybullet_main.py's HUD_UPDATE_PERIOD_S for why this is
+# throttled well below the 240Hz physics rate.
+HUD_UPDATE_PERIOD_S = 0.1
+# How long the "replanning..." indicator stays lit after a real replan,
+# mirroring nav/visualizer.py's REPLAN_FLASH_MS.
+REPLAN_FLASH_S = 0.7
+HUD_POSITION = (2, 2, 9)
 
 # A drives straight down the middle column; B drives straight across the
 # middle row. Every one of the four points is a different cell -- no
@@ -133,20 +143,33 @@ class NavAgent:
     knows or cares which agent is "the other one"; that's the caller's
     job every replan tick."""
 
-    def __init__(self, name, body_id, base_grid, goal, smooth_method):
+    def __init__(self, name, body_id, base_grid, goal, smooth_method, color, gui):
         self.name = name
         self.robot = Robot(body_id)
         self.base_grid = base_grid
         self.goal = goal
         self.smooth_method = smooth_method
+        self.color = color
+        self.gui = gui
         self.waypoints = []
         self.idx = 0
         self.waiting = False
         self.arrived = False
+        self.path_line_ids = []
+        self.replan_flash_until_step = 0
+        self.label = FollowLabel(name, gui, color=color)
 
     def current_cell(self):
         pos = self.robot.position()
         return world_to_grid(pos[0], pos[1])
+
+    def _redraw_path(self, points_xy):
+        self.path_line_ids = draw_xy_path(
+            points_xy, self.color[:3], z=0.04, gui=self.gui, existing_ids=self.path_line_ids
+        )
+
+    def update_label(self):
+        self.label.update(self.robot.position())
 
     def _park(self):
         """An arrived robot resting exactly on its goal cell would remain
@@ -156,8 +179,15 @@ class NavAgent:
         robot's blocked-cell calculations."""
         pos = self.robot.position()
         p.resetBasePositionAndOrientation(self.robot.body_id, [pos[0], pos[1] + 1.5, pos[2]], [0, 0, 0, 1])
+        self._redraw_path([])
 
-    def plan(self, blocked_cells=None):
+    def plan(self, blocked_cells=None, now_step=0):
+        """Runs a fresh A* against `grid` and -- if it actually changes the
+        route -- redraws the active-path debug line for it (item 4: a
+        replan that doesn't change anything, or that finds no route at
+        all, shouldn't leave a stale line from before on screen, and one
+        that does find a fresh route should never leave the *old* line
+        drawn alongside the new one)."""
         grid = blocked_grid(self.base_grid, blocked_cells) if blocked_cells else self.base_grid
         cell = self.current_cell()
         if cell == self.goal:
@@ -167,14 +197,17 @@ class NavAgent:
             return
 
         path, _, reason, _ = find_path(grid, "astar", cell, self.goal)
+        self.replan_flash_until_step = now_step + int(REPLAN_FLASH_S * SIM_HZ)
         if path is None:
             self.waiting = True
             self.robot.stop()
+            self._redraw_path([])
             return
 
         self.waiting = False
         self.waypoints = build_drive_waypoints(path, self.smooth_method)
         self.idx = 0
+        self._redraw_path(self.waypoints)
 
     def drive_step(self, force_stop=False):
         if self.arrived:
@@ -193,6 +226,16 @@ class NavAgent:
                 self.arrived = True
                 self.robot.stop()
                 self._park()
+
+
+def agent_status(agent, steps):
+    if agent.arrived:
+        return "arrived"
+    if steps < agent.replan_flash_until_step:
+        return "replanning..."
+    if agent.waiting:
+        return "waiting"
+    return "driving"
 
 
 def parse_args():
@@ -236,8 +279,8 @@ def main():
     a_id = p.loadURDF("r2d2.urdf", basePosition=[ax, ay, 0.4], baseOrientation=a_orientation)
     b_id = p.loadURDF("r2d2.urdf", basePosition=[bx, by, 0.4], baseOrientation=b_orientation)
 
-    agent_a = NavAgent("A", a_id, grid, ROBOT_A_GOAL, args.smooth)
-    agent_b = NavAgent("B", b_id, grid, ROBOT_B_GOAL, args.smooth)
+    agent_a = NavAgent("A", a_id, grid, ROBOT_A_GOAL, args.smooth, ROBOT_A_COLOR, gui)
+    agent_b = NavAgent("B", b_id, grid, ROBOT_B_GOAL, args.smooth, ROBOT_B_COLOR, gui)
 
     def blockers_for(mover, other):
         # Once the other robot has arrived and parked, it's no longer
@@ -249,9 +292,13 @@ def main():
     agent_a.plan(blocked_cells=last_blockers_a)
     agent_b.plan(blocked_cells=last_blockers_b)
 
+    hud = Hud(HUD_POSITION, gui)
+    speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
+
     steps = 0
     max_steps = int(args.max_seconds * SIM_HZ)
     next_replan = 0
+    next_hud_step = 0
     was_waiting_a = agent_a.waiting
     was_waiting_b = agent_b.waiting
 
@@ -266,7 +313,7 @@ def main():
             if not agent_a.arrived:
                 current_a = blockers_for(agent_a, agent_b)
                 if agent_a.waiting or current_a != last_blockers_a:
-                    agent_a.plan(blocked_cells=current_a)
+                    agent_a.plan(blocked_cells=current_a, now_step=steps)
                     last_blockers_a = current_a
                     if agent_a.waiting != was_waiting_a:
                         state = "no route right now -- holding" if agent_a.waiting else "replanned around B"
@@ -275,7 +322,7 @@ def main():
             if not agent_b.arrived:
                 current_b = blockers_for(agent_b, agent_a)
                 if agent_b.waiting or current_b != last_blockers_b:
-                    agent_b.plan(blocked_cells=current_b)
+                    agent_b.plan(blocked_cells=current_b, now_step=steps)
                     last_blockers_b = current_b
                     if agent_b.waiting != was_waiting_b:
                         state = "no route right now -- holding" if agent_b.waiting else "replanned around A"
@@ -293,6 +340,21 @@ def main():
         if not args.headless:
             time.sleep(1 / SIM_HZ)
         steps += 1
+
+        if steps >= next_hud_step:
+            next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            if speed_param is not None:
+                shared_speed = p.readUserDebugParameter(speed_param)
+                agent_a.robot.speed = shared_speed
+                agent_b.robot.speed = shared_speed
+            agent_a.update_label()
+            agent_b.update_label()
+
+            hud.update([
+                f"multi-robot avoidance | A* | t={steps / SIM_HZ:.1f}s",
+                f"A: {agent_status(agent_a, steps)} | wp {agent_a.idx}/{len(agent_a.waypoints)}",
+                f"B: {agent_status(agent_b, steps)} | wp {agent_b.idx}/{len(agent_b.waypoints)}",
+            ])
 
     print(f"robot A arrived: {agent_a.arrived}")
     print(f"robot B arrived: {agent_b.arrived}")
