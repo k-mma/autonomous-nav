@@ -1,14 +1,17 @@
 """
-Week 4 exit goal: a robot navigating a 3D environment using the same A*
-code from pygame. Everything planning-related here is imported unchanged
-from nav/algorithms.py and nav/grid.py -- the only new code is the
-PyBullet physics interface (nav/sim3d/).
+A robot navigating a 3D environment using the same A* code as the pygame
+visualizer, plus a lidar-sensor mode: the robot plans against only what
+it's actually seen via real raycasts, and replans as it discovers more.
+Everything planning-related here is imported unchanged from
+nav/algorithms.py, nav/grid.py, and nav/sensor.py -- the only new code is
+the PyBullet physics interface (nav/sim3d/).
 
     python3 pybullet_main.py                     # cost-map path, spline-smoothed
-    python3 pybullet_main.py --smooth raw         # Days 17-18: raw A* waypoints, sharp turns
-    python3 pybullet_main.py --smooth corner_cut  # Days 19-20, first pass: Chaikin corner-cutting
-    python3 pybullet_main.py --smooth spline      # Days 19-20, final pass: Catmull-Rom spline (default)
+    python3 pybullet_main.py --smooth raw         # raw A* waypoints, sharp turns, no smoothing
+    python3 pybullet_main.py --smooth corner_cut  # Chaikin corner-cutting instead of a spline
+    python3 pybullet_main.py --smooth spline      # Catmull-Rom spline (default)
     python3 pybullet_main.py --no-cost-map        # binary obstacles only, no clearance routing
+    python3 pybullet_main.py --sensor             # lidar-limited knowledge, replans on discovery
     python3 pybullet_main.py --headless           # DIRECT mode, no GUI window, for automated runs
 """
 import argparse
@@ -18,7 +21,9 @@ import pybullet as p
 
 from nav.algorithms import find_path
 from nav.grid import Grid
-from nav.sim3d.coords import grid_to_world, WORLD_CELL_SIZE
+from nav.sensor import KnownGrid
+from nav.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
+from nav.sim3d.lidar import Lidar3D
 from nav.sim3d.robot import Robot
 from nav.sim3d.smoothing import simplify_collinear, chaikin_smooth, catmull_rom_spline
 from nav.sim3d.world import (
@@ -29,6 +34,9 @@ from nav.sim3d.world import (
 START = (12, 1)
 GOAL = (12, 23)
 SIM_HZ = 240
+SENSOR_SCAN_PERIOD_S = 0.3
+SENSOR_NUM_RAYS = 48
+SENSOR_RANGE = 6.0
 
 
 def build_demo_grid():
@@ -80,22 +88,18 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--smooth", choices=["raw", "corner_cut", "spline"], default="spline")
     parser.add_argument("--no-cost-map", action="store_true")
+    parser.add_argument("--sensor", action="store_true",
+                         help="plan against lidar-discovered knowledge only, replanning as it explores")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--max-seconds", type=float, default=60.0,
                          help="safety cap so a headless/automated run can't hang forever")
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    connect(gui=not args.headless)
-
-    grid = build_demo_grid()
-    build_obstacles(grid)
-    mark_cell(*START, color=START_COLOR)
-    mark_cell(*GOAL, color=GOAL_COLOR)
-
-    gui = not args.headless
+def run_static_demo(args, grid, gui):
+    """Plan the whole grid twice (binary vs cost-map) up front, since the
+    robot already has a perfect map -- there's nothing to discover, so
+    nothing to replan."""
     binary_path = plan(grid, use_cost_map=False)
     cost_map_path = plan(grid, use_cost_map=True)
     draw_path(binary_path, BINARY_PATH_COLOR, z=0.03, gui=gui)
@@ -133,6 +137,90 @@ def main():
         print("reached goal")
     else:
         print(f"stopped after {args.max_seconds}s safety cap ({idx}/{len(drive_waypoints)} waypoints)")
+
+
+def run_sensor_demo(args, grid, gui):
+    """The robot only knows about obstacles nav/sim3d/lidar.py has
+    actually raycast-hit. It plans against a KnownGrid (the exact same
+    class the pygame sensor mode uses -- unseen cells assumed
+    free), drives toward that plan, and rescans every SENSOR_SCAN_PERIOD_S
+    seconds; any newly discovered obstacle triggers a fresh plan from
+    wherever it currently is. Cost-map mode is skipped here for the same
+    reason it is in pygame's sensor mode: KnownGrid doesn't carry the
+    real grid's terrain weights, so mixing "unknown obstacles" with
+    "unknown terrain cost" is a second, separate problem this demo
+    doesn't try to solve at the same time."""
+    start_xy = grid_to_world(*START)[:2]
+    robot_id = p.loadURDF("r2d2.urdf", basePosition=[start_xy[0], start_xy[1], 0.4])
+    robot = Robot(robot_id)
+    lidar = Lidar3D(num_rays=SENSOR_NUM_RAYS, max_range=SENSOR_RANGE, ignore_body_id=robot_id)
+
+    def replan_from(position):
+        cell = world_to_grid(position[0], position[1])
+        known = KnownGrid(lidar.known_obstacles)
+        path, _, reason, _ = find_path(known, "astar", cell, GOAL)
+        if path is None:
+            print(f"  no known path to goal yet (reason={reason}) -- waiting for more of the map")
+            return None
+        return build_drive_waypoints(path, args.smooth)
+
+    lidar.scan(start_xy, gui=gui)
+    drive_waypoints = replan_from(start_xy)
+    print(f"initial scan: {len(lidar.known_obstacles)} obstacle cells sensed")
+
+    idx = 0
+    steps = 0
+    max_steps = int(args.max_seconds * SIM_HZ)
+    next_scan_step = int(SENSOR_SCAN_PERIOD_S * SIM_HZ)
+    reached_goal = False
+
+    while steps < max_steps:
+        if drive_waypoints is None:
+            # No known route to the goal yet -- hold position and keep
+            # scanning until enough of the map has been discovered.
+            p.stepSimulation()
+        elif idx >= len(drive_waypoints):
+            reached_goal = True
+            break
+        else:
+            if robot.drive_toward(drive_waypoints[idx]):
+                idx += 1
+            p.stepSimulation()
+
+        if not args.headless:
+            time.sleep(1 / SIM_HZ)
+        steps += 1
+
+        if steps >= next_scan_step:
+            next_scan_step += int(SENSOR_SCAN_PERIOD_S * SIM_HZ)
+            newly_seen = lidar.scan(robot.position(), gui=gui)
+            if newly_seen:
+                print(f"  sensed {len(newly_seen)} new obstacle cell(s) at t={steps / SIM_HZ:.1f}s -- replanning")
+                drive_waypoints = replan_from(robot.position())
+                idx = 0
+
+    if reached_goal:
+        print("reached goal")
+    else:
+        print(f"stopped after {args.max_seconds}s safety cap")
+    print(f"final known map: {len(lidar.known_obstacles)} obstacle cells sensed out of "
+          f"{sum(row.count(Grid.OBSTACLE) for row in grid.cells)} actual")
+
+
+def main():
+    args = parse_args()
+    gui = not args.headless
+    connect(gui=gui)
+
+    grid = build_demo_grid()
+    build_obstacles(grid)
+    mark_cell(*START, color=START_COLOR)
+    mark_cell(*GOAL, color=GOAL_COLOR)
+
+    if args.sensor:
+        run_sensor_demo(args, grid, gui)
+    else:
+        run_static_demo(args, grid, gui)
 
     if not args.headless:
         input("Press Enter to close...")

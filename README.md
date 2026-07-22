@@ -2,12 +2,13 @@
 
 A pygame grid-pathfinding visualizer comparing Dijkstra, A\*, and RRT, with
 weighted terrain, a simulated lidar sensor, dynamic obstacles, automatic
-replanning, and a benchmark suite -- plus a PyBullet port that drives a
-real 3D robot along the *same* A* planning code, with path smoothing and
-cost-map-aware routing. Built as the first two legs of a longer
-autonomous-navigation project that continues toward ROS 2 / Nav2 (see
-`WRITEUPS.md` for the full narrative and the algorithm/interview
-explanations behind the code).
+replanning, and a benchmark suite -- plus a PyBullet port that drives real
+3D robots along the *same* A* planning code, with path smoothing,
+cost-map-aware routing, a raycast lidar sensor, and two robots coordinating
+through a shared corridor via a priority policy. Built as the first three
+legs of a longer autonomous-navigation project that continues toward
+ROS 2 / Nav2 (see `WRITEUPS.md` for the full narrative and the
+algorithm/interview explanations behind the code).
 
 ## What it does
 
@@ -33,12 +34,21 @@ explanations behind the code).
 - Toggle 8-directional movement, or generate a fresh maze with recursive
   backtracking.
 - `nav/benchmark.py` runs all three algorithms across 20 random grids and
-  plots the comparison (see results below).
+  plots the comparison (see results below); `nav/scale_benchmark.py` reruns
+  the comparison holding density fixed and scaling grid size instead
+  (20x20 through 200x200) -- see "Scale benchmark" below.
 - `pybullet_main.py` ports the grid into a real 3D PyBullet world: the
   same `find_path`/A* code plans a route around a 3D obstacle block, a
   Catmull-Rom spline smooths it into something a robot base can actually
   follow, and an r2d2 robot drives it with velocity control (not
-  teleportation). See "PyBullet 3D port" below.
+  teleportation). `--sensor` swaps that for a real raycast lidar
+  (`pybullet.rayTestBatch`) that only knows what it's actually seen and
+  replans as it explores. See "PyBullet 3D port" below.
+- `pybullet_multi_robot_main.py` runs two robots at once through a
+  single-width corridor, forcing a head-on conflict, resolved with a
+  priority policy (one robot always has right of way; the other detours
+  around or waits for it) plus a hard safety-distance stop as a failsafe.
+  See "Multiple robots" below.
 
 ## How to run
 
@@ -47,9 +57,12 @@ python3 -m venv nav-env
 source nav-env/bin/activate
 pip install -r requirements.txt
 
-python3 main.py              # the pygame visualizer
-python3 -m nav.benchmark     # regenerate benchmark_results/
-python3 pybullet_main.py     # the PyBullet 3D demo
+python3 main.py                       # the pygame visualizer
+python3 -m nav.benchmark              # regenerate benchmark_results/
+python3 -m nav.scale_benchmark        # regenerate the grid-size scaling results
+python3 pybullet_main.py              # the PyBullet 3D demo (single robot)
+python3 pybullet_main.py --sensor     # ... with the raycast lidar instead of a perfect map
+python3 pybullet_multi_robot_main.py  # two robots, forced corridor conflict
 ```
 
 If `pip install` fails building `pybullet` from source (no prebuilt wheel
@@ -151,7 +164,7 @@ visualizer uses -- a 25x25 grid with a 9x9 obstacle block sitting
 directly between a start and goal placed on the same row, forcing a
 detour around it -- projects it into a 3D PyBullet world (one static box
 per obstacle cell, 1 grid cell = 1 meter), and plans across it with
-`nav.algorithms.find_path`, completely unmodified from Week 1-3. It then:
+`nav.algorithms.find_path`, completely unmodified from the pygame version. It then:
 
 1. Plans the route **twice**: once with the cost map off (binary
    obstacles) and once with it on, and draws both as debug lines in the
@@ -168,44 +181,132 @@ per obstacle cell, 1 grid cell = 1 meter), and plans across it with
 
 ```bash
 python3 pybullet_main.py                     # cost-map path, spline-smoothed (default)
-python3 pybullet_main.py --smooth raw        # Days 17-18: raw A* waypoints, sharp turns
+python3 pybullet_main.py --smooth raw        # raw A* waypoints, sharp turns, no smoothing
 python3 pybullet_main.py --smooth corner_cut # Chaikin corner-cutting instead of a spline
 python3 pybullet_main.py --no-cost-map       # binary obstacles only, no clearance routing
 python3 pybullet_main.py --headless          # DIRECT mode, no GUI window
 ```
 
-`nav/scratch/pybullet_setup_test.py` is the Day 16 mini-MVP this was
-built on top of: load `plane.urdf` + `r2d2.urdf`, let it settle, confirm
-the GUI window actually opens.
+`nav/scratch/pybullet_setup_test.py` is the standalone sanity check this
+was built on top of: load `plane.urdf` + `r2d2.urdf`, let it settle,
+confirm the GUI window actually opens.
 
 Full writeup -- the grid-to-world coordinate mapping, why velocity
 control instead of teleporting, the corner-cutting/spline math, and why
 this specific obstacle layout (not a maze) was needed to make the
 cost-map routing visible -- is in `WRITEUPS.md`.
 
+## Lidar sensor in 3D
+
+`--sensor` swaps the perfect-map planning above for `nav/sim3d/lidar.py`'s
+`Lidar3D`: a real raycast sensor (`pybullet.rayTestBatch`, 48 rays in a
+circle) instead of pygame's 2D radius circle -- a wall can block the view
+of what's behind it now, which a radius circle can't represent. The robot
+plans against `nav.sensor.KnownGrid` (the *exact* class the pygame sensor
+mode uses, unchanged) built from whatever the lidar has actually hit,
+rescans every 0.3s as it moves, and replans the instant it discovers
+something new:
+
+```bash
+python3 pybullet_main.py --sensor                # lidar-limited knowledge, replans on discovery
+python3 pybullet_main.py --sensor --smooth raw   # same, but undo the path smoothing too
+```
+
+`nav/scratch/pybullet_lidar_test.py` is the standalone sanity check: one
+scan from a fixed position against a hardcoded wall, confirming the raycasts
+actually find it. Building the real version surfaced a genuine bug worth
+knowing about: a ray hits an obstacle's surface at an exact cell boundary
+(e.g. `x=8.5` for a 1-meter cell), which is ambiguous to round to a grid
+cell and can even round to the *free* cell in front of the wall instead
+of the wall itself. Fixed by nudging the hit point slightly further along
+the ray, past the surface, before converting it to a cell -- see
+`WRITEUPS.md` for the full failure mode (it briefly made the robot
+"discover" that its own current cell was an obstacle).
+
+## Multiple robots
+
+`pybullet_multi_robot_main.py`: a wall with a single one-cell-wide gap in
+it, robot A starting on one side and robot B on the other, each one's
+goal is the *other's* start -- a forced head-on swap through the same
+narrow corridor. The coordination policy:
+
+- **Robot A has strict right-of-way.** It plans once against the static
+  grid and never looks at B again.
+- **Robot B always treats A's current cell as a dynamic obstacle** (the
+  same technique the pygame `MovingObstacle` replanning logic used, just
+  with a robot instead of a scripted one) and replans every 0.2s. When A
+  is occupying the only route, B's planner reports no path -- B holds
+  position and retries next tick rather than crashing.
+- **A hard safety-distance stop** is layered on top as a failsafe against
+  replanning latency: if the two robots' actual distance ever closes
+  below 1.0m, B is forced to stop that frame regardless of what its own
+  plan says.
+
+Because B always yields and A never does, there's no scenario where both
+wait forever -- a symmetric "both replan around each other" policy could
+genuinely deadlock face-to-face in a corridor this narrow; strict
+priority rules that out by construction. `nav/scratch/pybullet_multi_robot_test.py`
+is the standalone sanity check: two robots on non-conflicting paths, no
+priority scheme needed, confirming the basics work before adding the
+forced conflict.
+
+```bash
+python3 pybullet_multi_robot_main.py --headless --max-seconds 60
+```
+
+## Scale benchmark
+
+`nav/scale_benchmark.py` holds obstacle density fixed (20%) and
+varies grid size (20x20, 50x50, 100x100, 200x200; 8 trials each) instead
+of the other way around -- the direct answer to "how does this scale to
+a bigger grid?" Full data in `benchmark_results/scale_results.csv`, plot
+in `benchmark_results/scale_comparison.png`, analysis in
+`benchmark_results/scale_writeup.md`.
+
+| Size | Cells | Dijkstra avg | A\* avg | RRT avg | RRT found path |
+|---:|---:|---:|---:|---:|---:|
+| 20x20 | 400 | 0.439ms | 0.211ms | 0.431ms | 8/8 |
+| 50x50 | 2,500 | 2.610ms | 0.838ms | 3.964ms | 8/8 |
+| 100x100 | 10,000 | 9.588ms | 1.225ms | 118.834ms | 7/8 |
+| 200x200 | 40,000 | 61.985ms | 10.332ms | 267.127ms | 5/8 |
+
+A 100x increase in cells grows Dijkstra's runtime 141x but A\*'s only
+49x -- A\*'s search effort actually shrinks as a *fraction* of the grid
+as it grows (15.4% of the grid at 20x20, 7.0% at 200x200), since a
+heuristic-guided search tracks start-to-goal distance far more than
+total grid area. RRT is the outlier: 620x slower over the same
+increase, and its completeness degrades with scale (8/8 -> 8/8 -> 7/8 ->
+5/8) even with its step size and iteration budget both scaled up for
+fairness, because its unindexed nearest-neighbor search over a growing
+tree list is the real bottleneck, not the tuning. Full breakdown in
+`benchmark_results/scale_writeup.md`.
+
 ## Repo layout
 
 ```
 nav/
-  grid.py          Grid model: cells, obstacles, start/goal, neighbors, cost map
+  grid.py          Grid model: cells, obstacles, start/goal, neighbors, cost map, size param
   algorithms.py    Dijkstra, A*, edge-case handling, path cost
   rrt.py           RRT (Rapidly-exploring Random Tree)
-  sensor.py        Simulated lidar + the KnownGrid the robot plans against
+  sensor.py        Simulated lidar (2D radius) + the KnownGrid the robot plans against
   heuristics.py    Manhattan / Euclidean / Chebyshev / Octile / scaled
   obstacles.py     Moving obstacles + the replanning policy
   maze.py          Recursive-backtracking maze generator
   visualizer.py    The pygame app
-  benchmark.py     20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
+  benchmark.py       20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
+  scale_benchmark.py 20x20 - 200x200 grid-size scaling benchmark -> CSV + plot
   sim3d/           PyBullet world-building, path smoothing, robot control
     coords.py        Grid-cell <-> world-meter conversion
     world.py         Ground plane, obstacle bodies, debug-line path drawing
     smoothing.py     Collinear simplification, Chaikin corner-cutting, Catmull-Rom spline
     robot.py         Robot: drives an r2d2 body toward waypoints via velocity control
+    lidar.py         Lidar3D: real raycast sensor (pybullet.rayTestBatch)
   scratch/         Standalone throwaway scripts used to prove each piece
                     works before it was wired into the visualizer/pybullet_main
-benchmark_results/  Generated CSV, plot, and writeup from benchmark.py
-pybullet_main.py    The PyBullet 3D demo (plan -> smooth -> drive)
+benchmark_results/  Generated CSVs, plots, and writeups from both benchmarks
+pybullet_main.py             Single-robot PyBullet demo (plan -> smooth -> drive, + --sensor)
+pybullet_multi_robot_main.py Two-robot corridor-conflict + priority/deadlock demo
 WRITEUPS.md         Algorithm explanations, replanning policy, cost map,
-                     sensor model, PyBullet port, and the heuristic
-                     experiments' findings
+                     sensor model, PyBullet port, 3D lidar, multi-robot
+                     coordination, and the heuristic experiments' findings
 ```

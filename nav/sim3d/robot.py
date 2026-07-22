@@ -2,8 +2,8 @@ import math
 
 import pybullet as p
 
-DEFAULT_SPEED = 2.0
-DEFAULT_TURN_SPEED = 4.0
+DEFAULT_SPEED = 20.0
+DEFAULT_TURN_SPEED = 22.0
 ARRIVE_RADIUS = 0.2
 # Below this heading error (radians), start driving forward as well as
 # turning; above it, turn in place first -- keeps the robot from

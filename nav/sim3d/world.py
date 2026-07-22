@@ -11,13 +11,15 @@ COST_MAP_PATH_COLOR = (0.1, 0.5, 0.95)
 WAYPOINT_MARKER_COLOR = (1.0, 0.85, 0.1, 1.0)
 START_COLOR = (0.2, 0.8, 0.4, 1.0)
 GOAL_COLOR = (0.9, 0.25, 0.25, 1.0)
+ROBOT_A_COLOR = (0.1, 0.7, 0.9, 1.0)
+ROBOT_B_COLOR = (0.95, 0.55, 0.1, 1.0)
 
 
 def connect(gui=True):
     """Open a PyBullet connection and load the ground plane. This is the
-    only new "physics interface" code Week 4 needed -- the grid model and
-    A* itself (nav/grid.py, nav/algorithms.py) are unchanged from pygame,
-    imported and reused as-is."""
+    only new "physics interface" code the 3D port needed -- the grid
+    model and A* itself (nav/grid.py, nav/algorithms.py) are unchanged
+    from pygame, imported and reused as-is."""
     p.connect(p.GUI if gui else p.DIRECT)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setGravity(0, 0, -9.8)

@@ -14,11 +14,16 @@ class Grid:
     GOAL = 3
 
 
-    def __init__(self):
+    def __init__(self, size=None):
+        # Defaults to the pygame visualizer's GRID_SIZE; the scale
+        # benchmark (nav/scale_benchmark.py) is the only caller that
+        # passes something else -- everywhere else, Grid() behaves
+        # exactly as before.
+        self.size = size or GRID_SIZE
         self.cells = []
-        for _ in range(GRID_SIZE):
+        for _ in range(self.size):
             row = []
-            for _ in range(GRID_SIZE):
+            for _ in range(self.size):
                 row.append(Grid.FREE)
             self.cells.append(row)
         self.start = None
@@ -27,12 +32,12 @@ class Grid:
         self.diagonal = False
         # Weighted-terrain mode (obstacle inflation, see compute_cost_map)
         self.cost_map_enabled = False
-        self.cost = [[1.0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+        self.cost = [[1.0 for _ in range(self.size)] for _ in range(self.size)]
 
 
     def clear(self):
-        for row in range(GRID_SIZE):
-            for col in range(GRID_SIZE):
+        for row in range(self.size):
+            for col in range(self.size):
                 self.cells[row][col] = Grid.FREE
         self.start = None
         self.goal = None
@@ -40,8 +45,8 @@ class Grid:
 
 
     def is_valid(self, row, col):
-        return 0 <= row < GRID_SIZE and 0 <= col < GRID_SIZE
-    
+        return 0 <= row < self.size and 0 <= col < self.size
+
 
     def is_obstacle(self, row, col):
         return self.is_valid(row, col) and self.cells[row][col] == Grid.OBSTACLE

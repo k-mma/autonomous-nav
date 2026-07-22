@@ -1,10 +1,10 @@
 """
-Day 16 mini-MVP: does PyBullet even work here? Load the empty world, drop
-the r2d2 example robot into it, let physics settle, confirm nothing
-explodes. Stop here -- the grid/A*/robot-driving work is nav/sim3d/ and
-pybullet_main.py, not this file.
+Standalone sanity check: does PyBullet even work here? Load the empty
+world, drop the r2d2 example robot into it, let physics settle, confirm
+nothing explodes. Stop here -- the grid/A*/robot-driving work is
+nav/sim3d/ and pybullet_main.py, not this file.
 
-Run with a real GUI window (the actual "sanity check" the plan asks for):
+Run with a real GUI window (the actual visual sanity check):
     python3 -m nav.scratch.pybullet_setup_test
 
 Run headless, e.g. in CI or over SSH with no display (--headless swaps

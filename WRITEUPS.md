@@ -1,12 +1,12 @@
 # Writeups
 
-Plain-English explanations for everything the project plan's "learn" days
-asked me to be able to explain cold, plus the concrete observations behind
-each design decision. Organized by week. Where a claim is backed by a
-script, the script and its actual output are referenced rather than
-restated from memory -- rerun them if you want to confirm a number.
+Plain-English explanations of how each piece works, plus the concrete
+observations behind each design decision. Organized by topic. Where a
+claim is backed by a script, the script and its actual output are
+referenced rather than restated from memory -- rerun them if you want to
+confirm a number.
 
-## Week 1 -- Dijkstra and A*
+## Dijkstra and A*
 
 ### How Dijkstra works
 
@@ -62,7 +62,7 @@ either crash or silently do the wrong thing:
 Verified in `nav/scratch/edge_cases_test.py` -- each case is forced on a
 hand-built grid and prints its own reason with zero UI involved.
 
-## Week 2 -- RRT, cost map, and replanning
+## RRT, cost map, and replanning
 
 ### How RRT works, and why it's fundamentally different from grid search
 
@@ -100,7 +100,7 @@ that costs it against Dijkstra/A* on this domain.
 
 ### Cost map / weighted terrain (`Grid.compute_cost_map`)
 
-Through Week 1, the grid was strictly binary: a cell was either free
+Originally the grid was strictly binary: a cell was either free
 (cost 1 to enter) or an obstacle (impassable). `compute_cost_map` adds a
 third state in spirit, without adding a third cell type: free cells
 *near* an obstacle get a cost between 1.0 and `1 + COST_MAX_EXTRA`,
@@ -164,7 +164,7 @@ robot marker actually advances across the grid, and it detours through an
 adjacent row exactly when the obstacle blocks its planned path -- i.e. the
 replanning isn't just "doesn't crash," it visibly reroutes.
 
-## Week 3 -- sensor model, heuristics, and diagonal movement
+## Sensor model, heuristics, and diagonal movement
 
 ### Why sensor uncertainty matters, and how the simulated lidar works
 
@@ -214,8 +214,8 @@ belief only lingers for cells outside current sensor range).
 
 ### Inadmissible heuristics: does 1.5x actually break anything?
 
-The plan's experiment was to multiply Manhattan by 1.5 and "watch what
-breaks." First finding, which took a wrong turn to get to: **a "perfect"
+The experiment was to multiply Manhattan by 1.5 and see what actually
+breaks in practice. First finding, which took a wrong turn to get to: **a "perfect"
 maze (recursive backtracking, no loops) has exactly one route between any
 two cells.** There's nothing for a bad heuristic to get wrong when there's
 only one possible path -- `nav/scratch/heuristic_experiment.py` originally
@@ -260,8 +260,8 @@ Added 8-directional movement to `Grid.get_neighbors` (`nav/grid.py`):
 diagonal steps cost `sqrt(2)`, and are only allowed when *both* orthogonal
 cells adjacent to the move are free -- otherwise a "diagonal" step would
 clip through a solid wall corner, which isn't a real move. That corner
-check wasn't part of the original plan; it came up while implementing and
-is worth calling out since it's a genuine correctness bug in naive
+check wasn't obvious up front; it came up while implementing and is
+worth calling out since it's a genuine correctness bug in naive
 8-directional implementations, not just a style choice.
 
 Manhattan distance is `dr + dc` -- it assumes you can only ever move one
@@ -301,13 +301,13 @@ made it the wrong test bed for the heuristic experiments above, but it's
 useful on its own as an interesting, always-solvable stress test for the
 visualizer and the replanning logic.
 
-## Week 4 -- PyBullet port
+## PyBullet port
 
 ### What actually had to be new code
 
-The exit goal was "a robot navigating a 3D environment using the same A*
-code from pygame," and it's worth being precise about how literal that
-is: `pybullet_main.py` imports `nav.grid.Grid` and
+The goal was a robot navigating a 3D environment using the same A* code
+as the pygame visualizer, and it's worth being precise about how literal
+that is: `pybullet_main.py` imports `nav.grid.Grid` and
 `nav.algorithms.find_path` directly, unmodified, and calls them exactly
 the way `nav/visualizer.py` does. Every new file lives under
 `nav/sim3d/` and is strictly about the physics interface -- turning grid
@@ -327,9 +327,10 @@ actually searched, cell for cell.
 
 ### Why `resetBaseVelocity`, not teleporting the robot
 
-The plan is explicit that Days 17-18 should "drive the robot along A*
-waypoints using velocity control" and that it "won't move smoothly yet."
-The tempting shortcut is `p.resetBasePositionAndOrientation(robot_id,
+The goal was to drive the robot along A* waypoints using velocity
+control, not to make it look smooth on the first pass (that's what the
+smoothing step below is for). The tempting shortcut is
+`p.resetBasePositionAndOrientation(robot_id,
 waypoint, ...)` every frame -- it would "work" in the sense of the robot
 visibly moving along the path, but it's not driving, it's teleporting;
 PyBullet's physics engine never gets a velocity to integrate, so nothing
@@ -356,22 +357,23 @@ Three functions, used in sequence:
    handful of real corners to work with instead of dozens of redundant
    knots along every straight stretch. Not smoothing by itself -- pure
    cleanup before smoothing.
-2. **`chaikin_smooth`** -- the "simple corner-cutting" the plan asks for
-   first. Each pass replaces every corner with two points 1/4 and 3/4 of
-   the way along its adjacent edges; repeated a few times this rounds
-   every corner into a curve. Cheap, easy to reason about, and the
-   result only *approaches* the original path -- except the two
-   endpoints, which are kept exact here (unlike the textbook version of
-   Chaikin, which cuts those too) so the robot still starts and ends in
-   the actual start/goal cell instead of near it.
-3. **`catmull_rom_spline`** -- the "spline fit if time allows" upgrade.
-   Unlike Chaikin, a Catmull-Rom spline passes *exactly* through every
-   control point, not just the endpoints, while still arriving at each
-   one smoothly instead of on a sharp corner. This is what
-   `pybullet_main.py` drives by default (`--smooth spline`); `--smooth
-   corner_cut` and `--smooth raw` (no smoothing at all -- the literal
-   Days 17-18 behavior) are there specifically so the difference is easy
-   to see and describe, not just claimed.
+2. **`chaikin_smooth`** -- simple corner-cutting, done first because it's
+   the cheapest thing that could possibly work. Each pass replaces every
+   corner with two points 1/4 and 3/4 of the way along its adjacent
+   edges; repeated a few times this rounds every corner into a curve.
+   Cheap, easy to reason about, and the result only *approaches* the
+   original path -- except the two endpoints, which are kept exact here
+   (unlike the textbook version of Chaikin, which cuts those too) so the
+   robot still starts and ends in the actual start/goal cell instead of
+   near it.
+3. **`catmull_rom_spline`** -- the follow-up upgrade once corner-cutting
+   proved the concept. Unlike Chaikin, a Catmull-Rom spline passes
+   *exactly* through every control point, not just the endpoints, while
+   still arriving at each one smoothly instead of on a sharp corner.
+   This is what `pybullet_main.py` drives by default (`--smooth
+   spline`); `--smooth corner_cut` and `--smooth raw` (no smoothing at
+   all, the pre-smoothing baseline) are there specifically so the
+   difference is easy to see and describe, not just claimed.
 
 The one thing that never changes across all three modes is
 `Robot.drive_toward` -- same controller, same heading-error logic, every
@@ -383,21 +385,20 @@ for why smoothing matters, demonstrated rather than asserted.
 
 ### Porting the cost map, and why this demo grid isn't a maze
 
-`grid.cost_map_enabled` / `grid.refresh_cost_map()` (`nav/grid.py`) are
-already grid-generic -- Week 2 built them to work through
-`get_neighbors`, independent of who's rendering the grid -- so "porting"
-the cost map to PyBullet took zero new code. `pybullet_main.py` just
-plans twice, once with `cost_map_enabled = False` and once `True`, and
-draws both routes as PyBullet debug lines (red = binary-obstacle route,
-blue = cost-map route) so the difference in path *shape* the plan asks
-to observe is directly visible in the GUI instead of inferred from
-numbers.
+`grid.cost_map_enabled` / `grid.refresh_cost_map()` (`nav/grid.py`) were
+already built to work through `get_neighbors`, independent of who's
+rendering the grid -- so "porting" the cost map to PyBullet took zero
+new code. `pybullet_main.py` just plans twice, once with
+`cost_map_enabled = False` and once `True`, and draws both routes as
+PyBullet debug lines (red = binary-obstacle route, blue = cost-map
+route) so the difference in path *shape* is directly visible in the GUI
+instead of inferred from numbers.
 
 That comparison needs room to actually differ, which is why
 `build_demo_grid()` places one large 9x9 obstacle block instead of
 reusing `nav/maze.py`'s recursive-backtracking maze (the same reason it
-was the wrong test bed for the heuristic experiments in Week 3, see
-above): a perfect maze's corridors are exactly one cell wide everywhere,
+was the wrong test bed for the heuristic experiments above): a perfect
+maze's corridors are exactly one cell wide everywhere,
 so there's no free space *around* an obstacle to route through with
 clearance -- inflating obstacle cost there mostly just makes the one
 available corridor pricier, not differently shaped. An open block with
@@ -456,3 +457,152 @@ function it actually has), and `pip install` the patched source tree
 directly. Worth recording here rather than just fixing silently, since
 "the install didn't work out of the box" is itself a real thing to be
 able to explain if asked about the PyBullet leg of this project.
+
+## 3D lidar, multiple robots, scale
+
+### Making the robots faster
+
+`nav/sim3d/robot.py`'s defaults were raised well above the original
+2.0 m/s / 4.0 rad/s starting point, both for a snappier demo. Before
+raising them, the headroom was checked experimentally: 6, 8, and 10 m/s
+tested head-to-head (same `drive_toward` controller, same r2d2), and all
+three reached the target with the base staying flat the whole time
+(`max_z` never left its resting height -- no bouncing, no tipping),
+confirming there's plenty of margin above the original default before
+anything physically breaks.
+
+### Porting the sensor model to real raycasts (`nav/sim3d/lidar.py`)
+
+The 2D sensor was "every obstacle within radius R" -- a circle, with no
+concept of line of sight. `Lidar3D.scan` replaces that with
+`pybullet.rayTestBatch`: 48 rays cast outward from the robot's position,
+and whatever each ray's *first* hit is becomes a sensed obstacle. A wall
+can now block the view of what's behind it, which a radius circle
+structurally cannot represent -- this is a real capability upgrade, not
+just a reimplementation in a new coordinate space.
+
+Two things had to be right for this to work at all, both found by
+actually running it, not by reasoning about the API in the abstract:
+
+- **Rays can't originate at the robot's own center.** A ray that starts
+  literally inside (or on the surface of) the sensing robot's own
+  collision shape hits *itself* first, every time, regardless of
+  `ignore_body_id` -- rayTestBatch reports the first hit along the ray,
+  and the robot's own hull is that hit. Fixed by starting each ray
+  `ORIGIN_OFFSET = 0.35` m out from center, in the ray's own direction,
+  rather than at the exact center point.
+- **A hit lands exactly on a cell boundary, and rounding that is
+  ambiguous.** An obstacle box's near face sits at, e.g., `x = 8.5` for
+  a 1.0m cell size -- precisely the boundary between free cell 8 and
+  obstacle cell 9. `nav/scratch/pybullet_lidar_test.py`'s standalone scan
+  didn't surface this because its one hardcoded scan never happened to
+  land exactly on a boundary; the real integration in
+  `pybullet_main.py --sensor` did, immediately: `newly_seen` sets came
+  back containing cells like `(12, 8)` -- the *free* cell directly in
+  front of the real wall at column 9-17, not the wall itself. Python's
+  `round()` is round-half-to-even, so a hit at exactly `x=8.5` doesn't
+  even consistently round toward the obstacle. Left unfixed, this
+  poisons `known_obstacles` with phantom obstacles in real free space,
+  and eventually one of those phantom cells was the robot's *own*
+  current cell -- every subsequent replan immediately failed with
+  `start_blocked`, because `KnownGrid` correctly (if confusingly) saw
+  the robot's own position as an obstacle. Fixed in `Lidar3D.scan` by
+  nudging the hit point `HIT_NUDGE = 0.1` m further along the ray, past
+  the surface, before converting it to a grid cell -- a hit at `x=8.5`
+  moving in the `+x` direction becomes `x=8.6`, which rounds to 9
+  unambiguously.
+
+With both fixed, `pybullet_main.py --sensor` reliably explores roughly a
+quarter of the grid (21-24 of 81 real obstacle cells, across repeated
+runs) -- only what it actually needed to see to solve the specific
+route -- and replans live as each new obstacle enters view, verified by
+the printed "sensed N new obstacle cell(s) -- replanning" trail matching
+up with the robot actually changing course rather than driving through
+where the (still just-discovered) wall is.
+
+### Multiple robots (`pybullet_multi_robot_main.py`)
+
+The layout is a wall with exactly one row-tall gap in it. Robot A starts
+west of the gap, robot B starts east of it, and each one's *goal* is the
+other's *start* -- forcing a genuine head-on conflict through the same
+one-cell-wide corridor, not just two robots that happen to share a grid.
+
+**Coordination policy:**
+
+- **A has strict right-of-way.** It plans once, against the static grid
+  only, and never looks at B again for the rest of the run.
+- **B always treats A's current cell (plus a 1-cell buffer,
+  `cell_block`) as a dynamic obstacle** and replans every
+  `REPLAN_PERIOD_S = 0.2` s -- the exact same technique the pygame
+  `MovingObstacle` replanning logic used (mark the moving thing as a
+  temporary wall, replan around it), just with a robot as the "moving
+  obstacle" instead of a scripted bouncer.
+- **When A is in the corridor, B's planner reports no path.** B holds
+  position (`waiting = True`) and just retries on the next replan tick,
+  rather than crashing on `None` or spinning in place trying to reach an
+  unreachable target.
+
+**Why this can't turn into a true deadlock:** a *symmetric* version of
+this policy -- both robots treating each other as an obstacle and
+neither one ever committing to go first -- genuinely can deadlock face
+to face in a corridor this narrow: each one sees the other blocking its
+only route and waits, forever, since neither ever decides to move first.
+Breaking the symmetry with a strict priority order rules this out
+structurally, not by luck: A never checks B's position at all, so A
+always has somewhere to go; B always yields when it must. There is no
+state where both are simultaneously waiting on each other, because only
+one of them (B) is ever capable of waiting in the first place.
+
+**The resolution policy chosen is "B waits," not "B backs up."** Backing
+up (reversing along the already-driven path) would need its own argument
+for why it's always safe to reverse through cells already confirmed
+clear -- true here, but it's solving a problem ("B is already committed
+partway into a blocked corridor") that waiting avoids ever creating: B
+never enters the corridor while A occupies it in the first place, because
+its own replanning refuses to route it there. Waiting in place is simply
+the strictly simpler policy given that guarantee.
+
+**A hard safety-distance stop is layered on top, deliberately not relied
+on as the primary mechanism:** grid-based replanning runs every 0.2s, not
+every physics tick, so a fast robot could in principle close real-world
+distance in the gap between replans. If the two robots' actual distance
+ever drops below `SAFETY_STOP_RADIUS = 1.0` m, B is forced to stop that
+exact frame regardless of what its current plan says. This never actually
+triggers in normal runs (the grid-level policy keeps them well clear
+first) -- it exists as a failsafe against replanning latency, the same
+role an emergency stop plays underneath a real path planner.
+
+**One scenario-design bug worth recording:** the first version of this
+demo had robot A permanently parked exactly on top of robot B's goal
+cell after "arriving," because goal(A) == start(B) by construction (a
+swap-sides scenario makes that coincidence unavoidable) and a robot that
+finishes just sits at its exact goal position forever. B's own
+destination was therefore permanently blocked by A's corpse, and B never
+finished. Fixed by nudging an arrived robot 1.5m off to the side
+(`NavAgent._park`) and excluding arrived robots from the other's blocked-
+cell set entirely -- once a robot is done, it stops being an obstacle for
+anyone.
+
+### Scale benchmark (`nav/scale_benchmark.py`)
+
+`nav.grid.Grid` gained an optional `size` parameter (defaulting to the
+usual 25, so every existing caller is unaffected) specifically so this
+benchmark could reuse the exact same `Grid`/`dijkstra`/`astar`/`rrt` code
+at 20x20 through 200x200 instead of writing a parallel implementation.
+
+The headline number: going from 400 to 40,000 cells (100x) grows
+Dijkstra's runtime 141x, A*'s only 49x, and RRT's 620x. The A* number is
+the interesting one -- its cells-explored *as a fraction of the grid*
+actually shrinks as the grid grows (15.4% at 20x20, down to 7.0% at
+200x200), because a heuristic search's effort tracks the distance
+between start and goal, which doesn't grow as fast as total grid area
+does. RRT's numbers are the cautionary one: even after scaling its
+`step_size` and `max_iters` up with grid size specifically to keep the
+comparison fair, its completeness still degraded under scale (8/8 at
+20x20 and 50x50, down to 7/8 at 100x100, 5/8 at 200x200) -- because the
+actual bottleneck (an unindexed linear scan over every tree node to find
+the nearest one each iteration) gets worse the more the tree has to grow
+to cross a bigger space, and no amount of parameter tuning removes an
+`O(n)`-per-iteration search itself. Full numbers and the specific worst
+case (a 200x200 trial that grew a 1,504-node tree and still never found
+the goal) are in `benchmark_results/scale_writeup.md`.

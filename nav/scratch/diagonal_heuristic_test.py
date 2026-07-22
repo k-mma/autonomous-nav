@@ -37,7 +37,7 @@ def run_trial(seed, verbose):
     optimal_path, _, _ = dijkstra(grid, start, goal)
     if optimal_path is None:
         return {}
-    optimal_cost = path_cost(optimal_path)
+    optimal_cost = path_cost(grid, optimal_path)
 
     if verbose:
         print(f"--- seed {seed} | start={start} goal={goal} | optimal cost: {optimal_cost:.3f} ---")
@@ -45,7 +45,7 @@ def run_trial(seed, verbose):
     suboptimal_by_name = {}
     for name, heuristic in HEURISTICS:
         path, explored, _ = astar(grid, start, goal, heuristic=heuristic)
-        cost = path_cost(path) if path else None
+        cost = path_cost(grid, path) if path else None
         is_suboptimal = cost is not None and cost > optimal_cost + 1e-9
         suboptimal_by_name[name] = is_suboptimal
         if verbose:

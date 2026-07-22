@@ -33,11 +33,10 @@ def simplify_collinear(points):
 def chaikin_smooth(points, iterations=3):
     """Corner-cutting (Chaikin's algorithm): each pass replaces every
     corner with two points 1/4 and 3/4 of the way along its adjacent
-    edges, rounding it off. Cheap and simple -- the "first" smoothing
-    pass the plan calls for -- but it only approaches the original path,
-    it doesn't pass through the original waypoints except the two ends
-    (which are kept exact here so the robot still starts/ends in the
-    right cell)."""
+    edges, rounding it off. Cheap and simple -- the first smoothing pass
+    worth trying -- but it only approaches the original path, it doesn't
+    pass through the original waypoints except the two ends (which are
+    kept exact here so the robot still starts/ends in the right cell)."""
     pts = list(points)
     if len(pts) < 3:
         return pts
