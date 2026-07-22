@@ -1,3 +1,5 @@
+import math
+
 import pybullet as p
 import pybullet_data
 
@@ -54,13 +56,40 @@ def build_obstacles(grid, cell_size=WORLD_CELL_SIZE, height=OBSTACLE_HEIGHT):
 
 
 def mark_cell(row, col, color, cell_size=WORLD_CELL_SIZE, height=0.05):
-    """A flat marker disc for a start/goal cell -- purely visual, no
-    collision shape, so it never interferes with planning or driving."""
+    """A flat marker disc for a start cell -- purely visual, no collision
+    shape, so it never interferes with planning or driving."""
     x, y, _ = grid_to_world(row, col, cell_size)
     visual_shape = p.createVisualShape(
         p.GEOM_CYLINDER, radius=cell_size * 0.4, length=height, rgbaColor=color
     )
     return p.createMultiBody(baseMass=0, baseVisualShapeIndex=visual_shape, basePosition=[x, y, height / 2])
+
+
+def mark_goal_cell(row, col, color, cell_size=WORLD_CELL_SIZE, height=0.05):
+    """A flat diamond marker (a box rotated 45 degrees about Z) for a
+    goal cell -- deliberately a different shape from mark_cell's disc so
+    a start and a goal sitting on the *same* cell (as they do in the
+    two-robot swap-sides scenario) are both visible and distinguishable
+    rather than one marker silently overwriting the other. Raised
+    slightly higher in z than a co-located start disc to avoid z-fighting."""
+    x, y, _ = grid_to_world(row, col, cell_size)
+    half = cell_size * 0.3
+    visual_shape = p.createVisualShape(
+        p.GEOM_BOX, halfExtents=[half, half, height / 2], rgbaColor=color
+    )
+    orientation = p.getQuaternionFromEuler([0, 0, math.pi / 4])
+    z = height * 1.5
+    return p.createMultiBody(
+        baseMass=0, baseVisualShapeIndex=visual_shape, basePosition=[x, y, z], baseOrientation=orientation
+    )
+
+
+def label_cell(row, col, text, color, cell_size=WORLD_CELL_SIZE, height=1.2):
+    """Floating text above a cell (e.g. "A start", "B goal") -- the
+    unambiguous fallback when shape/color alone might not read clearly at
+    a glance, especially with two markers sharing one cell."""
+    x, y, _ = grid_to_world(row, col, cell_size)
+    return p.addUserDebugText(text, [x, y, height], textColorRGB=color[:3], textSize=1.3)
 
 
 def draw_path(path_cells, color, cell_size=WORLD_CELL_SIZE, z=0.05, width=3, gui=True):

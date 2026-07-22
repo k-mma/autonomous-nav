@@ -10,6 +10,16 @@ ARRIVE_RADIUS = 0.2
 # strafing sideways toward a target behind it, which resetBaseVelocity
 # would otherwise happily do (it has no notion of "forward").
 FACE_TARGET_TOLERANCE = 0.2
+# Below this heading error, ease the turn rate down proportionally so it
+# settles smoothly instead of overshooting; above it, turn at the full
+# turn_speed. Pure proportional control (rate = error * gain) for *every*
+# error, even large ones, decays too slowly to be worth it: for a full
+# 90-degree turn it took over 100 simulation steps just to turn enough to
+# start driving at all -- a robot whose very first waypoint happens to be
+# behind or to the side of it would sit rotating in place noticeably
+# longer than it should. Full-rate-until-close fixes that without giving
+# up the smooth settle for small corrections.
+TURN_EASE_THRESHOLD = 0.5
 
 
 class Robot:
@@ -44,10 +54,17 @@ class Robot:
     def stop(self):
         p.resetBaseVelocity(self.body_id, linearVelocity=[0, 0, 0], angularVelocity=[0, 0, 0])
 
-    def drive_toward(self, target_xy):
+    def drive_toward(self, target_xy, steer_target=None):
         """One control step toward target_xy = (x, y). Returns True once
-        the robot is within arrive_radius (and stops it), False
-        otherwise (call again next step)."""
+        the robot is within arrive_radius of target_xy (and stops it),
+        False otherwise (call again next step).
+
+        `steer_target`, if given, is aimed at *instead* of target_xy for
+        the purposes of picking a heading this step -- lets a caller (see
+        pybullet_multi_robot_main.py's local collision avoidance) nudge
+        the robot's immediate direction without changing what actually
+        counts as "arrived." Arrival is always judged against the real
+        target_xy, never the steering override."""
         x, y, _ = self.position()
         dx, dy = target_xy[0] - x, target_xy[1] - y
         dist = math.hypot(dx, dy)
@@ -55,7 +72,8 @@ class Robot:
             self.stop()
             return True
 
-        desired_yaw = math.atan2(dy, dx)
+        aim_x, aim_y = steer_target if steer_target is not None else target_xy
+        desired_yaw = math.atan2(aim_y - y, aim_x - x)
         yaw_error = (desired_yaw - self.heading() + math.pi) % (2 * math.pi) - math.pi
 
         if abs(yaw_error) > FACE_TARGET_TOLERANCE:
@@ -64,6 +82,9 @@ class Robot:
             vx = self.speed * math.cos(desired_yaw)
             vy = self.speed * math.sin(desired_yaw)
 
-        wz = max(-self.turn_speed, min(self.turn_speed, yaw_error * 4))
+        if abs(yaw_error) > TURN_EASE_THRESHOLD:
+            wz = self.turn_speed if yaw_error > 0 else -self.turn_speed
+        else:
+            wz = max(-self.turn_speed, min(self.turn_speed, yaw_error * 12))
         p.resetBaseVelocity(self.body_id, linearVelocity=[vx, vy, 0], angularVelocity=[0, 0, wz])
         return False

@@ -522,55 +522,66 @@ where the (still just-discovered) wall is.
 
 ### Multiple robots (`pybullet_multi_robot_main.py`)
 
-The layout is a wall with exactly one row-tall gap in it. Robot A starts
-west of the gap, robot B starts east of it, and each one's *goal* is the
-other's *start* -- forcing a genuine head-on conflict through the same
-one-cell-wide corridor, not just two robots that happen to share a grid.
+The layout is a real cross-street intersection: four square buildings,
+one per grid quadrant, leaving a 3-cell-wide "plus" of open street down
+the middle in both directions. Robot A drives the north-south street
+start to finish; robot B drives the east-west street start to finish.
+All four points -- A's start, A's goal, B's start, B's goal -- are
+different cells, and the two routes are the same length, so left to
+their own devices the robots reach the crossing at close to the same
+moment. This replaced an earlier layout (a single corridor with
+goal(A) == start(B), a "swap sides" scenario) specifically because that
+coincidence turned out to cause its own class of bugs -- see below.
 
-**Coordination policy:**
+**Coordination policy (current version -- see the bug list below for two
+earlier versions that didn't hold up):**
 
-- **A has strict right-of-way.** It plans once, against the static grid
-  only, and never looks at B again for the rest of the run.
-- **B always treats A's current cell (plus a 1-cell buffer,
-  `cell_block`) as a dynamic obstacle** and replans every
-  `REPLAN_PERIOD_S = 0.2` s -- the exact same technique the pygame
-  `MovingObstacle` replanning logic used (mark the moving thing as a
-  temporary wall, replan around it), just with a robot as the "moving
-  obstacle" instead of a scripted bouncer.
-- **When A is in the corridor, B's planner reports no path.** B holds
-  position (`waiting = True`) and just retries on the next replan tick,
-  rather than crashing on `None` or spinning in place trying to reach an
-  unreachable target.
+- **Both robots replan, symmetrically.** Every `REPLAN_PERIOD_S = 0.05` s,
+  each one runs A* against the real grid *plus* a block placed around the
+  *other's* current cell (`cell_block`, a 1-cell buffer) -- the exact
+  same technique the pygame `MovingObstacle` replanning logic used
+  (mark the moving thing as a temporary wall, replan around it), just
+  with a robot standing in for the moving obstacle on both sides at once.
+  A replan is only actually issued when the blocked cells changed or the
+  last attempt found nothing (`agent.waiting or current != last`) --
+  replanning unconditionally every tick was an earlier bug (see below),
+  and the fix generalizes cleanly to both robots being symmetric now.
+- **If a route genuinely isn't there, the blocked robot holds position**
+  (`waiting = True`) and retries on the next replan tick, rather than
+  crashing on `None` or driving into a wall.
+- **Neither robot gets a local steering nudge anymore.** An earlier
+  version had one robot (B) steer its aim point sideways every physics
+  step when the other got close, faster-reacting than the 0.05s replan
+  cadence. It's gone now -- see the bug entry below for why steering
+  turned out to be the wrong mechanism entirely, not just something that
+  needed better tuning.
 
-**Why this can't turn into a true deadlock:** a *symmetric* version of
-this policy -- both robots treating each other as an obstacle and
-neither one ever committing to go first -- genuinely can deadlock face
-to face in a corridor this narrow: each one sees the other blocking its
-only route and waits, forever, since neither ever decides to move first.
-Breaking the symmetry with a strict priority order rules this out
-structurally, not by luck: A never checks B's position at all, so A
-always has somewhere to go; B always yields when it must. There is no
-state where both are simultaneously waiting on each other, because only
-one of them (B) is ever capable of waiting in the first place.
-
-**The resolution policy chosen is "B waits," not "B backs up."** Backing
-up (reversing along the already-driven path) would need its own argument
-for why it's always safe to reverse through cells already confirmed
-clear -- true here, but it's solving a problem ("B is already committed
-partway into a blocked corridor") that waiting avoids ever creating: B
-never enters the corridor while A occupies it in the first place, because
-its own replanning refuses to route it there. Waiting in place is simply
-the strictly simpler policy given that guarantee.
+**Why symmetric replanning doesn't deadlock here, unlike the old
+corridor layout.** A *symmetric* "both treat the other as an obstacle"
+policy is exactly what could deadlock face to face in a single
+one-cell-wide corridor: each one sees the other blocking the only route
+and waits forever, since neither ever decides to go first, which is why
+the corridor-layout version of this demo used a strict priority order
+instead (see below). The intersection layout removes the reason that
+mattered: streets are 3 cells wide, so when A* finds the direct route
+blocked it almost always finds a real alternate route through the
+adjacent lane rather than reporting failure at all -- there's usually
+somewhere to go besides "wait." `waiting = True` still exists as a
+fallback for the rare moment neither lane is free, but it's a transient
+state on the way to a route reopening, not a standoff between two
+robots that refuse to yield.
 
 **A hard safety-distance stop is layered on top, deliberately not relied
-on as the primary mechanism:** grid-based replanning runs every 0.2s, not
-every physics tick, so a fast robot could in principle close real-world
-distance in the gap between replans. If the two robots' actual distance
-ever drops below `SAFETY_STOP_RADIUS = 1.0` m, B is forced to stop that
-exact frame regardless of what its current plan says. This never actually
-triggers in normal runs (the grid-level policy keeps them well clear
-first) -- it exists as a failsafe against replanning latency, the same
-role an emergency stop plays underneath a real path planner.
+on as the primary mechanism:** replanning runs every `REPLAN_PERIOD_S`,
+not every physics tick, so a fast robot could in principle close
+real-world distance in the gap between replans. If the two robots'
+actual distance ever drops below `SAFETY_STOP_RADIUS`, both are forced to
+stop that exact frame regardless of what their plans say. It exists as a
+failsafe against replanning latency, the same role an emergency stop
+plays underneath a real path planner -- and it checks real physical
+distance unconditionally, every step, with no exceptions (see the
+collision bug below for what happened when it briefly wasn't
+unconditional).
 
 **One scenario-design bug worth recording:** the first version of this
 demo had robot A permanently parked exactly on top of robot B's goal
@@ -582,6 +593,174 @@ finished. Fixed by nudging an arrived robot 1.5m off to the side
 (`NavAgent._park`) and excluding arrived robots from the other's blocked-
 cell set entirely -- once a robot is done, it stops being an obstacle for
 anyone.
+
+**A second bug, found by watching a live run rather than just the
+end-of-run pass/fail:** even after that fix, B looked stuck for several
+seconds right after A cleared the corridor, when the plan should already
+have been open. The cause was replanning B *unconditionally* every
+`REPLAN_PERIOD_S`, even when nothing had changed. Every fresh `plan()`
+call starts the new route from B's *rounded* current cell
+(`world_to_grid`), which snaps to a point slightly behind or off B's
+actual continuous position -- so a needless replan doesn't just waste
+work, it makes B briefly steer toward that snapped point instead of
+smoothly continuing, over and over, once per replan tick. Averaged over
+many ticks this looked exactly like "stuck," when it was actually
+"constantly restarting." Fixed by only calling `plan()` when B is
+currently waiting (no valid route yet) or when the blocked-cell set
+has actually changed since the last plan (`current_blockers !=
+last_blockers`) -- once A clears the corridor and the blocked set
+stabilizes at empty, B is simply left alone to drive the route it
+already has. (The same unconditional-replan mistake reappeared in a
+second form once the staging-cell fallback was added: the trigger
+condition included "replan whenever B isn't on a *final* plan," which
+fired every single tick for the entire drive to the staging point, not
+just when something changed. Same symptom, same fix -- drop that extra
+condition and rely purely on "waiting, or the blocked set changed.")
+
+**A third bug: the safety stop had a loophole that caused a real
+collision.** The distance check was originally `(not agent_a.arrived)
+and distance < SAFETY_STOP_RADIUS` -- deliberately skipped once A had
+"arrived," on the reasoning that a stationary, parked A poses no risk.
+In practice: B spends most of a fast run either blocked or held back by
+the safety stop itself, which means when the corridor *finally* clears
+-- the instant A reaches its goal -- B is often still sitting close by,
+about to lurch back into motion right as A crosses the finish line.
+That's exactly the moment the two are most likely to be near each
+other, and it's exactly the moment the one check that would have caught
+it switched itself off. Fixed by removing the `not agent_a.arrived`
+condition entirely -- the check now runs unconditionally, every step,
+regardless of A's state. A parked far away simply never trips it; nothing
+is lost by leaving it on.
+
+**A fourth bug, from the version of this demo that gave the priority
+robot (A) its own avoidance steering too:** the first version of the
+local avoidance layer applied to *both* robots,
+and used raw proximity ("is the other robot within AVOID_RADIUS") rather
+than checking whether it was actually in the way. Two failure modes came
+out of that, found by watching, not by reading the code:
+
+- A stationary B sitting near A's own goal caused A to *orbit* it
+  indefinitely -- the sideways push from raw proximity never turns off
+  near a stationary point, so A kept getting deflected before it could
+  close the last bit of distance to arrive. Fixed by projecting the
+  other robot onto the mover's straight-line path and only reacting when
+  it's both close *and* roughly ahead (`avoidance_target`'s perpendicular-
+  distance-and-"along" check) -- once the mover has drawn level with or
+  passed the obstacle, it's no longer "ahead" and the push stops on its
+  own, instead of persisting forever against something that isn't moving.
+- Even with that fixed, giving A a steering nudge at all is risky in a
+  way B's isn't: A's route was verified clear of every wall once, at
+  plan time, and never rechecked. Nudging it sideways for *any* reason,
+  including dodging B, can push it directly into a wall it has no idea
+  is there (this actually happened right at the corridor's mouth,
+  wedging A against the wall segment it was never routed through).
+  B doesn't have this problem because B *does* replan against the real
+  grid, so a shifted position is still a validated one next tick. The
+  fix was to only ever steer B -- A drives its original, verified route
+  with zero deflection, exactly as its "never reacts to B" design already
+  promised. B alone ends up carrying three independent, complementary
+  layers of collision avoidance (grid-level blocking, per-frame steering,
+  and the hard distance stop), which turns out to be enough: nothing
+  needs A's cooperation to stay clear of it.
+
+**Why the layout changed from a corridor to an intersection.** All four
+bugs above were found and fixed against the original "single corridor,
+goal(A) == start(B)" layout, and the fixes made that layout genuinely
+collision-free. But the coincidence itself kept generating new edge
+cases even after each individual bug was fixed -- A's goal and B's start
+(and vice versa) being the *same physical point* meant the two robots'
+zones of relevance always overlapped near both ends of the run, not just
+at the corridor. The more robust fix wasn't another patch, it was
+removing the coincidence: the current layout is a real cross-street
+intersection (four quadrant buildings, a 3-wide open street each way)
+where all four points -- both starts, both goals -- are different cells,
+and the only place the two robots' paths have any reason to come near
+each other is the crossing in the middle. The coordination policy above
+(priority, staging, steering, safety stop) didn't need to change at all
+to move to this layout -- it was already layout-agnostic -- which is
+itself a decent sign it was the right level to fix things at.
+
+**A fifth bug, found only after that move: a slow turn-in-place
+controller.** The corridor layout never exposed this, because A happened
+to spawn already facing the direction it needed to drive (straight down
+the one row that mattered). The intersection layout doesn't: A spawns
+facing its URDF's default heading and has to turn 90 degrees before it
+can drive south at all. `Robot.drive_toward` picked the turn rate with
+plain proportional control (`wz = yaw_error * 4`) for *any* size of
+error, including a full 90-degree one -- and proportional-only control
+decays multiplicatively, never linearly, so large errors shrink very
+slowly at first. Measured directly: it took over 130 simulation steps
+(0.5+ seconds) of turning in place before the heading error dropped
+enough to start driving forward at all, during which A sat motionless at
+its exact spawn point. B, meanwhile, started moving immediately (its own
+first turn was small), so by the time A finally got going B already had
+a half-second head start -- enough that their paths, despite crossing at
+the exact center of the grid on paper, missed each other by 7+ meters in
+practice. Fixed with a two-phase turn controller in `nav/sim3d/robot.py`:
+turn at the full `turn_speed` while the heading error is large
+(`TURN_EASE_THRESHOLD = 0.5` rad), and only switch to proportional easing
+close to the target heading, where smooth settling actually matters and
+the correspondingly larger gain (raised from 4 to 12) no longer risks
+overshoot. After the fix, A starts translating within about 0.15s instead
+of 0.5+, and the two robots' closest approach at the crossing drops from
+7.8m (never really interacting) to under 2m.
+
+**A sixth issue, once that gap was mostly closed: a leftover, smaller
+timing asymmetry.** Fixing the turn controller closed most of the gap,
+but not all of it -- min approach distance was still around 1.9m,
+suspiciously identical whether or not the local avoidance layer was even
+active, which was the tell that avoidance wasn't the thing determining
+the outcome. The remaining cause: B's very first waypoint direction
+(east) happens to match r2d2's default spawn heading exactly, so B
+*also* needed zero turning, while A -- even with the fixed controller --
+still needed a real (if now fast) 90-degree turn. That's a second,
+smaller version of the identical head-start problem, from the same root
+cause: nothing about either robot's spawn orientation was ever chosen to
+match its route, both times by accident rather than design. Confirmed
+by disabling avoidance entirely and measuring the "natural" closest
+approach: 1.97m with default spawn headings, 0.44m once both robots are
+explicitly spawned already facing their first direction of travel
+(`baseOrientation` passed to `loadURDF`, computed from each route's
+initial heading) -- a genuinely synchronized crossing, both routes being
+equal length at equal speed. With that fixed and the local avoidance
+layer re-enabled, the closest approach lands around 0.5m (r2d2's own
+footprint radius is about 0.17m, so actual contact would need centers
+within roughly 0.34m -- 0.5m is close, not a graze). At that distance
+`SAFETY_STOP_RADIUS` (tightened from 1.0m to 0.55m specifically to allow
+this) engages: B's trail visibly curves as it approaches, then holds
+still for a beat exactly as A crosses in front of it, then resumes --
+confirmed consistent across five repeated runs in each smoothing mode
+(this simulation has no randomness anywhere, so identical inputs
+reliably reproduce the same near-miss, not just "usually").
+
+**A seventh issue: steering narrowed the crossing distance but didn't
+reliably prevent contact, so it was replaced with replanning entirely.**
+The 0.5m result above still relied on `SAFETY_STOP_RADIUS` actually
+catching every case -- a single hard distance check, unconditional but
+still just one layer, with no margin for physics-step timing variance
+(a real position update happens once per 1/240s step; the check only
+sees where a robot already is, not where it's about to be). In practice,
+runs of the live simulation showed the two robots actually making
+contact -- the steering nudge reduced how often the hard stop needed to
+save the day, but it didn't change what happens in the cases where it
+doesn't quite. Steering was always a patch on top of a fixed plan, not a
+plan itself; the fix was to stop treating "how do I not hit it" as a
+steering problem and go back to what the rest of this project already
+does well: when you detect something new, replan. Both robots now run
+the identical symmetric policy above -- detect the other's current cell,
+treat it as a temporary obstacle, replan a real A*-verified route around
+it, every `REPLAN_PERIOD_S = 0.05` s (tightened from the corridor
+layout's 0.2s specifically so the block tracks a fast-moving robot's
+cell before it's already moved through it). The printed waypoints during
+a run show this working directly -- e.g. robot A's route visibly bends
+through row 13 and back for a few replan ticks while B is in the way,
+then straightens back to a direct line the moment the block clears. The
+result: closest approach settles around 1.6m, consistently, across
+repeated runs in every smoothing mode -- not as dramatic a near-miss as
+the steering version's 0.5m, but the actual point was "don't collide,"
+and a route that's re-verified against the real grid every time it
+changes is a fundamentally more trustworthy way to guarantee that than
+a steering offset ever was.
 
 ### Scale benchmark (`nav/scale_benchmark.py`)
 

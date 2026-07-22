@@ -225,30 +225,79 @@ the ray, past the surface, before converting it to a cell -- see
 
 ## Multiple robots
 
-`pybullet_multi_robot_main.py`: a wall with a single one-cell-wide gap in
-it, robot A starting on one side and robot B on the other, each one's
-goal is the *other's* start -- a forced head-on swap through the same
-narrow corridor. The coordination policy:
+`pybullet_multi_robot_main.py`: four buildings, one per quadrant, leave a
+3-cell-wide "plus" of open street down the middle of the grid -- a real
+cross-street intersection. Robot A drives the north-south street start to
+finish; robot B drives the east-west street start to finish. All four
+points (A's start/goal, B's start/goal) are different cells -- an earlier
+version of this demo had goal(A) == start(B) by construction (a
+"swap sides through one corridor" layout) and that coincidence turned out
+to cause its own class of bugs, so the two robots' paths now only ever
+meet at the crossing in the middle, not at either one's start or goal.
+The two routes are the same length, so left alone they'd reach the
+crossing at close to the same moment -- both robots' start *and* goal
+cells are marked (a disc for start, a diamond for goal, colored and
+labeled per robot) so it's clear at a glance where each is headed. The
+coordination policy:
 
-- **Robot A has strict right-of-way.** It plans once against the static
-  grid and never looks at B again.
-- **Robot B always treats A's current cell as a dynamic obstacle** (the
-  same technique the pygame `MovingObstacle` replanning logic used, just
-  with a robot instead of a scripted one) and replans every 0.2s. When A
-  is occupying the only route, B's planner reports no path -- B holds
-  position and retries next tick rather than crashing.
-- **A hard safety-distance stop** is layered on top as a failsafe against
-  replanning latency: if the two robots' actual distance ever closes
-  below 1.0m, B is forced to stop that frame regardless of what its own
-  plan says.
+- **Both robots replan, symmetrically.** Every `REPLAN_PERIOD_S = 0.05` s,
+  each one runs A* against the real grid *plus* a block placed around the
+  *other's* current cell (`cell_block`) -- the same technique the pygame
+  `MovingObstacle` replanning logic used, just with a robot standing in
+  for the moving obstacle on both sides at once. Detecting the other robot
+  nearby produces a genuinely different, grid-verified route -- using the
+  street's spare width to slide into an adjacent lane -- not a steering
+  offset layered on top of an unrelated path. A replan is only actually
+  issued when the blocked cells changed or the last attempt found nothing,
+  to avoid interrupting a perfectly good drive already in progress every
+  single tick.
+- **If a route genuinely isn't there, the blocked robot holds position**
+  (`waiting = True`) and retries on the next replan tick, rather than
+  crashing on `None` or driving into a wall.
+- **A hard safety-distance stop is layered on top as an absolute last
+  resort, not the primary mechanism**: if the two robots' actual distance
+  ever closes below 0.55m (r2d2's own footprint radius is about 0.17m, so
+  contact needs centers within roughly 0.34m), both are forced to stop
+  that frame regardless of what their plans say -- checked
+  unconditionally, every step, with no exceptions. With replanning doing
+  its job, this rarely fires in practice.
 
-Because B always yields and A never does, there's no scenario where both
-wait forever -- a symmetric "both replan around each other" policy could
-genuinely deadlock face-to-face in a corridor this narrow; strict
-priority rules that out by construction. `nav/scratch/pybullet_multi_robot_test.py`
-is the standalone sanity check: two robots on non-conflicting paths, no
-priority scheme needed, confirming the basics work before adding the
-forced conflict.
+An earlier version of this avoided collisions with a per-frame *steering*
+nudge on top of a fixed plan, rather than replanning -- it visibly
+narrowed the crossing distance, but didn't reliably prevent actual
+contact, and nudging a robot's aim point risks steering it into a wall
+its plan never accounted for (real, and it happened). Replanning doesn't
+have that problem: a shifted route is A*-verified against the real grid
+every time, for both robots, so it can never point either one through a
+wall. `nav/scratch/pybullet_multi_robot_test.py` is the standalone sanity
+check: two robots on non-conflicting paths, no avoidance needed,
+confirming the basics work before adding the forced conflict.
+
+Both robots are also spawned already facing their first direction of
+travel (`baseOrientation` computed from each route's initial heading),
+not the URDF's default -- without that, one robot always happened to
+already face the right way while the other needed a real turn first,
+giving it a head start that was enough on its own to make the two miss
+each other by 7+ meters despite their routes crossing at the exact
+center of the grid on paper. With spawn headings synchronized, both
+robots genuinely detour around each other at the crossing -- confirmed by
+watching the replanned waypoints themselves shift into the next lane over
+and back -- landing a comfortable ~1.6m apart at closest, consistent
+across repeated runs in every smoothing mode (there's no randomness
+anywhere in this simulation, so identical inputs reliably reproduce the
+same outcome).
+
+Several real bugs turned up building this -- a permanently-parked robot
+blocking the other's goal, a replan loop that looked like a robot was
+frozen solid, a safety check with a loophole that let an actual collision
+through, a steering-based avoidance layer that made a robot orbit forever
+or steered it into a wall (and, even once those were fixed, still didn't
+reliably prevent contact -- which is why it was replaced with replanning
+entirely), a slow turn-in-place controller that made one robot sit
+motionless for half a second before a 90-degree turn even started moving
+it, and a second, smaller version of that same head-start problem hiding
+underneath it -- see "Multiple robots" in `WRITEUPS.md` for the full
+account of each one and its fix.
 
 ```bash
 python3 pybullet_multi_robot_main.py --headless --max-seconds 60

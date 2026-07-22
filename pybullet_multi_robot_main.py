@@ -1,30 +1,49 @@
 """
-Two robots navigating simultaneously without colliding, including a
-forced conflict through a single-width corridor and a documented
-deadlock-resolution policy.
+Two robots navigating simultaneously without colliding, crossing paths at
+a genuine intersection rather than sharing a start/goal cell.
 
-The layout: a wall with exactly one row-tall gap in it (the corridor).
-Robot A starts on the west side, robot B on the east side, and each one's
-goal is the other's start -- they have to swap sides through the same
-one-cell-wide opening, a head-on conflict, not just "somewhere on the
-same grid."
+The layout: four building blocks in the grid's four quadrants, leaving a
+3-cell-wide "plus" of open street down the middle -- one street running
+north-south, one running east-west, crossing at the grid's center. Robot
+A drives the north-south street start to finish; robot B drives the
+east-west street start to finish. Their start and goal cells are all
+different from each other (unlike an earlier version of this demo, where
+goal(A) == start(B) by construction and caused its own class of bugs --
+see WRITEUPS.md). The two straight-line routes are the same length and
+both robots are spawned already facing their first direction of travel,
+so without any avoidance they arrive at the crossing at essentially the
+same moment -- the near-collision is a property of the layout and
+timing, not scripted.
 
-Coordination policy (see WRITEUPS.md for the full writeup):
-- Robot A has strict right-of-way: it plans once against the static grid
-  and never replans or reacts to B at all.
-- Robot B always plans against the static grid *plus* a block placed
-  around A's current cell, so it naturally detours around, or waits for,
-  wherever A currently is. It replans every REPLAN_PERIOD_S.
-- If A is sitting inside the corridor (the only route), B's planner
-  reports "no path" -- B holds position and retries next tick rather
-  than crashing or looping forever. Since A never yields and always has
-  somewhere to go, this can't turn into a true two-way deadlock: exactly
-  one robot (B) always yields, by construction.
-- A hard safety stop is layered on top: if the two robots' actual
-  distance ever falls below SAFETY_STOP_RADIUS, B is forced to stop that
-  frame regardless of what its plan says. Grid-based replanning runs
-  every REPLAN_PERIOD_S, not every physics tick, so this is the failsafe
-  against a fast-moving robot closing that gap in between replans.
+Coordination policy (see WRITEUPS.md for the full writeup, including
+several real bugs found by watching a live run rather than just checking
+pass/fail at the end -- most recently, an earlier version of this file
+tried to avoid collisions with a per-frame steering nudge instead of
+replanning, which visibly reduced the crossing distance but didn't
+reliably prevent actual contact):
+
+- Both robots replan, symmetrically. Every REPLAN_PERIOD_S, each one
+  runs A* against the real grid *plus* a block placed around the other
+  robot's current cell (`cell_block`) -- the same technique the pygame
+  `MovingObstacle` replanning logic used, just with a robot standing in
+  for the "moving obstacle" on both sides at once. Detecting the other
+  robot nearby produces a genuinely different, grid-verified route (using
+  the street's spare width to slide into an adjacent lane), not a
+  steering offset layered on top of an unrelated path -- so the result
+  can never steer either robot into a wall the way a blind offset could.
+  A replan is only actually issued when the blocked cells changed or the
+  last attempt found nothing (see WRITEUPS.md for why replanning
+  unconditionally every tick is its own bug).
+- If neither robot's current cell nor the other's makes a route
+  possible, the blocked one holds position (`waiting = True`) and
+  retries on the next replan tick, rather than crashing on `None` or
+  driving into a wall.
+- A hard safety-distance stop is layered on top as an absolute last
+  resort, not the primary mechanism: if the two robots' actual distance
+  ever falls below SAFETY_STOP_RADIUS, both are forced to stop that
+  exact frame regardless of what their plans say. Checked
+  unconditionally, every step, no exceptions. With replanning doing its
+  job, this should rarely fire in practice.
 
     python3 pybullet_multi_robot_main.py
     python3 pybullet_multi_robot_main.py --headless --max-seconds 60
@@ -40,29 +59,52 @@ from nav.grid import Grid
 from pybullet_main import build_drive_waypoints
 from nav.sim3d.coords import grid_to_world, world_to_grid
 from nav.sim3d.robot import Robot
-from nav.sim3d.world import connect, build_obstacles, mark_cell, ROBOT_A_COLOR, ROBOT_B_COLOR
+from nav.sim3d.world import (
+    connect, build_obstacles, mark_cell, mark_goal_cell, label_cell, ROBOT_A_COLOR, ROBOT_B_COLOR,
+)
 
 SIM_HZ = 240
-REPLAN_PERIOD_S = 0.2
+# Tight enough to track the other robot's cell as it moves at speed (at
+# DEFAULT_SPEED it crosses roughly one cell every 0.05s) without
+# replanning so often it interrupts its own progress every tick.
+REPLAN_PERIOD_S = 0.05
 BLOCK_RADIUS = 1
-SAFETY_STOP_RADIUS = 1.0
+SAFETY_STOP_RADIUS = 0.55
 
-ROBOT_A_START, ROBOT_A_GOAL = (12, 2), (12, 22)
-ROBOT_B_START, ROBOT_B_GOAL = (12, 22), (12, 2)
-CORRIDOR_ROW = 12
-WALL_COLS = (10, 11)
+# A drives straight down the middle column; B drives straight across the
+# middle row. Every one of the four points is a different cell -- no
+# shared start/goal anywhere, unlike the earlier swap-sides layout.
+CENTER = 12
+ROBOT_A_START, ROBOT_A_GOAL = (2, CENTER), (22, CENTER)
+ROBOT_B_START, ROBOT_B_GOAL = (CENTER, 2), (CENTER, 22)
+
+# The open "plus" of street is CENTER +/- STREET_HALF_WIDTH in both row
+# and column; BUILDING_SPANS fills the four quadrants outside it, leaving
+# a margin at the grid's outer edge too.
+STREET_HALF_WIDTH = 1  # street is STREET_HALF_WIDTH*2 + 1 = 3 cells wide
+BUILDING_SPANS = (range(5, 11), range(14, 20))
 
 
-def build_corridor_grid():
-    """A wall at cols 10-11 spanning rows 8-16, except CORRIDOR_ROW, left
-    open -- the one-cell-wide (in row) gap both robots must funnel
-    through from opposite ends."""
+def build_intersection_grid():
+    """Four square buildings, one per quadrant, leaving a 3-wide street
+    down the middle in both directions -- a real cross-street
+    intersection, not just a single corridor. Neither street is ever
+    blocked (buildings only occupy the row/col ranges *outside* the
+    street), so both A's and B's straight-line routes are guaranteed
+    clear; only the crossing itself, where the two streets overlap, is
+    ever contested -- and even there, the 3-cell width gives a replan
+    somewhere to actually go instead of just "wait"."""
     grid = Grid()
-    for row in range(8, 17):
-        if row == CORRIDOR_ROW:
-            continue
-        for col in WALL_COLS:
-            grid.cells[row][col] = Grid.OBSTACLE
+    street_lo, street_hi = CENTER - STREET_HALF_WIDTH, CENTER + STREET_HALF_WIDTH
+    for row_span in BUILDING_SPANS:
+        for col_span in BUILDING_SPANS:
+            for row in row_span:
+                if street_lo <= row <= street_hi:
+                    continue
+                for col in col_span:
+                    if street_lo <= col <= street_hi:
+                        continue
+                    grid.cells[row][col] = Grid.OBSTACLE
     return grid
 
 
@@ -85,9 +127,11 @@ def cell_block(cell, radius):
 
 
 class NavAgent:
-    """One robot's navigation state. `blocking` robots (A) never look at
-    anyone else; yielding robots (B) are handed the current set of cells
-    to additionally avoid every time they (re)plan."""
+    """One robot's navigation state. Fully symmetric -- both A and B use
+    the exact same class and the exact same policy (plan around whatever
+    cells are currently blocked, replan when that changes). Nothing here
+    knows or cares which agent is "the other one"; that's the caller's
+    job every replan tick."""
 
     def __init__(self, name, body_id, base_grid, goal, smooth_method):
         self.name = name
@@ -105,13 +149,11 @@ class NavAgent:
         return world_to_grid(pos[0], pos[1])
 
     def _park(self):
-        """Goal(A) and start(B) are the same cell (and vice versa) --
-        that's inherent to a "swap sides" scenario, not a bug, but it
-        means a robot resting exactly on arrival would permanently
-        occupy the other robot's destination. Nudge it a meter off to
-        the side (out of the corridor's row, into open space that was
-        never part of either grid path) once it's done, so it's out of
-        the way both physically and for the other robot's planning."""
+        """An arrived robot resting exactly on its goal cell would remain
+        a phantom obstacle there forever as far as the other robot's
+        planning is concerned. Nudge it a meter off to the side once it's
+        done, so it's out of the way both physically and for the other
+        robot's blocked-cell calculations."""
         pos = self.robot.position()
         p.resetBasePositionAndOrientation(self.robot.body_id, [pos[0], pos[1] + 1.5, pos[2]], [0, 0, 0, 1])
 
@@ -123,11 +165,13 @@ class NavAgent:
             self.robot.stop()
             self._park()
             return
+
         path, _, reason, _ = find_path(grid, "astar", cell, self.goal)
         if path is None:
             self.waiting = True
             self.robot.stop()
             return
+
         self.waiting = False
         self.waypoints = build_drive_waypoints(path, self.smooth_method)
         self.idx = 0
@@ -164,46 +208,85 @@ def main():
     gui = not args.headless
     connect(gui=gui)
 
-    grid = build_corridor_grid()
+    grid = build_intersection_grid()
     build_obstacles(grid)
     mark_cell(*ROBOT_A_START, color=ROBOT_A_COLOR)
+    mark_goal_cell(*ROBOT_A_GOAL, color=ROBOT_A_COLOR)
     mark_cell(*ROBOT_B_START, color=ROBOT_B_COLOR)
+    mark_goal_cell(*ROBOT_B_GOAL, color=ROBOT_B_COLOR)
+    if gui:
+        label_cell(*ROBOT_A_START, "A start", ROBOT_A_COLOR)
+        label_cell(*ROBOT_A_GOAL, "A goal", ROBOT_A_COLOR)
+        label_cell(*ROBOT_B_START, "B start", ROBOT_B_COLOR)
+        label_cell(*ROBOT_B_GOAL, "B goal", ROBOT_B_COLOR)
 
     ax, ay, _ = grid_to_world(*ROBOT_A_START)
     bx, by, _ = grid_to_world(*ROBOT_B_START)
-    a_id = p.loadURDF("r2d2.urdf", basePosition=[ax, ay, 0.4])
-    b_id = p.loadURDF("r2d2.urdf", basePosition=[bx, by, 0.4])
+    # Spawn each robot already facing its first direction of travel (A
+    # south, B east) instead of both defaulting to the URDF's neutral
+    # heading. Left at the default, B already happens to face the way it
+    # needs to go while A has to turn 90 degrees first -- a head start
+    # for B that's an accident of geometry, not the routes. Since both
+    # routes are the same length at the same speed, spawning both
+    # pre-aimed makes their arrival at the crossing genuinely
+    # simultaneous, which is what actually produces a close call instead
+    # of a comfortable miss.
+    a_orientation = p.getQuaternionFromEuler([0, 0, math.pi / 2])  # facing +y (south)
+    b_orientation = p.getQuaternionFromEuler([0, 0, 0])  # facing +x (east)
+    a_id = p.loadURDF("r2d2.urdf", basePosition=[ax, ay, 0.4], baseOrientation=a_orientation)
+    b_id = p.loadURDF("r2d2.urdf", basePosition=[bx, by, 0.4], baseOrientation=b_orientation)
 
-    agent_a = NavAgent("A (priority)", a_id, grid, ROBOT_A_GOAL, args.smooth)
-    agent_b = NavAgent("B (yields)", b_id, grid, ROBOT_B_GOAL, args.smooth)
+    agent_a = NavAgent("A", a_id, grid, ROBOT_A_GOAL, args.smooth)
+    agent_b = NavAgent("B", b_id, grid, ROBOT_B_GOAL, args.smooth)
 
-    def a_blockers():
-        # Once A has arrived and parked, it's no longer occupying the
-        # grid at all -- stop treating it as an obstacle.
-        return cell_block(agent_a.current_cell(), BLOCK_RADIUS) if not agent_a.arrived else set()
+    def blockers_for(mover, other):
+        # Once the other robot has arrived and parked, it's no longer
+        # occupying the grid at all -- stop treating it as an obstacle.
+        return cell_block(other.current_cell(), BLOCK_RADIUS) if not other.arrived else set()
 
-    agent_a.plan()  # A never looks at B, ever -- planned once, done.
-    agent_b.plan(blocked_cells=a_blockers())
+    last_blockers_a = blockers_for(agent_a, agent_b)
+    last_blockers_b = blockers_for(agent_b, agent_a)
+    agent_a.plan(blocked_cells=last_blockers_a)
+    agent_b.plan(blocked_cells=last_blockers_b)
 
     steps = 0
     max_steps = int(args.max_seconds * SIM_HZ)
-    next_replan_b = 0
-    was_waiting = False
+    next_replan = 0
+    was_waiting_a = agent_a.waiting
+    was_waiting_b = agent_b.waiting
 
     while steps < max_steps and not (agent_a.arrived and agent_b.arrived):
-        if steps >= next_replan_b and not agent_b.arrived:
-            next_replan_b = steps + int(REPLAN_PERIOD_S * SIM_HZ)
-            agent_b.plan(blocked_cells=a_blockers())
-            if agent_b.waiting and not was_waiting:
-                print(f"  t={steps / SIM_HZ:.1f}s: B has no clear path (A is in/near the corridor) -- waiting")
-            elif was_waiting and not agent_b.waiting:
-                print(f"  t={steps / SIM_HZ:.1f}s: corridor clear -- B resuming")
-            was_waiting = agent_b.waiting
+        if steps >= next_replan:
+            next_replan = steps + int(REPLAN_PERIOD_S * SIM_HZ)
+            # Only actually replan when the obstacle picture changed, or
+            # the last attempt found nothing at all -- replanning
+            # unconditionally every tick throws away perfectly good
+            # progress each time, since a fresh plan starts from the
+            # *rounded* current cell and resets the current target.
+            if not agent_a.arrived:
+                current_a = blockers_for(agent_a, agent_b)
+                if agent_a.waiting or current_a != last_blockers_a:
+                    agent_a.plan(blocked_cells=current_a)
+                    last_blockers_a = current_a
+                    if agent_a.waiting != was_waiting_a:
+                        state = "no route right now -- holding" if agent_a.waiting else "replanned around B"
+                        print(f"  t={steps / SIM_HZ:.2f}s: A {state}")
+                    was_waiting_a = agent_a.waiting
+            if not agent_b.arrived:
+                current_b = blockers_for(agent_b, agent_a)
+                if agent_b.waiting or current_b != last_blockers_b:
+                    agent_b.plan(blocked_cells=current_b)
+                    last_blockers_b = current_b
+                    if agent_b.waiting != was_waiting_b:
+                        state = "no route right now -- holding" if agent_b.waiting else "replanned around A"
+                        print(f"  t={steps / SIM_HZ:.2f}s: B {state}")
+                    was_waiting_b = agent_b.waiting
 
-        pa, pb = agent_a.robot.position(), agent_b.robot.position()
-        too_close = (not agent_a.arrived) and math.hypot(pa[0] - pb[0], pa[1] - pb[1]) < SAFETY_STOP_RADIUS
+        pa = agent_a.robot.position()[:2]
+        pb = agent_b.robot.position()[:2]
+        too_close = math.hypot(pa[0] - pb[0], pa[1] - pb[1]) < SAFETY_STOP_RADIUS
 
-        agent_a.drive_step()
+        agent_a.drive_step(force_stop=too_close)
         agent_b.drive_step(force_stop=too_close)
 
         p.stepSimulation()
