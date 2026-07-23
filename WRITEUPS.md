@@ -785,3 +785,285 @@ to cross a bigger space, and no amount of parameter tuning removes an
 `O(n)`-per-iteration search itself. Full numbers and the specific worst
 case (a 200x200 trial that grew a 1,504-node tree and still never found
 the goal) are in `benchmark_results/scale_writeup.md`.
+
+## Advanced planners: k-d tree, RRT*, D* Lite, CBS
+
+Four additions on top of the four planners above, each targeting a
+specific, already-measured weak point: RRT's O(n) nearest-neighbor scan
+(the scale benchmark's own conclusion), plain RRT's lack of an
+optimality guarantee, every replanning scenario's "start over from
+scratch" cost, and the two-robot coordination policy's inability to
+generalize past two agents.
+
+### k-d tree for RRT's nearest-neighbor search (`nav/kdtree.py`)
+
+`nav/rrt.py`'s `_nearest` used to be `min(nodes, key=...)` -- a linear
+scan over every node in the tree, every single iteration. Both
+`benchmark_results/writeup.md` and `benchmark_results/scale_writeup.md`
+had already identified this as RRT's actual bottleneck, not obstacle
+density or grid size directly: an `O(n)`-per-iteration search means total
+search cost grows *faster* than linearly in how large the tree gets, and
+a bigger space needs a bigger tree to cross it.
+
+`KDTree` (`nav/kdtree.py`) is a standard 2D k-d tree, built incrementally
+-- `insert(point)` one node at a time, exactly how RRT grows its tree --
+supporting both `nearest(point)` (RRT's per-iteration query) and
+`within_radius(point, radius)` (RRT*'s neighbor-radius query, see below;
+one data structure serves both new planners). No rebalancing: a naive
+recursive k-d tree can degrade toward a linked list under an adversarial
+insertion order (e.g. points fed in sorted order), but RRT's insertion
+order -- each new node steered toward a uniformly random sample -- is
+nowhere near adversarial, so this stays close enough to balanced without
+the maintenance a general-purpose incremental k-d tree would need.
+Verified against a brute-force linear scan over 2,000 random points: 500
+nearest-neighbor queries and 100 radius queries, zero mismatches.
+
+**The before/after, rerunning `nav/scale_benchmark.py` on the identical
+code otherwise:**
+
+| Size | RRT (linear scan, before) | RRT (k-d tree, after) | Speedup | Completeness (same, either way) |
+|---:|---:|---:|---:|---:|
+| 100x100 | 116.716ms | 15.162ms | **7.7x** | 7/8 |
+| 200x200 | 258.820ms | 58.548ms | **4.4x** | 5/8 |
+
+Completeness is identical in both columns -- the k-d tree changes
+nothing about *what* RRT finds, only how fast it finds it, exactly as
+expected from replacing one implementation of the same query with a
+faster one. Full table (all four sizes) and discussion in
+`benchmark_results/scale_writeup.md`.
+
+### RRT*: rewiring for asymptotic optimality (`nav/rrt_star.py`)
+
+Plain RRT connects every new node to its single nearest existing
+neighbor and never revisits that decision -- `benchmark_results/writeup.md`
+measured the cost of that at 9.1% average path-length overhead versus
+the optimal grid-search path. RRT* (Karaman & Frazzoli) fixes this with
+two changes, both implemented in `nav/rrt_star.py`:
+
+1. **Cheapest parent, not nearest parent.** When adding a new node, look
+   at every existing node within `neighbor_radius` (a k-d tree
+   `within_radius` query) and connect to whichever gives the lowest
+   total cost-to-come, not whichever happens to be geometrically
+   closest -- as long as the straight edge is collision-free.
+2. **Rewire nearby nodes through the new one.** After adding it, check
+   those same nearby nodes again: if routing through the just-added node
+   is now cheaper than a node's current parent, switch its parent. This
+   is the step plain RRT has no equivalent of, and it's what lets
+   earlier, locally-suboptimal connections get corrected as the tree
+   fills in -- the actual mechanism behind "asymptotically optimal."
+
+Unlike `rrt()`, `rrt_star()` never stops early at the first node that
+reaches the goal radius -- it keeps iterating for the entire budget,
+since later rewiring can still improve a path found early. `neighbor_radius`
+is a fixed multiple of `step_size` (`RRT_STAR_NEIGHBOR_FACTOR = 2.0`)
+rather than the textbook shrinking-ball formula (`gamma * (log n / n) **
+(1/d)`) -- a common practical simplification, traded for simplicity at
+the cost of not being the asymptotically tightest possible radius.
+Rewiring also does *not* cascade a cost improvement to a rewired node's
+own descendants (a full implementation would) -- a rewired node's own
+cost is always correct, its descendants' just may lag until *they*
+happen to get rewired directly. Both are documented, deliberate
+simplifications, not oversights.
+
+One real correctness hazard that *is* fully handled: rewiring a node `n`
+to point through the just-added node would create a cycle in the tree
+(and an infinite loop in `reconstruct`) if `n` happens to already be one
+of that new node's own ancestors -- geometrically close in Euclidean
+distance but topologically far away in the tree. `_is_ancestor` walks
+the parent chain before every rewire to rule this out; without it, a
+sufficiently winding tree could eventually loop.
+
+Wired into `nav/visualizer.py` as a fourth selectable algorithm (`T` key,
+alongside `D`/`A`/`R`) -- same explored-region suppression and tree-edge
+drawing RRT already gets, extended to check for `"rrt_star"` everywhere
+`"rrt"` was special-cased. Verified end to end with a headless pixel-
+level render (same technique the moving-obstacle integration used): a
+real RRT* run drawn to an off-screen pygame surface, confirmed non-white
+pixels actually appear where the tree and path should be.
+
+**Benchmarked head-to-head against plain RRT on the identical 20 grids
+`benchmark_results/writeup.md` already used, with both algorithms fed the
+*identical* random-sample sequence per trial** (same seed,
+`random.Random(trial_num * 1000 + attempt)`, so any difference in the
+result is attributable to the algorithm, not to random variance between
+separate runs):
+
+- **RRT* produced a shorter path in 20/20 trials -- never longer, never
+  tied -- averaging 25.2% shorter**, ranging from 0.9% (a trial where
+  RRT's own tree already grew a fairly direct route) to 69.5% (the trial
+  `benchmark_results/writeup.md` already flagged as RRT's worst case,
+  where its path was literally double the cardinal-optimal length --
+  RRT*, given the identical samples, closes almost all of that gap).
+- **The cost is runtime, and it's a real, structural one:** RRT*
+  averaged 67.1ms per trial against RRT's 0.97ms -- almost 70x slower on
+  the identical 3,000-iteration budget. Most of that isn't extra work
+  per sample (parent selection/rewiring over a handful of nearby nodes,
+  cheap even with the k-d tree); it's that RRT* never stops early the
+  way plain RRT does the instant it reaches the goal, so it spends its
+  *entire* budget on every trial where plain RRT often used a small
+  fraction of its own.
+
+Full numbers, the comparison against the cardinal-only "optimal" path
+(where RRT*'s lack of a movement-direction constraint makes it come out
+*shorter* than optimal, for the same reason plain RRT sometimes does --
+not a contradiction, see the writeup), and the complete honest takeaway
+are in `benchmark_results/writeup.md`.
+
+### D* Lite: incremental replanning (`nav/dstar_lite.py`)
+
+Every planner up to this point solves from scratch, every single call --
+which is exactly what happens today, over and over, in
+`nav/obstacles.py`'s moving-obstacle replanning, `nav/sensor.py`'s
+discovery-triggered replanning, and both pybullet multi-robot/sensor
+demos. D* Lite (Koenig & Likhachev, 2002) instead keeps one persistent
+search around and repairs it incrementally when the grid changes.
+
+**The mechanism.** The search runs backward, from `goal` outward, and
+tracks two costs per cell: `g(s)` (best known cost-to-goal) and `rhs(s)`
+(a one-step lookahead, `min` over neighbors of `edge_cost + g(neighbor)`).
+A cell is "consistent" when `g == rhs`; only inconsistent cells ever sit
+on the open queue. When an edge's cost changes, only the cells whose
+`rhs` could actually depend on that edge go inconsistent -- everywhere
+else on the grid, previously computed `g` values stay exactly as valid
+as before. Since the search is anchored at the fixed goal rather than
+the moving start, the robot advancing one cell doesn't invalidate
+anything either -- it only needs a single scalar correction (`km`, the
+heuristic distance moved since the last query) to keep the priority
+queue correctly ordered, not a fresh search. Grid adjacency being
+symmetric (true even with the diagonal corner-cut rule -- the same two
+corner cells get checked regardless of which direction you're moving
+between two cells) is what lets one function (`_neighbor_cells`) serve as
+both the successor set (for computing `rhs`) and the predecessor set
+(for deciding what to re-examine after a change), with no separate
+"reverse graph" needed.
+
+**Correctness**, checked exhaustively rather than just on a couple of
+hand-picked cases (`nav/scratch/dstar_lite_test.py`): 40/40 random grids
+match `astar`'s path cost exactly on a fresh, one-shot plan, and across
+15 trials of 15 steps each (robot advances, a random cell's obstacle
+state flips, D* Lite repairs incrementally) -- 207/207 individual steps
+match a completely fresh `astar` recomputation from the robot's exact
+current position on the exact current grid. Every single step, not just
+the final result.
+
+**Does it actually replan faster? Benchmarked on both named scenarios
+specifically** (`nav/replan_benchmark.py`, recreating `nav/obstacles.py`'s
+bouncing `MovingObstacle` and `nav/sensor.py`'s `LidarSensor`/`KnownGrid`
+discovery, including nav/visualizer.py's exact replan-trigger condition
+for the sensor case), swept across grid size the same way
+`nav/scale_benchmark.py` does, since this project's actual interactive
+grid is a fixed 25x25 and the honest answer turned out to depend on
+scale:
+
+| Size | Moving obstacle speedup | Sensor discovery speedup |
+|---:|---:|---:|
+| 25x25 | **2.42x** | **0.49x** (slower) |
+| 50x50 | **2.90x** | **0.63x** (slower) |
+| 100x100 | **8.49x** | **1.31x** |
+| 200x200 | **16.34x** | **1.97x** |
+
+**Moving obstacle: D* Lite wins at every size, growing fast** -- a single
+bouncing obstacle only ever invalidates a small, localized neighborhood
+each time it moves, exactly the case incremental repair is built for.
+
+**Sensor discovery is the more honest result: D* Lite is *slower* at
+this project's actual 25x25 scale**, only becoming a net win at 100x100
+and above. Two real reasons, not artifacts: sensor discovery can reveal
+several newly-blocked cells in one event (unlike one bouncing obstacle),
+so each replan touches more vertices; and D* Lite's own per-vertex
+bookkeeping (heap push/pop with lazy deletion, several dict lookups, a
+full neighbor scan per vertex update) is genuine Python-level constant-
+factor overhead that a small grid's already-cheap `astar` search doesn't
+have enough cost to amortize away. That overhead matters less as the
+grid grows, because a from-scratch search's cost keeps climbing with
+grid size while the number of vertices a single sensor update actually
+touches doesn't. **This is the same "wrong tool at this project's actual
+scale, right tool at a bigger one" shape of conclusion
+`benchmark_results/writeup.md` already reached for plain RRT** -- arrived
+at independently, for a structurally different reason (constant-factor
+overhead here, an `O(n)` search there). Full discussion in
+`benchmark_results/replan_writeup.md`.
+
+`KnownGrid` (`nav/sensor.py`) gained an optional `size` parameter to make
+this benchmark possible at all -- it previously always built a fixed
+25x25 grid regardless of the underlying grid's actual size (fine for
+every existing caller, which only ever runs at that default), the same
+gap `Grid` itself had before `nav/scale_benchmark.py` needed a `size`
+parameter added for exactly this reason.
+
+### Conflict-Based Search for 3+ robots (`nav/cbs.py`, `pybullet_cbs_main.py`)
+
+`pybullet_multi_robot_main.py`'s two-robot policy -- each robot treats the
+*other's* current cell as a temporary obstacle and replans around it,
+symmetrically -- has no clean symmetric extension past exactly two
+agents: with three or more, whose cell does agent A treat as blocked
+when B and C are both nearby and might each move differently depending
+on what A does? Real multi-agent conflicts are inherently joint, not
+pairwise-reactive. A fully joint search over N agents' combined state
+space is exponential in N (roughly `(cells)^N`) and intractable past two
+or three agents on this project's 625-cell grid -- CBS (Sharon, Stern,
+Felner & Sturtevant, 2012) avoids that by searching a tree of
+*constraints* instead, only ever running single-agent searches.
+
+**The mechanism**, fully described in `nav/cbs.py`'s module docstring:
+plan every agent independently first (no constraints); find the first
+conflict between any two agents' paths (`first_conflict` -- either a
+*vertex* conflict, both at the same cell at the same time, or an *edge*
+conflict, two agents swapping cells between consecutive timesteps, which
+a vertex check alone would miss entirely); branch into two child nodes,
+each forbidding one of the two conflicting agents from that cell/edge at
+that time and replanning *only that agent* (every other agent's path is
+reused unchanged); repeat on the lowest-total-cost node in the queue
+until one has no conflicts left. The low-level search itself is
+time-expanded A* -- state is `(cell, time)`, not just `cell`, since a
+constraint like "can't be here at time 7" is meaningless without a time
+axis, and an explicit wait-in-place action is what lets one agent yield
+to another instead of being forced into head-on contact.
+
+**Correctness**, verified independently of CBS's own termination
+condition (`nav/scratch/cbs_test.py`): 2, 3, and 4-agent crossings on the
+same 4-way intersection layout, each solution re-checked from scratch
+against `first_conflict` (the same function CBS uses internally, so a
+pass here means that function's "no conflicts left" answer is
+trustworthy) plus per-agent assertions that every path starts at its
+start, ends at its goal, only takes legal single-cell steps, and never
+crosses an obstacle. All conflict-free.
+
+**Scales past two agents in practice, with the expected caveat about
+worst-case complexity.** On the intersection grid, cycling robots through
+its four compass arms and (past four) its three street lanes: 4 agents
+solve in 42ms, 5 in 42ms, 6 in 388ms, all genuinely conflict-free. A
+deliberately adversarial stress case -- 8 agents, all four arms, two
+robots per arm, all crossing at once with only two of the three lanes
+used -- failed to find a solution within a 3,000-node budget (2.4s spent
+trying). That's CBS's well-documented worst-case behavior showing up
+under maximal contention, not a bug: the constraint tree can grow
+exponentially when conflicts keep cascading into new conflicts, the same
+way a joint search would, just deferred to a smaller subset of hard
+cases instead of showing up on every instance.
+
+**pybullet_cbs_main.py drives N robots through the CBS plan in lockstep**
+-- the one real complication continuous 3D simulation adds that the
+discrete algorithm doesn't have to consider. CBS's guarantee ("no two
+agents at the same cell at the same *timestep*") is a claim about a
+discrete clock; if every robot just drove its own waypoints
+independently at whatever speed it individually achieved, real-world
+timing would drift from the plan's discrete clock and the guarantee
+would stop applying. Every robot advances to its next per-timestep
+waypoint only once *every* robot has reached its current one -- an
+agent that's supposed to wait one timestep keeps "reporting ready"
+every physics tick without advancing, until the rest of the fleet
+catches up, at which point they all advance together. Paths are driven
+raw, with no corner-cutting/spline smoothing (unlike
+`pybullet_main.py`/`pybullet_multi_robot_main.py`), since smoothing
+would shift where along the path a robot actually is at a given moment
+-- exactly the synchronization lockstep driving exists to preserve.
+
+**Does the discrete guarantee actually survive translating into
+continuous physics?** Measured directly, not assumed: tracking every
+pair of robots' real Euclidean distance throughout a full lockstep run,
+the closest approach across the whole simulation was 0.46m, for both a
+4-robot and a 6-robot run -- comfortably above the ~0.34m two r2d2
+footprints (radius ~0.17m each, per the two-robot demo's own numbers)
+would need to actually touch. Zero contact, confirmed by measurement,
+not inferred from the discrete plan being conflict-free on paper.

@@ -16,7 +16,7 @@ from nav.maze import generate_maze
 from nav.obstacles import MovingObstacle, find_free_neighbor
 from nav.sensor import LidarSensor, KnownGrid
 
-ALGO_LABELS = {"dijkstra": "Dijkstra", "astar": "A*", "rrt": "RRT"}
+ALGO_LABELS = {"dijkstra": "Dijkstra", "astar": "A*", "rrt": "RRT", "rrt_star": "RRT*"}
 
 # Cycled through with the H key while A* is active
 HEURISTICS = [
@@ -61,9 +61,9 @@ def draw_grid(screen, grid, explored, path, active_algo, reason, moving_cells,
                     color = RED
             elif pos in path_set:
                 color = YELLOW
-            # RRT's tree is drawn separately as edges -- filling every tree
-            # node here would look like Dijkstra's solid explored blob.
-            elif pos in explored and active_algo != "rrt":
+            # RRT/RRT*'s tree is drawn separately as edges -- filling every
+            # tree node here would look like Dijkstra's solid explored blob.
+            elif pos in explored and active_algo not in ("rrt", "rrt_star"):
                 color = explored_color
             elif cell == Grid.OBSTACLE and not hidden:
                 color = ORANGE if pos in moving_cells else BLACK
@@ -329,7 +329,7 @@ def main():
             last_results[active_algo] = (path, explored, reason, came_from)
         replan_flash_until = pygame.time.get_ticks() + REPLAN_FLASH_MS
 
-    CONTROLS_1 = "D: Dijkstra  A: A*  R: RRT  |  Space: run  |  W: walk robot  |  C: clear"
+    CONTROLS_1 = "D: Dijkstra  A: A*  R: RRT  T: RRT*  |  Space: run  |  W: walk robot  |  C: clear"
     CONTROLS_2 = "LClick: obstacle (Shift: moving)  |  RClick: start (Shift: goal)"
     CONTROLS_3 = "H: heuristic  X: diagonal  M: maze  K: cost map  S: sensor"
 
@@ -357,13 +357,13 @@ def main():
         elif reason == "no_path":
             line_1 = f"[{algo_label}] No path found. Cells explored: {len(explored)}"
         else:
-            if active_algo == "rrt":
+            if active_algo in ("rrt", "rrt_star"):
                 distance = f"{len(path) - 1} waypoints"
             elif grid.diagonal or grid.cost_map_enabled:
                 distance = f"cost {path_cost(grid, path):.2f}"
             else:
                 distance = f"{len(path) - 1} steps"
-            noun = "tree nodes" if active_algo == "rrt" else "cells explored"
+            noun = "tree nodes" if active_algo in ("rrt", "rrt_star") else "cells explored"
             line_1 = f"[{algo_label}] Path: {distance} | {noun}: {len(explored)}"
 
         parts = []
@@ -381,6 +381,8 @@ def main():
             parts.append(f"A*: {len(last_results['astar'][1])} cells")
         if "rrt" in last_results:
             parts.append(f"RRT: {len(last_results['rrt'][1])} nodes")
+        if "rrt_star" in last_results:
+            parts.append(f"RRT*: {len(last_results['rrt_star'][1])} nodes")
         if sensor_enabled and lidar is not None:
             parts.append(f"sensed obstacles: {len(lidar.known_obstacles)}")
         line_2 = " | ".join(parts) if parts else CONTROLS_1
@@ -426,6 +428,8 @@ def main():
                     switch_algo("astar")
                 elif event.key == pygame.K_r:
                     switch_algo("rrt")
+                elif event.key == pygame.K_t:
+                    switch_algo("rrt_star")
                 elif event.key == pygame.K_w:
                     toggle_robot()
                 elif event.key == pygame.K_h:
@@ -473,7 +477,7 @@ def main():
         screen.fill(WHITE)
         draw_grid(screen, grid, explored, path, active_algo, reason, moving_cells,
                   sensor_enabled, known_obstacles)
-        if active_algo == "rrt" and came_from:
+        if active_algo in ("rrt", "rrt_star") and came_from:
             draw_rrt_tree(screen, came_from, path)
         if sensor_enabled and lidar is not None:
             draw_sensor_radius(screen, robot_pos if robot_pos is not None else grid.start, lidar.radius)

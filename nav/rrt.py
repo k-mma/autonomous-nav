@@ -2,6 +2,7 @@ import math
 import random
 
 from nav.config import RRT_MAX_ITERS, RRT_STEP_SIZE, RRT_GOAL_SAMPLE_RATE, RRT_GOAL_RADIUS
+from nav.kdtree import KDTree
 
 
 def _sample_free_cell(grid, rng):
@@ -13,6 +14,11 @@ def _sample_free_cell(grid, rng):
 
 
 def _nearest(nodes, point):
+    """Linear-scan fallback, kept only for anything that still wants to
+    call it directly (e.g. a scratch test comparing against the k-d
+    tree). `rrt()` itself no longer uses this -- see the KDTree import
+    above and WRITEUPS.md for why an unindexed O(n) scan over every tree
+    node, repeated every iteration, was RRT's actual bottleneck at scale."""
     return min(nodes, key=lambda n: math.hypot(n[0] - point[0], n[1] - point[1]))
 
 
@@ -73,10 +79,12 @@ def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
     rng = rng or random.Random()
     came_from = {}
     nodes = [start]
+    tree = KDTree()
+    tree.insert(start)
 
     for _ in range(max_iters):
         sample = goal if rng.random() < goal_sample_rate else _sample_free_cell(grid, rng)
-        nearest = _nearest(nodes, sample)
+        nearest = tree.nearest(sample)
         new_node = _steer(nearest, sample, step_size)
 
         if new_node == nearest or new_node == start or new_node in came_from:
@@ -86,6 +94,7 @@ def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
 
         came_from[new_node] = nearest
         nodes.append(new_node)
+        tree.insert(new_node)
 
         if math.hypot(new_node[0] - goal[0], new_node[1] - goal[1]) <= goal_radius:
             if new_node != goal:

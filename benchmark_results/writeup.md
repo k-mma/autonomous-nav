@@ -1,8 +1,10 @@
-# Dijkstra vs A* vs RRT: 20-trial benchmark
+# Dijkstra vs A* vs RRT vs RRT*: 20-trial benchmark
 
 20 random 25x25 grids, obstacle density 10-35%, start/goal picked from free
-cells, all three algorithms run on the identical grid (RRT capped at 3,000
-iterations). Raw data in `results.csv`, plot in `comparison.png`.
+cells, all four algorithms run on the identical grid (RRT and RRT* both
+capped at 3,000 iterations, and given the *identical* random-sample
+sequence per trial -- see the RRT* section below for why). Raw data in
+`results.csv`, plot in `comparison.png`.
 
 ## Dijkstra vs A*
 
@@ -65,3 +67,73 @@ its tradeoffs, not because it's the right tool for this problem. RRT
 earns its keep in the regime A*/Dijkstra can't touch: continuous,
 high-dimensional configuration spaces (e.g. a robot arm's joint angles)
 where building an explicit graph to search is computationally infeasible.
+
+## RRT*: does the rewiring actually help?
+
+RRT* (`nav/rrt_star.py`) was run on the exact same 20 grids, with the
+exact same random-sample sequence per trial as plain RRT -- both are
+seeded with `random.Random(trial_num * 1000 + attempt)`, so at every
+iteration both algorithms sample the *identical* point and only differ in
+what they do with it. That's a deliberately paired comparison: any
+difference in the resulting path is attributable to RRT*'s parent
+selection and rewiring, not to random variance between separate runs.
+
+**RRT* wins on path length, decisively and consistently.** Head to head,
+RRT* produced a *shorter* path than plain RRT in all 20/20 trials -- never
+longer, never tied -- averaging **25.2% shorter**, ranging from a modest
+0.9% (trial 16, where RRT's own tree already happened to grow a fairly
+direct route) up to 69.5% (trial 9, the same trial plain RRT's own
+benchmark write-up above flagged as its worst case -- RRT's path there was
+literally double the cardinal-optimal length; RRT* still starting from
+the identical samples closes almost all of that gap). This is the direct,
+measured payoff of the two mechanisms described in `nav/rrt_star.py`'s
+docstring: choosing the cheapest available parent instead of just the
+nearest one, and rewiring nearby nodes through a new one when that's
+cheaper -- applied identically to every random sample RRT itself also
+saw, and only ever making the result better, never worse (both algorithms
+found *a* path in 20/20 trials; RRT* never failed where RRT succeeded, or
+vice versa).
+
+Compared to the cardinal-only Dijkstra/A* "optimal" path, RRT* actually
+comes out *shorter* on average (-24.9% overhead, i.e. its paths average
+about 25% shorter than the grid search's), for the same reason
+plain RRT's own overhead numbers go negative on some trials above: RRT/
+RRT* aren't constrained to the grid's 4-directional step rule, so they
+can cut diagonally across open space no cardinal-only search is allowed
+to. It's not a fair claim that RRT* "beat" A* at the same problem -- it
+solved a *less constrained* version of it -- but it is a fair claim
+against plain RRT, which faces the exact same lack of constraint and
+still loses to RRT* by 25.2% anyway.
+
+**The cost is runtime, and it's a real, structural cost, not just
+overhead from doing more per iteration.** RRT* averaged 67.1ms per trial
+against plain RRT's 0.97ms -- almost 70x slower on the same 3,000-
+iteration budget. Most of that isn't the extra per-iteration work
+(parent selection and rewiring over a handful of nearby nodes each,
+cheap even with the k-d tree radius query); it's that **RRT* never stops
+early.** Plain RRT returns the instant some new node lands within
+`goal_radius` of the goal, so on an easy trial it might use a few dozen
+iterations out of its 3,000-iteration budget and quit. RRT* keeps
+iterating for the *entire* budget every time, because rewiring after
+the goal is first reached can still improve the path -- that's the whole
+mechanism behind "asymptotically optimal." So the 70x runtime gap isn't
+"RRT* does more work per sample," it's "RRT* does the full 3,000 samples
+of work on every trial, where RRT often did a small fraction of that."
+That's an intentional tradeoff (quality now costs a fixed, predictable
+amount of extra time instead of an unpredictable amount of extra path
+length), not an unexamined regression.
+
+**The honest takeaway:** if the 9.1% average path-length overhead plain
+RRT already had against optimal was worth fixing, RRT* fixes most of it
+(and then some, since it's being compared against RRT's own, equally
+unconstrained baseline) for a fixed, bounded extra cost in runtime, not
+an open-ended one. Whether that trade is worth it depends entirely on
+whether the fixed ~3,000-iteration runtime budget is affordable for the
+use case -- for the same reason plain RRT's honest takeaway pointed at
+continuous, high-dimensional spaces rather than this project's small,
+fully-known grid, RRT* is the version of that argument that actually
+scales into a real motion-planning use case, since its published
+guarantee (converging to the optimal path as iterations -> infinity) is
+exactly the property plain RRT lacks and that a real system would need
+if it can't afford to re-run planning from scratch for a marginally
+better route.

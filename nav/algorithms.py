@@ -124,9 +124,9 @@ def validate_endpoints(grid, start, goal):
 
 def find_path(grid, algo_name, start, goal, heuristic=None):
     """
-    Run dijkstra/astar/rrt from start to goal, handling the edge cases the
-    raw algorithms don't check for: same start/goal cell, and either
-    endpoint sitting on an obstacle. `heuristic` is only used when
+    Run dijkstra/astar/rrt/rrt_star from start to goal, handling the edge
+    cases the raw algorithms don't check for: same start/goal cell, and
+    either endpoint sitting on an obstacle. `heuristic` is only used when
     algo_name is "astar"; it defaults to Manhattan distance.
 
     Returns (path, explored, reason, came_from). reason is None on an
@@ -150,6 +150,17 @@ def find_path(grid, algo_name, start, goal, heuristic=None):
         # be circular.
         from nav.rrt import rrt
         path, explored, came_from = rrt(grid, start, goal)
+    elif algo_name == "rrt_star":
+        # Same circular-import reasoning as "rrt" above.
+        from nav.rrt_star import rrt_star
+        path, explored, came_from = rrt_star(grid, start, goal)
+    elif algo_name == "dstar_lite":
+        # Same circular-import reasoning as "rrt" above. Note this is the
+        # one-shot wrapper -- see nav/dstar_lite.py's docstring for why a
+        # single find_path call can't demonstrate D* Lite's actual point
+        # (incremental repair across multiple calls on the same object).
+        from nav.dstar_lite import dstar_lite
+        path, explored, came_from = dstar_lite(grid, start, goal)
     else:
         path, explored, came_from = dijkstra(grid, start, goal)
 

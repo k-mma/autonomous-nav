@@ -12,6 +12,7 @@ from nav.algorithms import dijkstra, astar
 from nav.config import GRID_SIZE
 from nav.grid import Grid
 from nav.rrt import rrt
+from nav.rrt_star import rrt_star
 
 TRIALS = 20
 MIN_DENSITY = 0.10
@@ -22,6 +23,10 @@ MAX_ATTEMPTS_PER_TRIAL = 50
 # trial where it fails to find a path a grid search finds easily. That
 # failure rate is itself one of the things this benchmark measures.
 RRT_ITERS = 3000
+# Same budget as plain RRT, deliberately, so the comparison is "what do
+# you get for the identical iteration count" -- not a fair *time*
+# comparison, since RRT* always spends its whole budget (no early exit;
+# see nav/rrt_star.py) while plain RRT usually stops well short of it.
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
 
 random.seed(42)
@@ -75,6 +80,9 @@ def run_trial(trial_num):
         r_path, r_explored, r_ms = time_run(
             rrt, grid, start, goal, max_iters=RRT_ITERS, rng=random.Random(trial_num * 1000 + attempt)
         )
+        s_path, s_explored, s_ms = time_run(
+            rrt_star, grid, start, goal, max_iters=RRT_ITERS, rng=random.Random(trial_num * 1000 + attempt)
+        )
         return {
             "trial": trial_num,
             "obstacle_density": round(density, 3),
@@ -82,12 +90,17 @@ def run_trial(trial_num):
             "dijkstra_cells_explored": len(d_explored),
             "astar_cells_explored": len(a_explored),
             "rrt_tree_nodes": len(r_explored),
+            "rrt_star_tree_nodes": len(s_explored),
             "dijkstra_runtime_ms": round(d_ms, 4),
             "astar_runtime_ms": round(a_ms, 4),
             "rrt_runtime_ms": round(r_ms, 4),
+            "rrt_star_runtime_ms": round(s_ms, 4),
             "rrt_found_path": r_path is not None,
             "rrt_waypoints": (len(r_path) - 1) if r_path else "",
             "rrt_path_length": round(euclidean_path_length(r_path), 3) if r_path else "",
+            "rrt_star_found_path": s_path is not None,
+            "rrt_star_waypoints": (len(s_path) - 1) if s_path else "",
+            "rrt_star_path_length": round(euclidean_path_length(s_path), 3) if s_path else "",
         }
     raise RuntimeError(f"trial {trial_num}: no solvable grid after {MAX_ATTEMPTS_PER_TRIAL} attempts")
 
@@ -105,6 +118,7 @@ def plot_results(rows, path):
     dijkstra_cells = [r["dijkstra_cells_explored"] for r in rows]
     astar_cells = [r["astar_cells_explored"] for r in rows]
     rrt_nodes = [r["rrt_tree_nodes"] for r in rows]
+    rrt_star_nodes = [r["rrt_star_tree_nodes"] for r in rows]
     gap_pct = [100 * (d - a) / d if d else 0 for d, a in zip(dijkstra_cells, astar_cells)]
 
     solved = [r for r in rows if r["rrt_found_path"]]
@@ -114,23 +128,35 @@ def plot_results(rows, path):
         for r in solved
     ]
 
+    star_solved = [r for r in rows if r["rrt_star_found_path"]]
+    star_solved_densities = [r["obstacle_density"] for r in star_solved]
+    star_overhead_pct = [
+        100 * (r["rrt_star_path_length"] - r["path_length"]) / r["path_length"] if r["path_length"] else 0
+        for r in star_solved
+    ]
+
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(9, 11), sharex=True)
 
     ax1.plot(densities, dijkstra_cells, "o-", label="Dijkstra")
     ax1.plot(densities, astar_cells, "o-", label="A*")
     ax1.plot(densities, rrt_nodes, "o-", label="RRT (tree nodes)")
+    ax1.plot(densities, rrt_star_nodes, "o-", label="RRT* (tree nodes)")
     ax1.set_ylabel("Cells / nodes explored")
-    ax1.set_title(f"Dijkstra vs A* vs RRT over {len(rows)} random {GRID_SIZE}x{GRID_SIZE} grids")
+    ax1.set_title(f"Dijkstra vs A* vs RRT vs RRT* over {len(rows)} random {GRID_SIZE}x{GRID_SIZE} grids")
     ax1.legend()
 
     ax2.bar(densities, gap_pct, width=0.006, color="tab:green")
     ax2.axhline(0, color="black", linewidth=0.8)
     ax2.set_ylabel("A* advantage vs Dijkstra (%)")
 
-    ax3.bar(solved_densities, overhead_pct, width=0.006, color="tab:orange")
+    width = 0.003
+    ax3.bar([d - width / 2 for d in solved_densities], overhead_pct, width=width, color="tab:orange", label="RRT")
+    ax3.bar([d + width / 2 for d in star_solved_densities], star_overhead_pct, width=width,
+            color="tab:blue", label="RRT*")
     ax3.axhline(0, color="black", linewidth=0.8)
     ax3.set_xlabel("Obstacle density")
-    ax3.set_ylabel("RRT path length\nvs optimal (%)")
+    ax3.set_ylabel("Path length\nvs optimal (%)")
+    ax3.legend()
 
     fig.tight_layout()
     fig.savefig(path, dpi=150)
@@ -146,17 +172,35 @@ if __name__ == "__main__":
     total_d = sum(r["dijkstra_cells_explored"] for r in rows)
     total_a = sum(r["astar_cells_explored"] for r in rows)
     total_r = sum(r["rrt_tree_nodes"] for r in rows)
+    total_s = sum(r["rrt_star_tree_nodes"] for r in rows)
     rrt_solved = [r for r in rows if r["rrt_found_path"]]
+    star_solved = [r for r in rows if r["rrt_star_found_path"]]
     print(f"Wrote {len(rows)} trials to {OUTPUT_DIR / 'results.csv'}")
     print(f"Plot saved to {OUTPUT_DIR / 'comparison.png'}")
     print(
-        f"Total cells explored -- Dijkstra: {total_d}, A*: {total_a}, RRT tree nodes: {total_r} "
-        f"({100 * (total_d - total_a) / total_d:.1f}% fewer for A* vs Dijkstra)"
+        f"Total cells explored -- Dijkstra: {total_d}, A*: {total_a}, RRT tree nodes: {total_r}, "
+        f"RRT* tree nodes: {total_s} ({100 * (total_d - total_a) / total_d:.1f}% fewer for A* vs Dijkstra)"
     )
     print(f"RRT found a path in {len(rrt_solved)}/{len(rows)} trials (budget: {RRT_ITERS} iterations)")
+    print(f"RRT* found a path in {len(star_solved)}/{len(rows)} trials (same {RRT_ITERS}-iteration budget)")
     if rrt_solved:
         avg_overhead = sum(
             100 * (r["rrt_path_length"] - r["path_length"]) / r["path_length"]
             for r in rrt_solved if r["path_length"]
         ) / len(rrt_solved)
         print(f"RRT average path-length overhead vs the optimal (Dijkstra/A*) path: {avg_overhead:.1f}%")
+    if star_solved:
+        avg_star_overhead = sum(
+            100 * (r["rrt_star_path_length"] - r["path_length"]) / r["path_length"]
+            for r in star_solved if r["path_length"]
+        ) / len(star_solved)
+        print(f"RRT* average path-length overhead vs the optimal (Dijkstra/A*) path: {avg_star_overhead:.1f}%")
+        avg_r_ms = sum(r["rrt_runtime_ms"] for r in rows) / len(rows)
+        avg_s_ms = sum(r["rrt_star_runtime_ms"] for r in rows) / len(rows)
+        print(f"Average runtime -- RRT: {avg_r_ms:.3f}ms, RRT*: {avg_s_ms:.3f}ms "
+              f"(RRT* always spends its full iteration budget; RRT stops as soon as it reaches the goal)")
+        both = [r for r in rows if r["rrt_found_path"] and r["rrt_star_found_path"]]
+        star_shorter = sum(1 for r in both if r["rrt_star_path_length"] < r["rrt_path_length"] - 1e-9)
+        rrt_shorter = sum(1 for r in both if r["rrt_path_length"] < r["rrt_star_path_length"] - 1e-9)
+        print(f"Head-to-head on the {len(both)} trials both solved (identical random samples fed to each): "
+              f"RRT* shorter in {star_shorter}, RRT shorter in {rrt_shorter}, tied in {len(both) - star_shorter - rrt_shorter}")
