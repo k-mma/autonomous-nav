@@ -19,6 +19,12 @@ HIDDEN_OBSTACLE_COLOR = (0.15, 0.15, 0.15, 0.05)
 BINARY_PATH_COLOR = (0.9, 0.15, 0.15)
 COST_MAP_PATH_COLOR = (0.1, 0.5, 0.95)
 SENSOR_PATH_COLOR = (0.2, 0.75, 0.35)
+# The route that ignores elevation (red, same "naive baseline" role
+# BINARY_PATH_COLOR plays for the cost-map comparison) vs the one that
+# charges for climbing (green, distinguishable from COST_MAP_PATH_COLOR's
+# blue since a demo could in principle show both comparisons at once).
+ELEVATION_UNAWARE_PATH_COLOR = (0.9, 0.15, 0.15)
+ELEVATION_AWARE_PATH_COLOR = (0.15, 0.85, 0.35)
 WAYPOINT_MARKER_COLOR = (1.0, 0.85, 0.1, 1.0)
 START_COLOR = (0.2, 0.8, 0.4, 1.0)
 GOAL_COLOR = (0.9, 0.25, 0.25, 1.0)
@@ -30,20 +36,91 @@ ROBOT_B_COLOR = (0.95, 0.55, 0.1, 1.0)
 # instead of an opaque cell fill since it sits on top of the ground plane
 # rather than replacing it.
 COST_TINT_COLOR = (0.95, 0.55, 0.25)
+TERRAIN_COLOR = (0.55, 0.45, 0.32, 1.0)
+# Bottom of every terrain column build_terrain builds (see below) --
+# comfortably below any elevation this project's demos actually use, so
+# there's never a visible gap under a column regardless of how tall its
+# neighbors are.
+TERRAIN_BASE_Z = -2.0
 
 
-def connect(gui=True):
+def connect(gui=True, load_ground_plane=True):
     """Open a PyBullet connection and load the ground plane. This is the
     only new "physics interface" code the 3D port needed -- the grid
     model and A* itself (nav/grid.py, nav/algorithms.py) are unchanged
-    from pygame, imported and reused as-is."""
+    from pygame, imported and reused as-is.
+
+    `load_ground_plane=False` skips `plane.urdf` -- for a demo building
+    its own elevation-matched terrain instead (see build_terrain), which
+    would otherwise sit half-buried in or floating above a separate flat
+    plane at z=0."""
     p.connect(p.GUI if gui else p.DIRECT)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setGravity(0, 0, -9.8)
     p.resetDebugVisualizerCamera(
         cameraDistance=22, cameraYaw=45, cameraPitch=-55, cameraTargetPosition=[12, 12, 0]
     )
-    return p.loadURDF("plane.urdf")
+    if load_ground_plane:
+        return p.loadURDF("plane.urdf")
+    return None
+
+
+def build_terrain(grid, cell_size=WORLD_CELL_SIZE, base_z=TERRAIN_BASE_Z, color=TERRAIN_COLOR):
+    """One static box "column" per grid cell, its top surface at
+    `grid.elevation[row][col]` -- the elevation analogue of
+    build_obstacles' one-box-per-cell approach, reusing the exact same
+    grid_to_world coordinate convention every other piece of this file
+    already relies on (obstacles, markers, paths) instead of introducing
+    PyBullet's separate heightfield coordinate/scaling conventions and
+    having to keep two systems in sync.
+
+    This produces genuinely *stepped* terrain -- a vertical face
+    wherever two adjacent cells differ in elevation -- rather than a
+    smoothly interpolated slope. That's an explicit, deliberate choice,
+    not a shortcut: a real heightfield collision shape would need its
+    own coordinate system reconciled against grid_to_world's, and one
+    box per cell is both simpler to verify correct (its footprint is
+    exactly one grid cell, exactly like every other body in this file)
+    and, for a wheeled robot climbing it, easier to reason about the
+    physics of (a short, wheel-height step per cell rather than a
+    continuous incline whose steepness varies with elevation data).
+
+    Replaces the flat ground plane entirely -- pass
+    `connect(gui, load_ground_plane=False)` first so there's no separate
+    flat plane underneath it. Collision *and* visual shapes are cached
+    per distinct column height (many cells commonly share the same
+    elevation, e.g. a multi-cell-wide ramp step), the same sharing
+    build_obstacles already does for collision shapes -- safe here for
+    visual shapes too since, unlike hide_obstacles/reveal_obstacles,
+    nothing ever calls changeVisualShape on a terrain body afterward."""
+    collision_cache = {}
+    visual_cache = {}
+    body_ids = []
+    for row in range(len(grid.cells)):
+        for col in range(len(grid.cells[row])):
+            top = grid.elevation[row][col]
+            half_height = max((top - base_z) / 2, cell_size * 0.01)
+            half_extents = [cell_size / 2, cell_size / 2, half_height]
+
+            collision_shape = collision_cache.get(half_height)
+            if collision_shape is None:
+                collision_shape = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents)
+                collision_cache[half_height] = collision_shape
+
+            visual_shape = visual_cache.get(half_height)
+            if visual_shape is None:
+                visual_shape = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=color)
+                visual_cache[half_height] = visual_shape
+
+            x, y, _ = grid_to_world(row, col, cell_size)
+            body_id = p.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=collision_shape,
+                baseVisualShapeIndex=visual_shape,
+                basePosition=[x, y, base_z + half_height],
+            )
+            body_ids.append(body_id)
+    return body_ids
 
 
 def build_obstacles(grid, cell_size=WORLD_CELL_SIZE, height=OBSTACLE_HEIGHT):

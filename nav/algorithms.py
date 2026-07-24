@@ -100,14 +100,18 @@ def reconstruct(came_from, start, goal):
 
 
 def path_cost(grid, path):
-    """Total movement cost along path: sqrt(2) for a diagonal step else 1,
-    each scaled by the terrain cost of the cell being entered (see
-    Grid.cost / compute_cost_map -- 1.0 everywhere when cost-map mode is
-    off, so this collapses to the old diagonal-only cost in that case)."""
+    """Total movement cost along path, by the exact same measure
+    get_neighbors uses to compute it (this just re-derives it per edge
+    instead of re-deriving the whole neighbor list): sqrt(2) for a
+    diagonal step else 1, scaled by the terrain cost of the cell being
+    entered (see Grid.cost / compute_cost_map -- 1.0 everywhere when
+    cost-map mode is off, so this collapses to the old diagonal-only
+    cost in that case), plus an elevation surcharge for climbing (see
+    Grid._elevation_cost -- 0 everywhere unless elevation_aware is on)."""
     cost = 0
     for (r1, c1), (r2, c2) in zip(path, path[1:]):
         step = DIAGONAL_COST if r1 != r2 and c1 != c2 else 1
-        cost += step * grid.cost[r2][c2]
+        cost += step * grid.cost[r2][c2] + grid._elevation_cost(r1, c1, r2, c2)
     return cost
 
 

@@ -130,7 +130,151 @@ off. This is a real, structural limitation of plain RRT versus RRT*
 a bug -- worth being able to say cold if asked "does your cost map affect
 all three planners."
 
-### Replanning policy
+### Elevation-aware routing (`Grid.elevation`, `Grid.elevation_aware`)
+
+Added a second, independent cost dimension alongside the cost map:
+terrain *height*, not just proximity to an obstacle. Every `Grid` now
+carries `self.elevation`, a same-shape array of height values (0.0
+everywhere by default -- flat, matching every grid before this feature
+existed) -- and a `self.elevation_aware` flag (off by default, same
+opt-in shape as `cost_map_enabled`) that controls whether
+`get_neighbors` actually charges for it.
+
+**Why a separate array instead of folding it into `self.cost`.** The
+cost map's weight is symmetric: a cell's cost to enter is the same
+regardless of which neighbor you came from, which is exactly why
+`self.cost[r][c]` -- one number per cell -- was enough to represent it.
+Elevation cost is inherently *directional*: climbing from a low cell
+into a high one should cost more, but climbing back down the exact same
+edge shouldn't cost that same amount again (or anything, in this
+model) -- a single per-cell number can't represent that, since "cost to
+enter this cell" would have to depend on *which* neighbor you're
+entering it from. That forced the cost to live in `get_neighbors`
+itself rather than in a precomputed per-cell field the way
+`compute_cost_map` builds one.
+
+**The cost model.** `get_neighbors` already returns `(cell, step_cost)`
+pairs; elevation mode adds `max(0, elevation[entering] -
+elevation[current]) * ELEVATION_COST_FACTOR` on top of the existing
+`step * self.cost[r][c]` term -- i.e. free real money for descending or
+staying level, a per-unit surcharge only for climbing. `ELEVATION_COST_FACTOR`
+defaults to 10.0 (`nav/config.py`) -- see below for why that specific
+number, which turned out to matter more than it looks like it should.
+
+**Why this stays admissible -- same argument as the cost map, extended.**
+Manhattan/octile estimate the *minimum possible* cost, assuming every
+step costs exactly 1 (or `sqrt(2)` diagonal) -- the cheapest a step can
+ever be under this project's other cost models too, since
+`self.cost[r][c] >= 1.0` always. The elevation surcharge is `>= 0`
+always, by construction (`max(0, ...)`), and it's *added* to that same
+baseline, never multiplied into something that could end up below it.
+So the true cost of any edge is always `>= step` -- exactly the bound
+Manhattan/octile already assume -- meaning the heuristic still never
+overestimates, for the identical structural reason terrain weighting
+doesn't break it: extra cost only ever gets added on top of a floor the
+heuristic already assumes, never subtracted from below it.
+
+Verified, not just argued: `nav/scratch/elevation_test.py` runs Dijkstra
+(always optimal, no heuristic involved) and A* head to head on 100
+random elevation-aware grids per configuration -- elevation alone,
+elevation + cost map, elevation + diagonal movement (octile), and all
+three combined -- and confirms A* never returns a higher-cost path than
+Dijkstra did. 0 suboptimal results across every configuration and every
+trial.
+
+**What the resulting route actually looks like differently, and why the
+factor had to be 10.0 and not something closer to the cost map's own
+scale.** `pybullet_main.py --elevation` puts a round hill (radially
+symmetric, so its per-cell grade is identical in every direction)
+straddling the direct line between start and goal. An elevation-*blind*
+search just finds the straight line (nothing here is a real obstacle to
+route around) and drives it directly over the peak. An elevation-*aware*
+search, with the demo's actual numbers (`HILL_PEAK=1.5`,
+`HILL_RADIUS=6`, `ELEVATION_COST_FACTOR=10.0`), instead detours all the
+way around the hill's base -- 35 cells instead of 23, but at true cost
+34.00 versus the straight route's true cost of 37.00 (both measured
+under the *same* elevation-charging cost model, `path_cost`, extended to
+include the same surcharge `get_neighbors` uses -- comparing the
+straight route's cell count against the detour's true cost would have
+been comparing the wrong things). More cells, less actual cost -- the
+same shape of result the cost-map comparison shows for routing around an
+obstacle's inflation zone, here for routing around a *climb* instead of
+a wall.
+
+Getting a factor that actually produces a *different* route (not just a
+different cost for the same route) turned out to need real numbers, not
+a plausible-sounding guess, for a concrete geometric reason: a hill
+tall and steep enough to matter but still physically climbable has a
+footprint whose radius is roughly `peak height / max climbable grade`,
+and detouring all the way around a roughly circular footprint costs
+about `2 * that radius` in extra distance. For a detour to ever beat
+climbing straight over, the elevation factor has to clear
+`2 / max climbable grade` -- for this project's terrain (see below,
+grade capped around 0.25 for physical reasons), that floor sits around
+6-7. `COST_MAX_EXTRA` (the cost map's analogous constant) is 4.0 --
+tried first, by analogy, and produced *zero* route difference across a
+wide parameter search before the actual floor was found by reasoning
+through the geometry instead of guessing near a value that looked
+"about right" by comparison to an unrelated constant.
+
+### Rendering elevation in PyBullet, and a physics bug it surfaced
+
+`nav/sim3d/world.py: build_terrain` builds one static box "column" per
+grid cell, its top surface at `grid.elevation[row][col]` -- deliberately
+*not* a smooth interpolated heightfield (`pybullet.GEOM_HEIGHTFIELD`
+would need its own separate coordinate/scaling convention reconciled
+against `grid_to_world`'s), reusing the exact same per-cell-footprint
+convention `build_obstacles` already established. This produces
+genuinely *stepped* terrain -- a small vertical face wherever two
+adjacent cells differ in height -- which the brief explicitly allows as
+an alternative to a smooth slope, and which turned out to matter for a
+reason beyond simplicity: it's what actually surfaced a real, previously
+latent bug in `Robot.drive_toward`.
+
+**The bug: `resetBaseVelocity` was called with a hardcoded `vz=0` every
+single control tick.** Harmless on every existing flat-ground demo --
+vertical velocity is already ~0 at rest on flat ground, so forcing it to
+0 changes nothing observable. On stepped terrain it's actively wrong:
+resetting the full linear velocity vector every tick, gravity never gets
+more than `1/240s` to act before being wiped and restarted from zero
+again, over and over. A robot could still *climb* a step under that
+regime (contact pushout from the collision solver doesn't depend on
+`resetBaseVelocity` at all), but it couldn't properly *fall* down one --
+found by watching a robot drive straight across a hill and land still
+1.8m above the true ground on the far side, horizontal velocity carrying
+it forward at full speed while vertical velocity kept getting zeroed
+before gravity could accumulate anything. Fixed with a new,
+**opt-in** `Robot(..., allow_vertical_fall=True)` flag that reads the
+robot's actual current vertical speed back from the physics engine
+instead of hardcoding 0 -- opt-in specifically because trying it as the
+unconditional default was tested and it regressed
+`pybullet_multi_robot_main.py`: two robots on flat ground, feeding back
+a real (if tiny, near-zero) vertical velocity every tick instead of a
+hard 0 measurably destabilized their driving and they stopped reliably
+reaching the goal. Flat ground never needed this fix; only elevation
+does, so it only applies where it's actually asked for.
+
+**A second, separate physical finding, from actually trying to drive the
+straight route over the hill rather than just planning it: it tips the
+robot over, reliably, regardless of speed.** Tested from 3 m/s up to the
+default 20 m/s, and with `turn_speed` reduced too -- the robot tipped
+onto its side (pitch settling near 90 degrees) every time it combined a
+turn with a climb, even on grades well within what an isolated,
+straight-on single-step climb handled fine (up to about 0.3 -- tested
+directly by dropping a robot onto one isolated step of increasing
+height until it stopped being able to climb at all, around 0.35-0.4).
+This is *why* the demo's elevation-aware route is tuned (via
+`ELEVATION_COST_FACTOR=10.0`, see above) to route **entirely** around
+the hill rather than merely reducing how much of it it clips -- a route
+that never touches a non-flat cell is exactly as drivable as this
+project's other flat-ground demos, by construction, and only the
+elevation-aware route is ever actually driven in the demo (the
+elevation-blind one is drawn for comparison, same as `run_static_demo`
+draws the binary-obstacle path even when driving the cost-map one).
+This is a real, physical consequence of "ignoring elevation" that the
+routing-cost numbers alone don't show -- the straight route isn't just
+10% more expensive, it's a route a real robot can't actually survive
+driving at the demo's default speed.
 
 (Full version lives as the docstring on `MovingObstacle` in
 `nav/obstacles.py`, since that's the code whose behavior it's describing.)

@@ -61,6 +61,32 @@ COST_MAX_EXTRA = 4.0
 # Free-cell tint at maximum cost; blends toward WHITE as cost drops to 1.0
 COST_TINT = (255, 205, 150)
 
+# Elevation-aware routing (Grid.elevation / Grid.elevation_aware, see
+# nav/grid.py: get_neighbors). Extra cost charged per unit of *uphill*
+# elevation gain when entering a cell -- climbing costs more, descending
+# or staying level doesn't cost any extra over the baseline. Off by
+# default (elevation_aware=False), same opt-in pattern cost_map_enabled
+# uses.
+#
+# Why 10.0 and not something closer to COST_MAX_EXTRA's 4.0: a hill tall
+# and steep enough to matter but still climbable (a real robot can only
+# climb a bounded per-cell grade) has a physical footprint wide enough
+# that detouring around it costs roughly 2x its footprint radius -- and
+# for *any* climbable hill shape, that radius works out to be roughly
+# (peak height / max climbable grade), which puts a hard floor under
+# how large this factor has to be before a detour ever beats climbing
+# straight over. Empirically (see pybullet_main.py's --elevation demo
+# and WRITEUPS.md) that floor is around 6-7 for this project's terrain;
+# 10.0 clears it with enough margin that the elevation-aware route goes
+# all the way *around* the demo hill rather than merely clipping its
+# lower slope -- which matters physically, not just for a bigger
+# number: a route that never touches a non-flat cell at all is
+# guaranteed exactly as drivable as this project's existing flat-ground
+# demos, where one that still climbs partway up a stepped slope turned
+# out not to be (see WRITEUPS.md -- r2d2 reliably tipped over combining
+# a turn with a climb, regardless of speed).
+ELEVATION_COST_FACTOR = 10.0
+
 
 # Lidar sensor model
 
