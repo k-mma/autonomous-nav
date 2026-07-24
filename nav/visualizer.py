@@ -7,7 +7,7 @@ from nav.config import (
     ORANGE, CYAN, STATUS_BG, STATUS_TEXT,
     OBSTACLE_PERIOD_MS, ROBOT_STEP_MS, REPLAN_FLASH_MS,
     RRT_TREE_COLOR, COST_MAX_EXTRA, COST_TINT, LIDAR_RADIUS,
-    HIDDEN_OBSTACLE_OUTLINE, SENSOR_RING_COLOR
+    HIDDEN_OBSTACLE_OUTLINE, SENSOR_RING_COLOR, CONFIRMATION_THRESHOLD
 )
 from nav.grid import Grid
 from nav.algorithms import find_path, path_cost
@@ -174,6 +174,11 @@ def main():
     # sensed (see nav/sensor.py) instead of the true grid
     sensor_enabled = False
     lidar = None
+    # Perfect sensing by default (every in-range obstacle detected, at
+    # its exact cell, nothing else) -- toggling this on makes the sensor
+    # miss things, misreport their cell, and occasionally "detect"
+    # obstacles that aren't there (see nav/sensor.py's noisy=True mode).
+    noisy_sensor = False
 
     def reset_algorithm():
         nonlocal explored, path, ran, last_results, reason, came_from
@@ -187,16 +192,29 @@ def main():
     def reset_sensor():
         nonlocal lidar
         if sensor_enabled:
-            lidar = LidarSensor(LIDAR_RADIUS)
+            lidar = LidarSensor(LIDAR_RADIUS, noisy=noisy_sensor)
             origin = robot_pos if robot_pos is not None else grid.start
             if origin is not None:
                 lidar.sense(grid, origin)
 
+    def confirmed_cells():
+        """The obstacle cells the planner actually trusts right now --
+        every reported cell if noise is off (a perfect sensor is never
+        wrong, so trusting it immediately is safe), or only cells
+        reported CONFIRMATION_THRESHOLD+ times if noise is on, since a
+        single noisy reading (a false positive, or a position-jittered
+        ghost of a real obstacle) isn't trustworthy enough to route
+        around on its own -- see WRITEUPS.md."""
+        if lidar is None:
+            return set()
+        return lidar.confirmed_obstacles(CONFIRMATION_THRESHOLD if noisy_sensor else 1)
+
     def planning_grid():
         """The grid the active algorithm actually plans against: the real
-        grid, or -- with the sensor on -- only what's been sensed so far."""
+        grid, or -- with the sensor on -- only what's been sensed (and,
+        with noise on, confirmed) so far."""
         if sensor_enabled and lidar is not None:
-            return KnownGrid(lidar.known_obstacles, diagonal=grid.diagonal)
+            return KnownGrid(confirmed_cells(), diagonal=grid.diagonal)
         return grid
 
     def stop_robot():
@@ -282,6 +300,13 @@ def main():
         reset_algorithm()
         stop_robot()
 
+    def toggle_noisy_sensor():
+        nonlocal noisy_sensor
+        noisy_sensor = not noisy_sensor
+        reset_sensor()
+        reset_algorithm()
+        stop_robot()
+
     def generate_new_maze():
         generate_maze(grid)
         moving_obstacles.clear()
@@ -331,7 +356,7 @@ def main():
 
     CONTROLS_1 = "D: Dijkstra  A: A*  R: RRT  T: RRT*  |  Space: run  |  W: walk robot  |  C: clear"
     CONTROLS_2 = "LClick: obstacle (Shift: moving)  |  RClick: start (Shift: goal)"
-    CONTROLS_3 = "H: heuristic  X: diagonal  M: maze  K: cost map  S: sensor"
+    CONTROLS_3 = "H: heuristic  X: diagonal  M: maze  K: cost map  S: sensor  N: noisy sensor"
 
     def status_lines():
         algo_label = ALGO_LABELS[active_algo]
@@ -384,7 +409,11 @@ def main():
         if "rrt_star" in last_results:
             parts.append(f"RRT*: {len(last_results['rrt_star'][1])} nodes")
         if sensor_enabled and lidar is not None:
-            parts.append(f"sensed obstacles: {len(lidar.known_obstacles)}")
+            if noisy_sensor:
+                parts.append(f"sensed: {len(lidar.known_obstacles)} raw / "
+                              f"{len(confirmed_cells())} confirmed (noisy)")
+            else:
+                parts.append(f"sensed obstacles: {len(lidar.known_obstacles)}")
         line_2 = " | ".join(parts) if parts else CONTROLS_1
 
         return [line_1, line_2, CONTROLS_2, CONTROLS_3]
@@ -442,6 +471,8 @@ def main():
                     toggle_cost_map()
                 elif event.key == pygame.K_s:
                     toggle_sensor()
+                elif event.key == pygame.K_n:
+                    toggle_noisy_sensor()
                 elif event.key == pygame.K_c:
                     grid.clear()
                     moving_obstacles.clear()
@@ -465,9 +496,17 @@ def main():
                 robot_index += 1
                 robot_pos = path[robot_index]
                 if sensor_enabled and lidar is not None:
-                    newly_seen = lidar.sense(grid, robot_pos)
+                    # Trigger on newly-*confirmed* cells, not raw sensor
+                    # output -- with noise on, a single stray false
+                    # positive or jittered reading shouldn't be enough to
+                    # kick off a replan on its own (see WRITEUPS.md). With
+                    # noise off, confirmed_cells() is just known_obstacles,
+                    # so this is identical to the old behavior.
+                    before = confirmed_cells()
+                    lidar.sense(grid, robot_pos)
+                    newly_confirmed = confirmed_cells() - before
                     remaining = set(path[robot_index:])
-                    if newly_seen and (newly_seen & remaining or robot_pos in newly_seen):
+                    if newly_confirmed and (newly_confirmed & remaining or robot_pos in newly_confirmed):
                         replan_from_robot()
             else:
                 robot_running = False

@@ -68,3 +68,26 @@ LIDAR_RADIUS = 5
 # Outline drawn around a real obstacle the robot hasn't sensed yet
 HIDDEN_OBSTACLE_OUTLINE = (170, 170, 170)
 SENSOR_RING_COLOR = (0, 140, 200)
+
+# Sensor noise -- both LidarSensor (nav/sensor.py) and Lidar3D
+# (nav/sim3d/lidar.py) are perfect by default (every real obstacle in
+# range is detected, at its exact cell, and nothing else is); passing
+# noisy=True to either makes them imperfect in three independent ways,
+# each governed by one of these rates:
+#   - a real obstacle in range can go undetected this scan (false
+#     negative), governed by NOISE_MISS_RATE;
+#   - a detected obstacle's reported position can be off by a cell (2D)
+#     or a bit of physical distance (3D) instead of exact, governed by
+#     NOISE_POSITION_RATE;
+#   - a free cell/empty ray can be "detected" as an obstacle that isn't
+#     really there (false positive), governed by NOISE_FALSE_POSITIVE_RATE.
+# Off by default (both sensors default to noisy=False) so every existing
+# caller and test keeps its current, deterministic behavior unchanged.
+NOISE_MISS_RATE = 0.15
+NOISE_POSITION_RATE = 0.15
+NOISE_FALSE_POSITIVE_RATE = 0.02
+# How many separate scans have to (noisily) report the same cell before
+# a caller that's using confirmed_obstacles() should trust it enough to
+# replan on -- see LidarSensor.confirmed_obstacles / Lidar3D.confirmed_obstacles
+# and WRITEUPS.md for why a single noisy reading isn't enough on its own.
+CONFIRMATION_THRESHOLD = 2

@@ -212,6 +212,126 @@ a case the project's moving obstacles don't actually create in practice
 (the robot re-senses its surroundings every step it takes, so a stale
 belief only lingers for cells outside current sensor range).
 
+### Sensor noise: from perfect detection to imperfect, and what changes about trusting it
+
+Both sensor models above are, by default, perfect: every real obstacle
+within range gets detected, at its exact cell, and nothing else does.
+That's a much stronger assumption than any real range sensor gets to
+make, and it's worth being honest that everything in the section above
+(the discover-and-replan loop, the "stale belief" simplification) was
+built and verified against that unrealistically clean signal. `noisy=True`
+(`LidarSensor` in `nav/sensor.py`, `Lidar3D` in `nav/sim3d/lidar.py` --
+same three parameters, same behavior, one per 2D radius-cell and one per
+3D raycast) replaces it with three independent failure modes, each
+governed by its own rate in `nav/config.py`:
+
+- **False negative** (`NOISE_MISS_RATE`, default 0.15): a real obstacle
+  in range isn't detected this scan.
+- **Position noise** (`NOISE_POSITION_RATE`, default 0.15): a detected
+  obstacle is reported at a random *adjacent* cell (2D: one of its 8
+  neighbors; 3D: the raycast hit point nudged by up to
+  `POSITION_JITTER_METERS` before being converted to a cell) instead of
+  its true one.
+- **False positive** (`NOISE_FALSE_POSITIVE_RATE`, default 0.02): a free
+  cell (2D) or a ray that hit nothing (3D, which hallucinates a phantom
+  hit at a random point along that ray instead) gets "detected" as an
+  obstacle that isn't there.
+
+Both default to `noisy=False`, so every existing caller, test, and demo
+keeps its exact current deterministic behavior unless it explicitly asks
+for noise -- nothing above needed to change to stay true.
+
+**Why a single noisy reading can't just be trusted the way a perfect
+one was.** `known_obstacles` still means exactly what it always did --
+every cell ever *reported*, right or wrong -- because noise can plant a
+wrong cell just as permanently as a correct one (nothing here un-senses
+anything, same simplification as before, now compounded by the fact
+that some of what gets remembered forever was never true). Both sensors
+also track `detection_counts` (how many separate scans reported each
+cell) and expose `confirmed_obstacles(min_detections)`: with
+`min_detections=1` (the default, and exactly what a non-noisy sensor's
+`known_obstacles` already was), a single report is trusted immediately
+-- safe only because a perfect sensor is never wrong. With noise on, a
+caller should ask for `min_detections=2` or higher instead: requiring
+the *same* cell to be independently (mis)reported more than once is a
+meaningfully rarer coincidence than seeing it once, for exactly the
+reason repeated confirmation is trustworthy in general -- each scan's
+noise is an independent roll, so the chance of the identical false
+reading landing twice is roughly the single-scan rate *squared*, not
+the same rate again.
+
+**Does this actually matter, concretely, or is it a theoretical nicety?**
+Measured, not asserted (`nav/scratch/lidar_noise_test.py`,
+`nav/scratch/pybullet_lidar_noise_test.py` -- both scanning a hidden
+obstacle repeatedly from a fixed position, then replanning against
+`confirmed_obstacles` at increasing thresholds and comparing the
+resulting path cost to the true optimum):
+
+| min_detections | 2D corridor test | 3D wall test |
+|---:|---|---|
+| 1 (= raw `known_obstacles`) | **FAILED outright** (`start_blocked`) | cost 34.00 (+13% vs optimal) |
+| 2 (`CONFIRMATION_THRESHOLD` default) | cost 29.00 (+16% vs optimal) | cost 30.00 (= optimal) |
+| 3 | cost 25.00 (= optimal) | cost 30.00 (= optimal) |
+| 4+ | cost 25.00 (= optimal) | cost 30.00 (= optimal) |
+
+The 2D case is the more dramatic one: in that exact run, a single false
+positive happened to land on the robot's own start cell, and
+`validate_endpoints` correctly (if unhelpfully) reports "start_blocked"
+-- a perfectly literal reading of a noisy sensor's output makes planning
+fail *outright*, not just suboptimally, the instant bad luck puts a
+phantom obstacle somewhere it really matters. Requiring even one repeat
+(`min_detections=2`) was enough to avoid that specific outright failure
+in both scripts, though the 2D run still paid 16% extra path length at
+that threshold from other surviving noise; a couple more repeats closed
+the rest of the gap to the true optimum in both. That's the actual
+shape of the tradeoff a confirmation threshold buys: higher means fewer
+false alarms and less wasted detour, at the direct cost of needing more
+scans -- more time spent near a real obstacle -- before the robot will
+act on it at all. A robot that needs to react instantly to a single
+sensor ping cannot also demand five confirmations first; this project's
+`CONFIRMATION_THRESHOLD = 2` is a middle-of-the-road default, not a
+tuned optimum, and callers that want a different point on that tradeoff
+(`nav/visualizer.py`'s `N` key, `pybullet_main.py --sensor
+--noisy-sensor`) can pass a different `min_detections` to
+`confirmed_obstacles` directly.
+
+**A confirmation threshold does not turn noisy sensing back into perfect
+sensing, and it's worth being precise about exactly how it falls short**
+(found by actually inspecting *which* cells survived a low threshold,
+not assumed): in the 3D wall test, most of the "confirmed" cells that
+weren't real turned out to be position-jittered *neighbors* of a real
+wall cell -- the same true obstacle, reported one cell off, repeatedly,
+often enough on its own to independently clear the threshold. That's a
+structurally different, more benign failure than a random phantom
+elsewhere: it blurs a real obstacle's boundary by about a cell rather
+than inventing one in open space, but it's still a real limit of
+counting hits *per exact cell* -- a sensor whose position noise spreads
+a real detection's signal across several neighboring cells can leave
+every individual cell under-confirmed even though the area is clearly
+occupied, since each neighbor only gets a fraction of the repeat counts
+the true cell would have accumulated alone. A more sophisticated belief
+representation (e.g. an occupancy grid that spreads confidence
+across nearby cells instead of requiring an exact repeat) would handle
+this better; per-cell counting is the simplest thing that could
+possibly work, chosen deliberately over that added complexity the same
+way the "known_obstacles only grows" simplification was, and both
+tradeoffs are recorded here rather than hidden.
+
+**Wiring**: both `nav/visualizer.py` (`N` key, alongside `S` for the
+sensor itself) and `pybullet_main.py --sensor --noisy-sensor` gained a
+noise toggle that's off by default, and both switched their replanning
+trigger from "any newly reported cell" to "any newly *confirmed* cell"
+(computing `confirmed_cells()` before and after each scan and diffing
+the two sets) -- with noise off this is provably identical to the old
+behavior, since `confirmed_obstacles(1) == known_obstacles` always; with
+noise on, it's what keeps a single stray false positive from kicking off
+a wasted replan on its own. The live "hidden obstacle" visual in both
+(`nav/visualizer.py`'s outline, `pybullet_main.py`'s dim/reveal) is
+deliberately left showing *raw* sensor output, not confirmed -- so a
+human watching the demo can see the sensor's actual noisy behavior in
+real time, while the planner underneath only ever acts on what it's
+decided to trust.
+
 ### Inadmissible heuristics: does 1.5x actually break anything?
 
 The experiment was to multiply Manhattan by 1.5 and see what actually

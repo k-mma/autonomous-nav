@@ -20,6 +20,7 @@ import time
 import pybullet as p
 
 from nav.algorithms import find_path, path_cost
+from nav.config import CONFIRMATION_THRESHOLD
 from nav.grid import Grid
 from nav.sensor import KnownGrid
 from nav.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
@@ -101,6 +102,11 @@ def parse_args():
     parser.add_argument("--no-cost-map", action="store_true")
     parser.add_argument("--sensor", action="store_true",
                          help="plan against lidar-discovered knowledge only, replanning as it explores")
+    parser.add_argument("--noisy-sensor", action="store_true",
+                         help="(with --sensor) make the lidar imperfect -- misses, position noise, and "
+                              "false positives (see nav/sim3d/lidar.py) -- and require "
+                              f"{CONFIRMATION_THRESHOLD}+ repeated detections before trusting a cell "
+                              "enough to replan on")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--max-seconds", type=float, default=60.0,
                          help="safety cap so a headless/automated run can't hang forever")
@@ -194,7 +200,17 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     start_xy = grid_to_world(*START)[:2]
     robot_id = p.loadURDF("r2d2.urdf", basePosition=[start_xy[0], start_xy[1], 0.4])
     robot = Robot(robot_id)
-    lidar = Lidar3D(num_rays=SENSOR_NUM_RAYS, max_range=SENSOR_RANGE, ignore_body_id=robot_id)
+    lidar = Lidar3D(num_rays=SENSOR_NUM_RAYS, max_range=SENSOR_RANGE, ignore_body_id=robot_id,
+                     noisy=args.noisy_sensor)
+    # With noise off, confirmed_cells() is exactly lidar.known_obstacles
+    # (trusting a perfect sensor's first reading is safe). With noise on,
+    # a cell only counts once it's been reported CONFIRMATION_THRESHOLD+
+    # times -- a single false positive or jittered reading of a real
+    # obstacle isn't enough to replan on by itself. See WRITEUPS.md.
+    confirm_threshold = CONFIRMATION_THRESHOLD if args.noisy_sensor else 1
+
+    def confirmed_cells():
+        return lidar.confirmed_obstacles(confirm_threshold)
 
     hud = Hud(HUD_POSITION, gui)
     speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
@@ -203,7 +219,7 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
 
     def replan_from(position):
         cell = world_to_grid(position[0], position[1])
-        known = KnownGrid(lidar.known_obstacles)
+        known = KnownGrid(confirmed_cells())
         path, _, reason, _ = find_path(known, "astar", cell, GOAL)
         if path is None:
             print(f"  no known path to goal yet (reason={reason}) -- waiting for more of the map")
@@ -245,10 +261,17 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
 
         if steps >= next_scan_step:
             next_scan_step += int(SENSOR_SCAN_PERIOD_S * SIM_HZ)
+            before_confirmed = confirmed_cells()
             newly_seen = lidar.scan(robot.position(), gui=gui)
             if newly_seen:
                 reveal_obstacles(obstacle_bodies, newly_seen)
-                print(f"  sensed {len(newly_seen)} new obstacle cell(s) at t={steps / SIM_HZ:.1f}s -- replanning")
+            # Replan on newly-*confirmed* cells, not raw sensor output --
+            # with noise on, a single stray false positive or jittered
+            # reading shouldn't be enough to trigger a replan by itself.
+            newly_confirmed = confirmed_cells() - before_confirmed
+            if newly_confirmed:
+                print(f"  confirmed {len(newly_confirmed)} new obstacle cell(s) at "
+                      f"t={steps / SIM_HZ:.1f}s -- replanning")
                 drive_waypoints = replan_from(robot.position())
                 idx = 0
                 replan_flash_until_step = steps + int(REPLAN_FLASH_S * SIM_HZ)
@@ -281,10 +304,16 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
                 status = "reached goal"
             else:
                 status = f"driving waypoint {idx}/{len(drive_waypoints)}"
+            sensed_line = (
+                f"sensed {len(lidar.known_obstacles)} raw / {len(confirmed_cells())} confirmed "
+                f"(of {total_obstacles} real) | t={steps / SIM_HZ:.1f}s"
+                if args.noisy_sensor else
+                f"sensed {len(lidar.known_obstacles)}/{total_obstacles} obstacles | t={steps / SIM_HZ:.1f}s"
+            )
             hud.update([
-                f"[sensor] A* | lidar-limited | smoothing={args.smooth}",
+                f"[sensor] A* | lidar-limited{' (noisy)' if args.noisy_sensor else ''} | smoothing={args.smooth}",
                 status,
-                f"sensed {len(lidar.known_obstacles)}/{total_obstacles} obstacles | t={steps / SIM_HZ:.1f}s",
+                sensed_line,
             ])
 
     if reached_goal:
@@ -292,6 +321,9 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     else:
         print(f"stopped after {args.max_seconds}s safety cap")
     print(f"final known map: {len(lidar.known_obstacles)} obstacle cells sensed out of {total_obstacles} actual")
+    if args.noisy_sensor:
+        print(f"  of which confirmed (>={confirm_threshold} detections, what the planner actually trusted): "
+              f"{len(confirmed_cells())}")
 
 
 def main():
