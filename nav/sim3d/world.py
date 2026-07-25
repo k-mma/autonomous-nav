@@ -17,7 +17,12 @@ OBSTACLE_COLOR = (0.15, 0.15, 0.15, 1.0)
 # free cell with a faint outline.
 HIDDEN_OBSTACLE_COLOR = (0.15, 0.15, 0.15, 0.05)
 BINARY_PATH_COLOR = (0.9, 0.15, 0.15)
-COST_MAP_PATH_COLOR = (0.1, 0.5, 0.95)
+# Darker/more saturated than a first attempt at this color (0.1, 0.5,
+# 0.95) -- plane.urdf's own ground is pale blue/white, and that lighter
+# blue was close enough in both hue *and* lightness to blend into it at
+# a glance. This one reads as clearly "blue" without competing with the
+# tiles underneath it.
+COST_MAP_PATH_COLOR = (0.05, 0.15, 0.85)
 SENSOR_PATH_COLOR = (0.2, 0.75, 0.35)
 # The route that ignores elevation (red, same "naive baseline" role
 # BINARY_PATH_COLOR plays for the cost-map comparison) vs the one that
@@ -36,6 +41,51 @@ ROBOT_B_COLOR = (0.95, 0.55, 0.1, 1.0)
 # instead of an opaque cell fill since it sits on top of the ground plane
 # rather than replacing it.
 COST_TINT_COLOR = (0.95, 0.55, 0.25)
+# A path redraw used to be instantaneous: the old line vanished and the
+# new one appeared in the same frame, easy to miss watching live and
+# invisible entirely in a single screenshot. FLASH_COLOR is what a freshly
+# (re)drawn path renders in for PATH_FLASH_SECONDS before settling into
+# its real color (see LivePath below) -- bright and shared across every
+# demo specifically so "this just changed" reads as one consistent visual
+# signal regardless of which path/robot/color it's attached to.
+#
+# Hot magenta, not white: plane.urdf's default ground is itself pale
+# blue/white, so a white flash was landing almost exactly on top of the
+# lightest tiles and the sun-glare highlight -- close to zero contrast
+# right where it needed the *most* contrast. Magenta doesn't occur
+# anywhere else in this file's palette (ground, obstacles, or any path/
+# robot color), so it can't blend into anything by coincidence.
+FLASH_COLOR = (1.0, 0.0, 0.85)
+PATH_FLASH_SECONDS = 0.4
+# How long a *superseded* path keeps rendering before being removed --
+# long enough that a viewer (live, or scrubbing a video) can actually
+# compare "here's what it was" against the new one flashing in next to
+# it, instead of the change happening in one blink-and-you-miss-it frame.
+# It doesn't linger in its *old* color/width, though (see LivePath) --
+# it gets redrawn dimmer and thinner the moment it's superseded, so
+# "old, fading out" and "new, bold and flashing" read as two different
+# things at a glance instead of two identical-looking lines.
+PATH_LINGER_SECONDS = 1.2
+# Dark charcoal, not mid-gray -- (0.55, 0.55, 0.55) turned out to still
+# have weak contrast against plane.urdf's pale blue/white tiles (a mid
+# gray is roughly as light as the lighter tiles themselves). The obstacle
+# block's near-black already reads clearly against this same ground in
+# every screenshot, which is the actual benchmark this needs to clear.
+LINGER_COLOR = (0.2, 0.2, 0.2)
+# Default line widths (PyBullet's addUserDebugLine takes this in
+# screen-space pixels, not world units). First pass (6/11/3) was still
+# too thin to read clearly in an actual screenshot -- these are
+# substantially heavier across the board; flash renders heaviest of all,
+# so the "just changed" moment reads as unmistakably bold, not just a
+# color change.
+PATH_WIDTH = 79
+PATH_FLASH_WIDTH = 89
+PATH_LINGER_WIDTH = 74
+# Color for draw_trigger_marker's short-lived "X" -- calls out *why* a
+# redraw just happened (the cell a sensor discovery or another robot's
+# position triggered it from), distinct from FLASH_COLOR so the two don't
+# read as the same signal.
+TRIGGER_MARKER_COLOR = (1.0, 0.8, 0.0)
 TERRAIN_COLOR = (0.55, 0.45, 0.32, 1.0)
 # Bottom of every terrain column build_terrain builds (see below) --
 # comfortably below any elevation this project's demos actually use, so
@@ -222,7 +272,7 @@ def remove_debug_items(item_ids):
         p.removeUserDebugItem(item_id)
 
 
-def draw_xy_path(points_xy, color, z=0.05, width=3, gui=True, existing_ids=None):
+def draw_xy_path(points_xy, color, z=0.05, width=PATH_WIDTH, gui=True, existing_ids=None):
     """Draw a world-space (x, y) polyline as a sequence of debug line
     segments, returning their ids. Pass the ids from a previous call back
     in as `existing_ids` to erase the old line first -- a replan can
@@ -239,13 +289,131 @@ def draw_xy_path(points_xy, color, z=0.05, width=3, gui=True, existing_ids=None)
     return ids
 
 
-def draw_path(path_cells, color, cell_size=WORLD_CELL_SIZE, z=0.05, width=3, gui=True, existing_ids=None):
+def draw_path(path_cells, color, cell_size=WORLD_CELL_SIZE, z=0.05, width=PATH_WIDTH, gui=True, existing_ids=None):
     """Draw a grid-cell path (list of (row, col)) as a debug polyline --
     used to visually compare the binary-obstacle route against the
     cost-map route on the same grid (see pybullet_main.py). See
     draw_xy_path for the `existing_ids` redraw-on-replan contract."""
     points = [grid_to_world(r, c, cell_size)[:2] for r, c in path_cells]
     return draw_xy_path(points, color, z=z, width=width, gui=gui, existing_ids=existing_ids)
+
+
+class LivePath:
+    """A path debug-line whose redraws are actually visible to someone
+    watching, instead of an instant, easy-to-miss swap.
+
+    Call `set_path(points_xy, sim_step)` whenever the path actually
+    changes (a real replan -- not every frame) and `tick(sim_step)`
+    every frame (or every few frames; see the callers' HUD-update
+    cadence, which is plenty precise for this). Two things happen on a
+    change:
+
+    - The newly drawn path renders in FLASH_COLOR, at PATH_FLASH_WIDTH
+      (thicker than its steady width, not just a different color), for
+      PATH_FLASH_SECONDS, then `tick` transitions it to its real `color`
+      at `width` -- a redraw now visibly *pops*, rather than silently
+      having always looked the way it does.
+    - The path it replaced doesn't just disappear -- the instant it's
+      superseded it gets redrawn in LINGER_COLOR (a neutral gray) at the
+      thinner PATH_LINGER_WIDTH, so it reads as "the old route" rather
+      than looking like a second, equally-current path, and keeps
+      rendering in that dimmed style for PATH_LINGER_SECONDS before
+      `tick` removes it -- long enough that old and new are both legible
+      on screen at once, long enough to actually compare them.
+
+    Only one lingering path is ever kept at a time (a new change
+    discards whatever was still lingering from before) -- under a fast
+    replan cadence (pybullet_multi_robot_main.py's is 0.05s) this
+    self-limits to "current path + at most one recent previous one"
+    rather than an ever-growing trail, and the active path itself can
+    end up re-flashing before it ever settles. That's read as a feature,
+    not a bug: rapid flashing *is* an accurate picture of an area with a
+    lot of active replanning (e.g. two robots contesting a crossing),
+    and it settles to a steady color the moment replans actually stop.
+    """
+
+    def __init__(self, color, gui, sim_hz, z=0.05, width=PATH_WIDTH,
+                 flash_color=FLASH_COLOR, flash_width=PATH_FLASH_WIDTH, flash_seconds=PATH_FLASH_SECONDS,
+                 linger_color=LINGER_COLOR, linger_width=PATH_LINGER_WIDTH, linger_seconds=PATH_LINGER_SECONDS):
+        self.color = color
+        self.gui = gui
+        self.z = z
+        self.width = width
+        self.flash_color = flash_color
+        self.flash_width = flash_width
+        self.flash_steps = max(1, int(flash_seconds * sim_hz))
+        self.linger_color = linger_color
+        self.linger_width = linger_width
+        self.linger_steps = max(1, int(linger_seconds * sim_hz))
+
+        self.points = []
+        self.active_ids = []
+        self.flash_until_step = -1
+        self.settled = True
+
+        self.lingering_ids = []
+        self.lingering_remove_step = -1
+
+    def set_path(self, points_xy, sim_step):
+        """Make `points_xy` the active path, effective now. The
+        previously active path (if any, and if actually different)
+        becomes the lingering one -- redrawn dimmer and thinner, not
+        just relabeled -- instead of being removed outright."""
+        points_xy = list(points_xy)
+        if points_xy == self.points:
+            return
+        if self.active_ids:
+            remove_debug_items(self.lingering_ids)
+            self.lingering_ids = draw_xy_path(
+                self.points, self.linger_color, z=self.z, width=self.linger_width,
+                gui=self.gui, existing_ids=self.active_ids
+            )
+            self.lingering_remove_step = sim_step + self.linger_steps
+
+        self.points = points_xy
+        self.active_ids = draw_xy_path(points_xy, self.flash_color, z=self.z, width=self.flash_width, gui=self.gui)
+        self.flash_until_step = sim_step + self.flash_steps
+        self.settled = False
+
+    def clear(self, sim_step):
+        """No active path right now (e.g. a replan found nothing) -- the
+        current active path lingers and fades exactly as it would if
+        replaced by a real new one."""
+        self.set_path([], sim_step)
+
+    def tick(self, sim_step):
+        """Advance the flash->settle and linger->removal timers. Cheap
+        and safe to call every frame; callers use their existing
+        HUD-update cadence (~10Hz) since that's plenty of resolution for
+        multi-tenths-of-a-second windows."""
+        if not self.gui:
+            return
+        if not self.settled and sim_step >= self.flash_until_step:
+            self.active_ids = draw_xy_path(
+                self.points, self.color, z=self.z, width=self.width, gui=self.gui, existing_ids=self.active_ids
+            )
+            self.settled = True
+        if self.lingering_ids and sim_step >= self.lingering_remove_step:
+            remove_debug_items(self.lingering_ids)
+            self.lingering_ids = []
+
+
+def draw_trigger_marker(row, col, cell_size=WORLD_CELL_SIZE, color=TRIGGER_MARKER_COLOR,
+                         z=0.2, size=0.9, width=16, lifetime=1.2, gui=True):
+    """A short-lived 'X' over a grid cell -- calls out *why* a redraw
+    just happened (a newly-sensed obstacle, or another robot's current
+    cell) instead of leaving a viewer to infer it from the path alone.
+    Uses PyBullet's own `lifeTime` (unlike LivePath's lingering path,
+    this never needs to be replaced or extended, so there's no reason
+    not to let PyBullet auto-remove it instead of tracking it by hand)."""
+    if not gui:
+        return
+    x, y, _ = grid_to_world(row, col, cell_size)
+    half = size / 2
+    p.addUserDebugLine([x - half, y - half, z], [x + half, y + half, z],
+                        lineColorRGB=color, lineWidth=width, lifeTime=lifetime)
+    p.addUserDebugLine([x - half, y + half, z], [x + half, y - half, z],
+                        lineColorRGB=color, lineWidth=width, lifeTime=lifetime)
 
 
 def draw_waypoints(waypoints_xy, z=0.05, gui=True):

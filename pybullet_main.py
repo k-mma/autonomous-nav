@@ -31,8 +31,8 @@ from nav.sim3d.lidar import Lidar3D
 from nav.sim3d.robot import Robot, DEFAULT_SPEED
 from nav.sim3d.smoothing import simplify_collinear, chaikin_smooth, catmull_rom_spline
 from nav.sim3d.world import (
-    connect, build_obstacles, build_terrain, hide_obstacles, reveal_obstacles, mark_cell, draw_path,
-    draw_xy_path, draw_waypoints, draw_cost_map_tint, remove_debug_items,
+    connect, build_obstacles, build_terrain, hide_obstacles, reveal_obstacles, mark_cell,
+    draw_waypoints, draw_cost_map_tint, draw_trigger_marker, LivePath,
     BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, SENSOR_PATH_COLOR, START_COLOR, GOAL_COLOR,
     ELEVATION_UNAWARE_PATH_COLOR, ELEVATION_AWARE_PATH_COLOR,
 )
@@ -57,9 +57,11 @@ HILL_RADIUS = 6
 # debug-item pipeline for no visible benefit; a human can't perceive HUD
 # updates faster than this anyway.
 HUD_UPDATE_PERIOD_S = 0.1
-# How long the "REPLANNING..." indicator stays lit after a real replan,
-# mirroring nav/visualizer.py's REPLAN_FLASH_MS.
-REPLAN_FLASH_S = 0.7
+# How long the "REPLANNING..." HUD indicator stays lit after a real
+# replan, mirroring nav/visualizer.py's REPLAN_FLASH_MS -- matched to
+# nav/sim3d/world.py's PATH_LINGER_SECONDS so the HUD text and the old
+# path's on-screen linger both clear at roughly the same moment.
+REPLAN_FLASH_S = 1.2
 HUD_POSITION = (4, 4, 6)
 
 
@@ -154,8 +156,15 @@ def run_static_demo(args, grid, gui):
     binary_cost = path_cost(grid, binary_path)
     cost_map_path = plan(grid, use_cost_map=True)
     cost_map_cost = path_cost(grid, cost_map_path)
-    draw_path(binary_path, BINARY_PATH_COLOR, z=0.03, gui=gui)
-    draw_path(cost_map_path, COST_MAP_PATH_COLOR, z=0.06, gui=gui)
+    # LivePath, even for a path that's only ever drawn once: it still
+    # gets the flash-in reveal (bright, then settles to its real color a
+    # moment later) instead of simply appearing -- a small thing, but it
+    # means every path in every demo announces itself onscreen the same
+    # way, which matters more for a screenshot/video than it does live.
+    binary_live = LivePath(BINARY_PATH_COLOR, gui, SIM_HZ, z=0.03)
+    cost_map_live = LivePath(COST_MAP_PATH_COLOR, gui, SIM_HZ, z=0.06)
+    binary_live.set_path(to_world_xy(binary_path), 0)
+    cost_map_live.set_path(to_world_xy(cost_map_path), 0)
     if not args.no_cost_map:
         draw_cost_map_tint(grid, gui=gui)
     print(f"binary-obstacle path:  {len(binary_path)} cells, cost {binary_cost:.2f}")
@@ -195,6 +204,8 @@ def run_static_demo(args, grid, gui):
 
         if steps >= next_hud_step:
             next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            binary_live.tick(steps)
+            cost_map_live.tick(steps)
             if speed_param is not None:
                 robot.speed = p.readUserDebugParameter(speed_param)
             status = "reached goal" if idx >= len(drive_waypoints) else "driving"
@@ -248,8 +259,10 @@ def run_elevation_demo(args, grid, gui):
     unaware_cost = path_cost(grid, unaware_path)
     aware_cost = path_cost(grid, aware_path)
 
-    draw_path(unaware_path, ELEVATION_UNAWARE_PATH_COLOR, z=0.05, gui=gui)
-    draw_path(aware_path, ELEVATION_AWARE_PATH_COLOR, z=0.08, gui=gui)
+    unaware_live = LivePath(ELEVATION_UNAWARE_PATH_COLOR, gui, SIM_HZ, z=0.05)
+    aware_live = LivePath(ELEVATION_AWARE_PATH_COLOR, gui, SIM_HZ, z=0.08)
+    unaware_live.set_path(to_world_xy(unaware_path), 0)
+    aware_live.set_path(to_world_xy(aware_path), 0)
     peak_unaware = max(grid.elevation[r][c] for r, c in unaware_path)
     peak_aware = max(grid.elevation[r][c] for r, c in aware_path)
     print(f"elevation-unaware path (straight over the hill): {len(unaware_path)} cells, cost {unaware_cost:.2f} "
@@ -290,6 +303,8 @@ def run_elevation_demo(args, grid, gui):
 
         if steps >= next_hud_step:
             next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            unaware_live.tick(steps)
+            aware_live.tick(steps)
             if speed_param is not None:
                 robot.speed = p.readUserDebugParameter(speed_param)
             status = "reached goal" if idx >= len(drive_waypoints) else "driving"
@@ -344,7 +359,7 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     hud = Hud(HUD_POSITION, gui)
     speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
     full_map_param = p.addUserDebugParameter("reveal full map (visual only)", 0, 1, 0) if gui else None
-    path_line_ids = []
+    live_path = LivePath(SENSOR_PATH_COLOR, gui, SIM_HZ)
 
     def replan_from(position):
         cell = world_to_grid(position[0], position[1])
@@ -358,8 +373,7 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     lidar.scan(start_xy, gui=gui)
     reveal_obstacles(obstacle_bodies, lidar.known_obstacles)
     drive_waypoints = replan_from(start_xy)
-    if drive_waypoints:
-        path_line_ids = draw_xy_path(drive_waypoints, SENSOR_PATH_COLOR, gui=gui)
+    live_path.set_path(drive_waypoints or [], 0)
     print(f"initial scan: {len(lidar.known_obstacles)} obstacle cells sensed")
 
     idx = 0
@@ -401,19 +415,16 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
             if newly_confirmed:
                 print(f"  confirmed {len(newly_confirmed)} new obstacle cell(s) at "
                       f"t={steps / SIM_HZ:.1f}s -- replanning")
+                for cell in newly_confirmed:
+                    draw_trigger_marker(*cell, gui=gui)
                 drive_waypoints = replan_from(robot.position())
                 idx = 0
                 replan_flash_until_step = steps + int(REPLAN_FLASH_S * SIM_HZ)
-                if drive_waypoints:
-                    path_line_ids = draw_xy_path(
-                        drive_waypoints, SENSOR_PATH_COLOR, gui=gui, existing_ids=path_line_ids
-                    )
-                else:
-                    remove_debug_items(path_line_ids)
-                    path_line_ids = []
+                live_path.set_path(drive_waypoints or [], steps)
 
         if steps >= next_hud_step:
             next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            live_path.tick(steps)
             if speed_param is not None:
                 robot.speed = p.readUserDebugParameter(speed_param)
             if full_map_param is not None:

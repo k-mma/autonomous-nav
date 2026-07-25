@@ -61,7 +61,7 @@ from nav.sim3d.coords import grid_to_world, world_to_grid
 from nav.sim3d.hud import Hud, FollowLabel
 from nav.sim3d.robot import Robot, DEFAULT_SPEED
 from nav.sim3d.world import (
-    connect, build_obstacles, mark_cell, mark_goal_cell, label_cell, draw_xy_path,
+    connect, build_obstacles, mark_cell, mark_goal_cell, label_cell, draw_trigger_marker, LivePath,
     ROBOT_A_COLOR, ROBOT_B_COLOR,
 )
 
@@ -76,9 +76,11 @@ SAFETY_STOP_RADIUS = 0.55
 # redrawn -- see pybullet_main.py's HUD_UPDATE_PERIOD_S for why this is
 # throttled well below the 240Hz physics rate.
 HUD_UPDATE_PERIOD_S = 0.1
-# How long the "replanning..." indicator stays lit after a real replan,
-# mirroring nav/visualizer.py's REPLAN_FLASH_MS.
-REPLAN_FLASH_S = 0.7
+# How long the "replanning..." HUD indicator stays lit after a real
+# replan, mirroring nav/visualizer.py's REPLAN_FLASH_MS -- matched to
+# nav/sim3d/world.py's PATH_LINGER_SECONDS, same reasoning as
+# pybullet_main.py's REPLAN_FLASH_S.
+REPLAN_FLASH_S = 1.2
 HUD_POSITION = (2, 2, 9)
 
 # A drives straight down the middle column; B drives straight across the
@@ -155,7 +157,7 @@ class NavAgent:
         self.idx = 0
         self.waiting = False
         self.arrived = False
-        self.path_line_ids = []
+        self.live_path = LivePath(color[:3], gui, SIM_HZ, z=0.04)
         self.replan_flash_until_step = 0
         self.label = FollowLabel(name, gui, color=color)
 
@@ -163,15 +165,10 @@ class NavAgent:
         pos = self.robot.position()
         return world_to_grid(pos[0], pos[1])
 
-    def _redraw_path(self, points_xy):
-        self.path_line_ids = draw_xy_path(
-            points_xy, self.color[:3], z=0.04, gui=self.gui, existing_ids=self.path_line_ids
-        )
-
     def update_label(self):
         self.label.update(self.robot.position())
 
-    def _park(self):
+    def _park(self, now_step):
         """An arrived robot resting exactly on its goal cell would remain
         a phantom obstacle there forever as far as the other robot's
         planning is concerned. Nudge it a meter off to the side once it's
@@ -179,7 +176,7 @@ class NavAgent:
         robot's blocked-cell calculations."""
         pos = self.robot.position()
         p.resetBasePositionAndOrientation(self.robot.body_id, [pos[0], pos[1] + 1.5, pos[2]], [0, 0, 0, 1])
-        self._redraw_path([])
+        self.live_path.clear(now_step)
 
     def plan(self, blocked_cells=None, now_step=0):
         """Runs a fresh A* against `grid` and -- if it actually changes the
@@ -187,13 +184,15 @@ class NavAgent:
         replan that doesn't change anything, or that finds no route at
         all, shouldn't leave a stale line from before on screen, and one
         that does find a fresh route should never leave the *old* line
-        drawn alongside the new one)."""
+        drawn alongside the new one). The redraw itself flashes in and
+        the superseded route lingers rather than an instant swap -- see
+        nav/sim3d/world.py: LivePath."""
         grid = blocked_grid(self.base_grid, blocked_cells) if blocked_cells else self.base_grid
         cell = self.current_cell()
         if cell == self.goal:
             self.arrived = True
             self.robot.stop()
-            self._park()
+            self._park(now_step)
             return
 
         path, _, reason, _ = find_path(grid, "astar", cell, self.goal)
@@ -201,15 +200,15 @@ class NavAgent:
         if path is None:
             self.waiting = True
             self.robot.stop()
-            self._redraw_path([])
+            self.live_path.clear(now_step)
             return
 
         self.waiting = False
         self.waypoints = build_drive_waypoints(path, self.smooth_method)
         self.idx = 0
-        self._redraw_path(self.waypoints)
+        self.live_path.set_path(self.waypoints, now_step)
 
-    def drive_step(self, force_stop=False):
+    def drive_step(self, now_step, force_stop=False):
         if self.arrived:
             return
         if force_stop or self.waiting or not self.waypoints:
@@ -218,14 +217,14 @@ class NavAgent:
         if self.idx >= len(self.waypoints):
             self.arrived = True
             self.robot.stop()
-            self._park()
+            self._park(now_step)
             return
         if self.robot.drive_toward(self.waypoints[self.idx]):
             self.idx += 1
             if self.idx >= len(self.waypoints):
                 self.arrived = True
                 self.robot.stop()
-                self._park()
+                self._park(now_step)
 
 
 def agent_status(agent, steps):
@@ -315,6 +314,10 @@ def main():
                 if agent_a.waiting or current_a != last_blockers_a:
                     agent_a.plan(blocked_cells=current_a, now_step=steps)
                     last_blockers_a = current_a
+                    # B's current cell is *why* A just replanned -- call
+                    # it out instead of leaving the viewer to infer cause
+                    # and effect purely from the path bending.
+                    draw_trigger_marker(*agent_b.current_cell(), gui=gui)
                     if agent_a.waiting != was_waiting_a:
                         state = "no route right now -- holding" if agent_a.waiting else "replanned around B"
                         print(f"  t={steps / SIM_HZ:.2f}s: A {state}")
@@ -324,6 +327,7 @@ def main():
                 if agent_b.waiting or current_b != last_blockers_b:
                     agent_b.plan(blocked_cells=current_b, now_step=steps)
                     last_blockers_b = current_b
+                    draw_trigger_marker(*agent_a.current_cell(), gui=gui)
                     if agent_b.waiting != was_waiting_b:
                         state = "no route right now -- holding" if agent_b.waiting else "replanned around A"
                         print(f"  t={steps / SIM_HZ:.2f}s: B {state}")
@@ -333,8 +337,8 @@ def main():
         pb = agent_b.robot.position()[:2]
         too_close = math.hypot(pa[0] - pb[0], pa[1] - pb[1]) < SAFETY_STOP_RADIUS
 
-        agent_a.drive_step(force_stop=too_close)
-        agent_b.drive_step(force_stop=too_close)
+        agent_a.drive_step(steps, force_stop=too_close)
+        agent_b.drive_step(steps, force_stop=too_close)
 
         p.stepSimulation()
         if not args.headless:
@@ -343,6 +347,8 @@ def main():
 
         if steps >= next_hud_step:
             next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
+            agent_a.live_path.tick(steps)
+            agent_b.live_path.tick(steps)
             if speed_param is not None:
                 shared_speed = p.readUserDebugParameter(speed_param)
                 agent_a.robot.speed = shared_speed

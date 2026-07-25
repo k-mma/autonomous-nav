@@ -44,7 +44,7 @@ from nav.cbs import cbs, solution_cost
 from nav.sim3d.coords import grid_to_world
 from nav.sim3d.hud import Hud, FollowLabel
 from nav.sim3d.robot import Robot, DEFAULT_SPEED
-from nav.sim3d.world import connect, build_obstacles, mark_cell, mark_goal_cell, draw_xy_path
+from nav.sim3d.world import connect, build_obstacles, mark_cell, mark_goal_cell, LivePath
 from pybullet_multi_robot_main import build_intersection_grid, CENTER, STREET_HALF_WIDTH
 
 SIM_HZ = 240
@@ -103,7 +103,13 @@ class CBSAgent:
         self.gui = gui
         self.step = 0
         self.label = FollowLabel(name, gui, color=color)
-        self.path_line_ids = draw_xy_path(self.waypoints, color[:3], z=0.04, gui=gui)
+        # CBS never replans live (see the module docstring), so this path
+        # never changes after being set once -- LivePath is still worth
+        # using for its flash-in reveal (see nav/sim3d/world.py), so the
+        # route actually announces itself onscreen instead of just
+        # appearing, same as every other demo's paths now do.
+        self.live_path = LivePath(color[:3], gui, SIM_HZ, z=0.04)
+        self.live_path.set_path(self.waypoints, 0)
 
     @property
     def arrived(self):
@@ -208,6 +214,7 @@ def main():
                     a.robot.speed = shared_speed
             for a in agents:
                 a.update_label()
+                a.live_path.tick(steps)
 
             arrived_count = sum(1 for a in agents if a.arrived)
             lines = [f"CBS | {len(agents)} robots | t={steps / SIM_HZ:.1f}s",
