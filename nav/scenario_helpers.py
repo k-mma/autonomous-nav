@@ -17,6 +17,21 @@ def scatter_obstacles(grid, rng, density):
                 grid.toggle_obstacle(row, col)
 
 
+def scatter_terrain(grid, rng, terrain_type, density):
+    """Randomly paint free cells with `terrain_type` at roughly `density`
+    fraction of the grid -- the terrain analogue of scatter_obstacles.
+    Skips start/goal/obstacle cells automatically (paint_terrain already
+    no-ops on those). Calling this more than once with different
+    terrain_type/rng pairs layers each type independently -- a cell a
+    later call repaints simply ends up as that later type, the same way
+    a real forest floor has mud patches inside bushy areas rather than
+    every terrain type claiming its own exclusive territory."""
+    for row in range(grid.size):
+        for col in range(grid.size):
+            if grid.is_free(row, col) and rng.random() < density:
+                grid.paint_terrain(row, col, terrain_type)
+
+
 def find_dead_ends(grid):
     """Free cells with exactly one free cardinal neighbor -- the tips of
     dead-end branches in a carved maze."""

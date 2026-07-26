@@ -12,17 +12,19 @@ the PyBullet physics interface (nav/sim3d/).
     python3 pybullet_main.py --smooth spline      # Catmull-Rom spline (default)
     python3 pybullet_main.py --no-cost-map        # binary obstacles only, no clearance routing
     python3 pybullet_main.py --sensor             # lidar-limited knowledge, replans on discovery
-    python3 pybullet_main.py --terrain            # mud/water terrain patch, naive vs cost-aware routing
+    python3 pybullet_main.py --terrain            # scattered forest terrain, naive vs cost-aware routing
     python3 pybullet_main.py --headless           # DIRECT mode, no GUI window, for automated runs
 """
 import argparse
+import random
 import time
 
 import pybullet as p
 
 from nav.algorithms import find_path, path_cost
-from nav.config import CONFIRMATION_THRESHOLD, TERRAIN_GRASS, TERRAIN_MUD, TERRAIN_WATER
+from nav.config import CONFIRMATION_THRESHOLD, TERRAIN_BUSH, TERRAIN_GRASS, TERRAIN_MUD, TERRAIN_WATER
 from nav.grid import Grid
+from nav.scenario_helpers import scatter_obstacles, scatter_terrain
 from nav.sensor import KnownGrid
 from nav.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
 from nav.sim3d.hud import Hud
@@ -54,6 +56,23 @@ SCATTERED_OBSTACLES = [
     (11, 13, 13, 14),
     (9, 10, 19, 20),
 ]
+# Forest-floor scattering for the terrain demo (see build_terrain_grid)
+# -- each layer gets its own Random(seed) so tuning one density doesn't
+# reshuffle the others. Water is kept sparsest since it's both the most
+# expensive terrain (see TERRAIN_COST) and the most visually dominant
+# color; obstacles are kept sparser than pygame's own scatter_obstacles
+# scenarios (0.08-0.10) since a 3D box reads as "more obstacle" per cell
+# than a flat 2D square does at this camera distance.
+# Picked (out of a search over nearby seeds) for a naive-vs-aware
+# comparison that's actually dramatic once terrain is scattered instead
+# of one solid block: a bad seed can land naive and aware on nearly the
+# same route by chance, which is a fine outcome for the planner but a
+# poor one for a screenshot meant to show they differ.
+FOREST_SEED = 20260769
+FOREST_OBSTACLE_DENSITY = 0.05
+FOREST_BUSH_DENSITY = 0.12
+FOREST_MUD_DENSITY = 0.08
+FOREST_WATER_DENSITY = 0.05
 # How often the HUD text / debug-parameter sliders actually get read and
 # redrawn -- doing it every physics step (240/s) would spam PyBullet's
 # debug-item pipeline for no visible benefit; a human can't perceive HUD
@@ -114,25 +133,29 @@ def build_scattered_grid():
 
 
 def build_terrain_grid():
-    """No obstacles at all -- a mud-and-water patch (see
-    nav/config.py: TERRAIN_MUD/TERRAIN_WATER/TERRAIN_COST) straddling
-    the direct route between START and GOAL, same footprint and same
-    row-12 asymmetry build_demo_grid's wall uses (2 rows above START/GOAL's
-    row, 6 below) so the terrain-aware detour is the same clean
-    single-edge shape as the binary-obstacle one, just driven by cost
-    instead of impassability. Mud rings the whole patch; water -- costing
-    even more per step (see TERRAIN_COST) -- fills a smaller core, so the
-    two terrain types are both visible and both actually matter to the
-    routing decision, not just the outer one."""
+    """A varied forest floor, not one painted patch: scattered trees/
+    rocks (obstacles) and three different terrain types -- bush, mud,
+    water, each costing progressively more per step (see nav/config.py:
+    TERRAIN_COST) -- spread across the whole grid, mirroring how
+    scatter_obstacles/scatter_terrain already build pygame's own
+    scenario_open.py/scenario_costmap.py rather than one hand-placed
+    block. The question this demo asks is "does terrain-aware routing
+    still pay off once the whole map is uneven," not just "does it
+    detour around one bad patch."
+
+    Start/goal are placed first -- scatter_obstacles and scatter_terrain
+    both already skip whatever cell a start/goal occupies (via
+    Grid.toggle_obstacle/paint_terrain's own guards), so placing them
+    first just means neither scatter pass ever has a chance to land on
+    top of one."""
     grid = Grid()
-    for row in range(10, 19):
-        for col in range(9, 18):
-            grid.paint_terrain(row, col, TERRAIN_MUD)
-    for row in range(12, 17):
-        for col in range(11, 16):
-            grid.paint_terrain(row, col, TERRAIN_WATER)
     grid.place_start(*START)
     grid.place_goal(*GOAL)
+
+    scatter_obstacles(grid, random.Random(FOREST_SEED), FOREST_OBSTACLE_DENSITY)
+    scatter_terrain(grid, random.Random(FOREST_SEED + 1), TERRAIN_BUSH, FOREST_BUSH_DENSITY)
+    scatter_terrain(grid, random.Random(FOREST_SEED + 2), TERRAIN_MUD, FOREST_MUD_DENSITY)
+    scatter_terrain(grid, random.Random(FOREST_SEED + 3), TERRAIN_WATER, FOREST_WATER_DENSITY)
     return grid
 
 
@@ -170,9 +193,9 @@ def parse_args():
                               f"{CONFIRMATION_THRESHOLD}+ repeated detections before trusting a cell "
                               "enough to replan on")
     parser.add_argument("--terrain", action="store_true",
-                         help="mud/water terrain patch instead of a hard obstacle -- compares a route "
-                              "that ignores terrain cost against one that routes around it "
-                              "(see nav/grid.py: paint_terrain, TERRAIN_COST)")
+                         help="scattered forest floor (bush/mud/water and obstacles) instead of a single "
+                              "hard-obstacle wall -- compares a route that ignores terrain cost against "
+                              "one that routes around it (see nav/grid.py: paint_terrain, TERRAIN_COST)")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--max-seconds", type=float, default=60.0,
                          help="safety cap so a headless/automated run can't hang forever")
@@ -253,22 +276,30 @@ def run_static_demo(args, grid, gui):
 
 
 def run_terrain_demo(args, grid, gui):
-    """Plan the terrain crossing twice -- once blind to terrain cost
-    (temporarily flattening every cell to TERRAIN_GRASS so the search
-    just finds the shortest step-count route, the same 4-directional
-    straight line a hard-obstacle-only search would find here since
-    nothing is actually impassable), once respecting it -- and draw
-    both, the same red-vs-green comparison run_elevation_demo used to
-    draw for the hill crossing this demo replaces.
+    """Plan the forest crossing twice -- once blind to terrain cost
+    (temporarily flattening every cell to TERRAIN_GRASS, so the search
+    still routes around every real obstacle -- trees/rocks stay
+    impassable in both searches -- but no longer prefers grass over
+    bush/mud/water among the cells that are open), once respecting it
+    -- and draw both, the same red-vs-green comparison run_elevation_demo
+    used to draw for the hill crossing this demo replaces.
 
-    Both routes are physically flat ground (mud and water are cost
-    penalties, not obstacles or elevation), so unlike the old elevation
-    demo there's no drivability reason to only drive one of them --
-    the cost-aware route is driven because it's the one the demo is
-    actually about, not because the naive one is unsafe."""
+    Both routes are physically flat ground (bush/mud/water are cost
+    penalties, not elevation), so unlike the old elevation demo there's
+    no drivability reason to only drive one of them -- the cost-aware
+    route is driven because it's the one the demo is actually about,
+    not because the naive one is unsafe."""
+    # cost_map_enabled=True for *both* searches, not just a naive/aware
+    # toggle -- obstacles are real, scattered geometry now (see
+    # build_terrain_grid), not the empty flat ground this demo used to
+    # have, so both routes need real clearance from them or the driven
+    # spline can round a corner close enough to actually clip an
+    # obstacle's collision box (confirmed: the husky reliably got stuck
+    # against one without this). This only adds clearance -- it doesn't
+    # touch what's actually being compared (terrain cost on vs. off).
     real_terrain = [row[:] for row in grid.terrain]
     grid.terrain = [[TERRAIN_GRASS for _ in range(grid.size)] for _ in range(grid.size)]
-    grid.cost_map_enabled = False
+    grid.cost_map_enabled = True
     grid.refresh_cost_map()
     naive_path, _, reason, _ = find_path(grid, "astar", grid.start, grid.goal)
     if naive_path is None:
@@ -297,8 +328,8 @@ def run_terrain_demo(args, grid, gui):
     aware_live = LivePath(TERRAIN_AWARE_PATH_COLOR, gui, SIM_HZ, z=0.14)
     naive_live.set_path(to_world_xy(naive_path), 0)
     aware_live.set_path(to_world_xy(aware_path), 0)
-    print(f"terrain-naive path (straight through mud/water): {len(naive_path)} cells, cost {naive_cost:.2f}")
-    print(f"terrain-aware path (routes around it):           {len(aware_path)} cells, cost {aware_cost:.2f} "
+    print(f"terrain-naive path (ignores bush/mud/water cost): {len(naive_path)} cells, cost {naive_cost:.2f}")
+    print(f"terrain-aware path (routes around costly terrain): {len(aware_path)} cells, cost {aware_cost:.2f} "
           f"(drawn in green, red = terrain-naive)")
 
     drive_waypoints = build_drive_waypoints(aware_path, args.smooth)
@@ -498,6 +529,7 @@ def main():
 
     if args.terrain:
         grid = build_terrain_grid()
+        build_obstacles(grid)
         mark_cell(*START, color=START_COLOR)
         mark_cell(*GOAL, color=GOAL_COLOR)
         run_terrain_demo(args, grid, gui)

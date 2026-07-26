@@ -34,18 +34,19 @@ can't actually graze a wall the way a zero-radius grid search can.
 
 terrain_routing.png -- Terrain-Aware Routing
 -----------------------------------------------
-The obstacle wall is replaced with something a robot could physically
-drive through but shouldn't: a ring of mud (3.5x step cost) around a
-deeper patch of water (5x step cost). A route that's blind to terrain
-cost drives straight through both (red, cost 52.0) -- the shortest
-path by cell count, but the most expensive one to actually execute. A
-terrain-aware route detours around the whole patch instead (green,
-cost 28.0), trading a longer path for a cheaper one, the same
-reasoning an off-road vehicle applies when it takes the long way around
-a bog instead of the short way through it. The entire ground plane is
-rendered in terrain color (grass by default) rather than just the
-painted patch, so the terrain layer reads as a real property of the
-whole map, not a decal.
+The single wall is replaced with an actual forest floor: trees/rocks
+(obstacles), bush, mud, and water scattered across the whole grid at
+different densities, not one hand-placed patch -- the entire ground is
+rendered in terrain color rather than just a painted square, so every
+step of the route crosses genuinely uneven ground. A route that's
+blind to terrain cost (red, cost 63.2) takes the geometrically direct
+line through whatever bush/mud/water happens to be in the way; a
+terrain-aware route (green, cost 51.4) actively threads between the
+costlier patches instead, visibly diverging from the naive route in
+several places rather than taking one single detour. Both routes still
+respect real obstacles and keep clearance from them (the same
+cost-map inflation used in binary_vs_costmap.png) -- terrain cost is
+the only thing being compared here, not obstacle avoidance.
 
 
 sensor_before.png / sensor_after.png -- Lidar-Limited Sensing & Replanning

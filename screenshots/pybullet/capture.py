@@ -136,18 +136,23 @@ def capture_binary_vs_costmap():
 
 
 def capture_terrain():
-    """Scenario 2: build_terrain_grid's mud/water patch, terrain-naive
-    vs. terrain-aware paths. Legend elements: Paths (terrain-aware path,
-    naive/binary baseline), Terrain (grass/bush/mud/water -- mud and
-    water both appear here), Markers (start, goal)."""
+    """Scenario 2: build_terrain_grid's scattered forest floor
+    (obstacles plus bush/mud/water terrain), terrain-naive vs.
+    terrain-aware paths. Legend elements: Paths (terrain-aware path,
+    naive/binary baseline), Terrain (grass/bush/mud/water), Obstacles &
+    Cost (obstacle), Markers (start, goal)."""
     connect(gui=True)
     grid = pm.build_terrain_grid()
+    build_obstacles(grid)
     mark_cell(*pm.START, color=START_COLOR)
     mark_cell(*pm.GOAL, color=GOAL_COLOR)
 
+    # cost_map_enabled=True -- matches pybullet_main.py's run_terrain_demo;
+    # obstacles are real scattered geometry now, so both paths need
+    # clearance from them or the driven route can clip one.
     real_terrain = [row[:] for row in grid.terrain]
     grid.terrain = [[TERRAIN_GRASS for _ in range(grid.size)] for _ in range(grid.size)]
-    grid.cost_map_enabled = False
+    grid.cost_map_enabled = True
     grid.refresh_cost_map()
     naive_path, _, reason, _ = find_path(grid, "astar", grid.start, grid.goal)
     assert naive_path is not None, reason
