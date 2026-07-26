@@ -117,10 +117,18 @@ def _moving_obstacle_dstar(grid, start, goal, cell, obstacle_seed, num_events):
     # move sequences identical, which is what makes the astar-vs-D*-Lite
     # timing comparison apples to apples (see module docstring).
     obstacle = MovingObstacle(cell, rng=random.Random(obstacle_seed))
+    # Timed like every other planning call below (and like _sensor_dstar's
+    # own initial DStarLite(...) construction) -- the constructor's
+    # internal compute_shortest_path() is D* Lite's first full solve, the
+    # direct equivalent of _moving_obstacle_astar's very first astar()
+    # call. Excluding it from total_s would give D* Lite a free head
+    # start here that the sensor-discovery scenario doesn't give it,
+    # making the two scenarios' reported speedups non-comparable.
+    t0 = time.perf_counter()
     planner = DStarLite(grid, start, goal)
+    total_s = time.perf_counter() - t0
+    replans = 1
     current = start
-    total_s = 0.0
-    replans = 0
     for _ in range(num_events):
         old_cell = obstacle.position
         obstacle._move(grid)

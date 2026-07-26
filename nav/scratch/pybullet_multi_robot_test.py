@@ -25,7 +25,6 @@ from nav.sim3d.world import connect, build_obstacles
 SIM_HZ = 240
 ROBOT_A = ((2, 2), (2, 22))
 ROBOT_B = ((22, 2), (22, 22))
-MIN_SEPARATION_SEEN = float("inf")
 
 
 def plan_waypoints(grid, start, goal):

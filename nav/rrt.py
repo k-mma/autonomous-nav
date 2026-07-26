@@ -13,15 +13,6 @@ def _sample_free_cell(grid, rng):
             return cell
 
 
-def _nearest(nodes, point):
-    """Linear-scan fallback, kept only for anything that still wants to
-    call it directly (e.g. a scratch test comparing against the k-d
-    tree). `rrt()` itself no longer uses this -- see the KDTree import
-    above and WRITEUPS.md for why an unindexed O(n) scan over every tree
-    node, repeated every iteration, was RRT's actual bottleneck at scale."""
-    return min(nodes, key=lambda n: math.hypot(n[0] - point[0], n[1] - point[1]))
-
-
 def _steer(frm, to, step_size):
     """Move from `frm` toward `to` by at most `step_size`, landing on an
     integer grid cell -- this RRT grows directly in grid-cell space rather

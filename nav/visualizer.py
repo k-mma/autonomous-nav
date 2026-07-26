@@ -33,6 +33,16 @@ HEURISTICS = [
     ("octile", octile),
     ("inadmissible (1.5x manhattan)", scaled(manhattan, 1.5)),
 ]
+# Manhattan is inadmissible once diagonal movement is on (WRITEUPS.md,
+# "Diagonal movement and why Manhattan breaks"), so the default heuristic
+# has to track grid.diagonal -- octile while it's on, manhattan while it's
+# off -- the same rule nav/dstar_lite.py applies to its own default.
+_MANHATTAN_IDX = 0
+_OCTILE_IDX = 2
+
+
+def _default_heuristic_idx(diagonal):
+    return _OCTILE_IDX if diagonal else _MANHATTAN_IDX
 
 # Step 4's legend (L key) -- every color currently in the palette, not
 # just the required subset the spec called out by name, since the goal
@@ -255,8 +265,11 @@ def main(scenario=None):
 
     panels = {a: blank_panel() for a in PANEL_ALGOS}
 
-    # Which heuristic astar uses
-    heuristic_idx = 0
+    # Which heuristic astar uses -- reset below once the scenario (if any)
+    # has had a chance to set grid.diagonal, since scenario_costmap.py
+    # turns diagonal movement on in scenario.build() and octile, not
+    # manhattan, is the correct default once that's true.
+    heuristic_idx = _default_heuristic_idx(grid.diagonal)
 
     # Step 6: step-by-step replay across all three panels, sharing one
     # step index -- each panel's own `order` list may be a different
@@ -386,8 +399,12 @@ def main(scenario=None):
         return any((row, col) == obs.cell for obs in moving_obstacles)
 
     def cycle_heuristic():
-        # H only invalidates the A* panel (Step 5) -- Dijkstra/RRT are
-        # unaffected by heuristic choice and keep showing their last result.
+        # H only re-runs the A* panel's content (Step 5) -- Dijkstra/RRT
+        # keep showing their last result, since heuristic choice doesn't
+        # affect them. It does still exit step mode for all three panels,
+        # though: step_mode/step_idx (Step 6) are a single index shared
+        # across panels, not one per panel, so there's no way to leave
+        # Dijkstra/RRT mid-step while only A*'s replay resets.
         # FIX: previously just blanked the astar panel and left it that
         # way until a manual Space press -- pressing H looked like it did
         # nothing. Re-run astar immediately (when there's a start/goal)
@@ -403,7 +420,13 @@ def main(scenario=None):
         stop_robot()
 
     def toggle_diagonal():
+        nonlocal heuristic_idx
         grid.diagonal = not grid.diagonal
+        # Manhattan is inadmissible once diagonal movement is on (see the
+        # HEURISTICS comment above), so switch the default heuristic along
+        # with it -- otherwise A* keeps using the heuristic picked for the
+        # old setting.
+        heuristic_idx = _default_heuristic_idx(grid.diagonal)
         # FIX: previously just reset_panels()+stop_robot(), leaving all
         # three panels blank until the user remembered to press Space
         # again -- toggling X looked like it did nothing. Re-run
@@ -634,6 +657,10 @@ def main(scenario=None):
         # each scenario_*.py file.
         pygame.display.set_caption(f"Autonomous Nav -- {scenario.title}")
         scenario.build(grid)
+        # scenario.build() may have turned diagonal movement on (e.g.
+        # scenario_costmap.py) -- re-sync the heuristic default now that
+        # grid.diagonal is settled.
+        heuristic_idx = _default_heuristic_idx(grid.diagonal)
         for cell in scenario.moving_obstacles(grid):
             obstacle = MovingObstacle(cell, period_ms=OBSTACLE_PERIOD_MS)
             obstacle.place(grid)

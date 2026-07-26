@@ -55,17 +55,10 @@ class Robot:
         p.resetBaseVelocity(self.body_id, linearVelocity=[0, 0, 0],
                              angularVelocity=[0, 0, 0])
 
-    def drive_toward(self, target_xy, steer_target=None):
+    def drive_toward(self, target_xy):
         """One control step toward target_xy = (x, y). Returns True once
         the robot is within arrive_radius of target_xy (and stops it),
-        False otherwise (call again next step).
-
-        `steer_target`, if given, is aimed at *instead* of target_xy for
-        the purposes of picking a heading this step -- lets a caller (see
-        pybullet_multi_robot_main.py's local collision avoidance) nudge
-        the robot's immediate direction without changing what actually
-        counts as "arrived." Arrival is always judged against the real
-        target_xy, never the steering override."""
+        False otherwise (call again next step)."""
         x, y, _ = self.position()
         dx, dy = target_xy[0] - x, target_xy[1] - y
         dist = math.hypot(dx, dy)
@@ -73,8 +66,7 @@ class Robot:
             self.stop()
             return True
 
-        aim_x, aim_y = steer_target if steer_target is not None else target_xy
-        desired_yaw = math.atan2(aim_y - y, aim_x - x)
+        desired_yaw = math.atan2(dy, dx)
         yaw_error = (desired_yaw - self.heading() + math.pi) % (2 * math.pi) - math.pi
 
         if abs(yaw_error) > FACE_TARGET_TOLERANCE:

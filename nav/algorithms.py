@@ -2,7 +2,7 @@ import heapq
 import math
 
 from nav.grid import DIAGONAL_COST
-from nav.heuristics import manhattan
+from nav.heuristics import manhattan, octile
 
 
 def dijkstra(grid, start, goal, order_out=None):
@@ -53,7 +53,7 @@ def dijkstra(grid, start, goal, order_out=None):
     return None, settled, came_from
 
 
-def astar(grid, start, goal, heuristic=manhattan, order_out=None):
+def astar(grid, start, goal, heuristic=None, order_out=None):
     """
     Like dijkstra, but expands the cell with the lowest f = g + h first,
     where g is the cost so far and h = heuristic(cell, goal) estimates the
@@ -62,10 +62,17 @@ def astar(grid, start, goal, heuristic=manhattan, order_out=None):
     inadmissible heuristic can make it settle for a longer path (see
     WRITEUPS.md).
 
+    `heuristic` defaults to Manhattan distance on a 4-directional grid and
+    octile distance once `grid.diagonal` is on -- Manhattan is inadmissible
+    the moment diagonal movement is allowed (see WRITEUPS.md's "Diagonal
+    movement and why Manhattan breaks"), so the default has to track
+    `grid.diagonal` the same way nav/dstar_lite.py's does.
+
     `order_out` -- see dijkstra's docstring; same optional replay hook.
 
     Returns (path, settled, came_from). path is None if goal is unreachable.
     """
+    heuristic = heuristic or (octile if grid.diagonal else manhattan)
     g_score = {start: 0}
     came_from = {}
     settled = set()
@@ -164,7 +171,8 @@ def find_path(grid, algo_name, start, goal, heuristic=None, order_out=None):
     Run dijkstra/astar/rrt/rrt_star from start to goal, handling the edge
     cases the raw algorithms don't check for: same start/goal cell, and
     either endpoint sitting on an obstacle. `heuristic` is only used when
-    algo_name is "astar"; it defaults to Manhattan distance. `order_out`
+    algo_name is "astar"; see astar()'s docstring for its default (Manhattan,
+    or octile once `grid.diagonal` is on). `order_out`
     -- see dijkstra's docstring -- is only honored for "dijkstra", "astar",
     and "rrt" (the three nav/visualizer.py actually replays step-by-step);
     passed through unused otherwise.
@@ -183,7 +191,7 @@ def find_path(grid, algo_name, start, goal, heuristic=None, order_out=None):
         return None, set(), reason, {}
 
     if algo_name == "astar":
-        path, explored, came_from = astar(grid, start, goal, heuristic=heuristic or manhattan,
+        path, explored, came_from = astar(grid, start, goal, heuristic=heuristic,
                                            order_out=order_out)
     elif algo_name == "rrt":
         # Imported here, not at module level, because nav.rrt imports

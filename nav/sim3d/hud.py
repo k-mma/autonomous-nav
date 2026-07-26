@@ -29,7 +29,7 @@ class Hud:
         self._item_id = p.addUserDebugText(
             "\n".join(lines),
             self.position,
-            textColorRGB=self.color,
+            textColorRGB=self.color[:3],
             textSize=self.text_size,
             replaceItemUniqueId=self._item_id,
         )

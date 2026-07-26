@@ -14,7 +14,12 @@ def generate_maze(grid, rng=None):
     one route between any two open cells, no loops.
 
     "Cells" live on even row/col coordinates with a wall cell between each
-    pair of neighbors, so this requires an odd-sized grid (GRID_SIZE is 25).
+    pair of neighbors, which only tiles evenly across an odd-sized grid
+    (GRID_SIZE is 25). On an even-sized grid (e.g. DEMO_GRID_SIZE, used by
+    --demo and every scenario_*.py), the carving below runs on the largest
+    odd sub-grid that fits, and the leftover last row/column is opened as
+    plain free space instead of being left as a permanently uncarvable
+    wall along two edges of the grid.
     """
     rng = rng or random
     size = len(grid.cells)
@@ -23,8 +28,10 @@ def generate_maze(grid, rng=None):
         for col in range(size):
             grid.cells[row][col] = Grid.OBSTACLE
 
+    maze_size = size if size % 2 == 1 else size - 1
+
     def cells():
-        return [(r, c) for r in range(0, size, 2) for c in range(0, size, 2)]
+        return [(r, c) for r in range(0, maze_size, 2) for c in range(0, maze_size, 2)]
 
     start = rng.choice(cells())
     grid.cells[start[0]][start[1]] = Grid.FREE
@@ -36,7 +43,7 @@ def generate_maze(grid, rng=None):
         unvisited = []
         for dr, dc in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
             r, c = row + dr, col + dc
-            if 0 <= r < size and 0 <= c < size and (r, c) not in visited:
+            if 0 <= r < maze_size and 0 <= c < maze_size and (r, c) not in visited:
                 unvisited.append((r, c))
 
         if not unvisited:
@@ -49,6 +56,11 @@ def generate_maze(grid, rng=None):
         grid.cells[next_row][next_col] = Grid.FREE
         visited.add((next_row, next_col))
         stack.append((next_row, next_col))
+
+    if maze_size != size:
+        for i in range(size):
+            grid.cells[size - 1][i] = Grid.FREE
+            grid.cells[i][size - 1] = Grid.FREE
 
     # FIX (Step 1 audit): every wall/passage above is carved by writing
     # grid.cells directly, bypassing toggle_obstacle (which keeps

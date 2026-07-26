@@ -444,7 +444,12 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     while steps < max_steps:
         if drive_waypoints is None:
             # No known route to the goal yet -- hold position and keep
-            # scanning until enough of the map has been discovered.
+            # scanning until enough of the map has been discovered. Must
+            # call stop() explicitly: resetBaseVelocity persists whatever
+            # velocity the last drive_toward() call set, so a robot that
+            # was moving when a replan lost the route would otherwise keep
+            # coasting instead of actually holding position.
+            robot.stop()
             p.stepSimulation()
         elif idx >= len(drive_waypoints):
             reached_goal = True
@@ -527,28 +532,34 @@ def main():
     gui = not args.headless
     connect(gui=gui)
 
-    if args.terrain:
-        grid = build_terrain_grid()
-        build_obstacles(grid)
-        mark_cell(*START, color=START_COLOR)
-        mark_cell(*GOAL, color=GOAL_COLOR)
-        run_terrain_demo(args, grid, gui)
-    elif args.sensor:
-        grid = build_scattered_grid()
-        obstacle_bodies = build_obstacles(grid)
-        mark_cell(*START, color=START_COLOR)
-        mark_cell(*GOAL, color=GOAL_COLOR)
-        run_sensor_demo(args, grid, gui, obstacle_bodies)
-    else:
-        grid = build_demo_grid()
-        obstacle_bodies = build_obstacles(grid)
-        mark_cell(*START, color=START_COLOR)
-        mark_cell(*GOAL, color=GOAL_COLOR)
-        run_static_demo(args, grid, gui)
+    # try/finally so a RuntimeError from a demo finding no path (see
+    # run_static_demo/run_terrain_demo above) still disconnects the
+    # pybullet client instead of leaking it -- matters for --headless,
+    # which is meant for repeated automated runs.
+    try:
+        if args.terrain:
+            grid = build_terrain_grid()
+            build_obstacles(grid)
+            mark_cell(*START, color=START_COLOR)
+            mark_cell(*GOAL, color=GOAL_COLOR)
+            run_terrain_demo(args, grid, gui)
+        elif args.sensor:
+            grid = build_scattered_grid()
+            obstacle_bodies = build_obstacles(grid)
+            mark_cell(*START, color=START_COLOR)
+            mark_cell(*GOAL, color=GOAL_COLOR)
+            run_sensor_demo(args, grid, gui, obstacle_bodies)
+        else:
+            grid = build_demo_grid()
+            obstacle_bodies = build_obstacles(grid)
+            mark_cell(*START, color=START_COLOR)
+            mark_cell(*GOAL, color=GOAL_COLOR)
+            run_static_demo(args, grid, gui)
 
-    if not args.headless:
-        input("Press Enter to close...")
-    p.disconnect()
+        if not args.headless:
+            input("Press Enter to close...")
+    finally:
+        p.disconnect()
 
 
 if __name__ == "__main__":
