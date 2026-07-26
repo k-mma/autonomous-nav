@@ -3,7 +3,7 @@ import math
 import pybullet as p
 import pybullet_data
 
-from nav.config import COST_MAX_EXTRA
+from nav.config import COST_MAX_EXTRA, TERRAIN_COLORS, TERRAIN_GRASS
 from nav.grid import Grid
 from nav.sim3d.coords import grid_to_world, WORLD_CELL_SIZE
 
@@ -24,12 +24,13 @@ BINARY_PATH_COLOR = (0.9, 0.15, 0.15)
 # tiles underneath it.
 COST_MAP_PATH_COLOR = (0.05, 0.15, 0.85)
 SENSOR_PATH_COLOR = (0.2, 0.75, 0.35)
-# The route that ignores elevation (red, same "naive baseline" role
+# The route that ignores terrain cost (red, same "naive baseline" role
 # BINARY_PATH_COLOR plays for the cost-map comparison) vs the one that
-# charges for climbing (green, distinguishable from COST_MAP_PATH_COLOR's
-# blue since a demo could in principle show both comparisons at once).
-ELEVATION_UNAWARE_PATH_COLOR = (0.9, 0.15, 0.15)
-ELEVATION_AWARE_PATH_COLOR = (0.15, 0.85, 0.35)
+# charges for crossing mud/water (green, distinguishable from
+# COST_MAP_PATH_COLOR's blue since a demo could in principle show both
+# comparisons at once).
+TERRAIN_NAIVE_PATH_COLOR = (0.9, 0.15, 0.15)
+TERRAIN_AWARE_PATH_COLOR = (0.15, 0.85, 0.35)
 WAYPOINT_MARKER_COLOR = (1.0, 0.85, 0.1, 1.0)
 START_COLOR = (0.2, 0.8, 0.4, 1.0)
 GOAL_COLOR = (0.9, 0.25, 0.25, 1.0)
@@ -72,105 +73,47 @@ PATH_LINGER_SECONDS = 1.2
 # block's near-black already reads clearly against this same ground in
 # every screenshot, which is the actual benchmark this needs to clear.
 LINGER_COLOR = (0.2, 0.2, 0.2)
-# Default line widths (PyBullet's addUserDebugLine takes this in
-# screen-space pixels, not world units). First pass (6/11/3) was still
-# too thin to read clearly in an actual screenshot -- these are
-# substantially heavier across the board; flash renders heaviest of all,
-# so the "just changed" moment reads as unmistakably bold, not just a
-# color change.
-PATH_WIDTH = 79
-PATH_FLASH_WIDTH = 89
-PATH_LINGER_WIDTH = 74
+# Path thickness, in world-space meters (a fraction of WORLD_CELL_SIZE),
+# not pixels. Paths used to be drawn with addUserDebugLine, whose
+# lineWidth is a screen-space pixel count -- pushing that as high as 200
+# was tried and confirmed, empirically, to make no visible difference:
+# on this Mac's Metal-translated GL driver, debug lines rasterize at a
+# fixed ~1px regardless of the requested lineWidth (a driver-side
+# core-profile glLineWidth cap, not a PyBullet bug), AND -- the more
+# load-bearing finding -- addUserDebugLine items never show up in
+# getCameraImage() at all, in either DIRECT or GUI mode (verified with a
+# lineWidth=200 line producing zero matching pixels in the rendered
+# image). Since every screenshot in this project is captured via
+# getCameraImage, no lineWidth value could ever have worked. Paths are
+# now real GEOM_BOX geometry (see draw_xy_path) sized in world units
+# instead, which solves both problems at once: genuinely tile-width, and
+# actually visible to a synthetic camera.
+PATH_WIDTH = 0.55
+PATH_FLASH_WIDTH = 0.75
+PATH_LINGER_WIDTH = 0.4
+# Vertical extent of the path mesh -- thin enough to read as a flat
+# ribbon on the ground rather than a wall, thick enough to catch light
+# and cast a visible edge at the demo's oblique camera pitch (-55).
+PATH_HEIGHT = 0.05
 # Color for draw_trigger_marker's short-lived "X" -- calls out *why* a
 # redraw just happened (the cell a sensor discovery or another robot's
 # position triggered it from), distinct from FLASH_COLOR so the two don't
 # read as the same signal.
 TRIGGER_MARKER_COLOR = (1.0, 0.8, 0.0)
-TERRAIN_COLOR = (0.55, 0.45, 0.32, 1.0)
-# Bottom of every terrain column build_terrain builds (see below) --
-# comfortably below any elevation this project's demos actually use, so
-# there's never a visible gap under a column regardless of how tall its
-# neighbors are.
-TERRAIN_BASE_Z = -2.0
 
 
-def connect(gui=True, load_ground_plane=True):
+def connect(gui=True):
     """Open a PyBullet connection and load the ground plane. This is the
     only new "physics interface" code the 3D port needed -- the grid
     model and A* itself (nav/grid.py, nav/algorithms.py) are unchanged
-    from pygame, imported and reused as-is.
-
-    `load_ground_plane=False` skips `plane.urdf` -- for a demo building
-    its own elevation-matched terrain instead (see build_terrain), which
-    would otherwise sit half-buried in or floating above a separate flat
-    plane at z=0."""
+    from pygame, imported and reused as-is."""
     p.connect(p.GUI if gui else p.DIRECT)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setGravity(0, 0, -9.8)
     p.resetDebugVisualizerCamera(
         cameraDistance=22, cameraYaw=45, cameraPitch=-55, cameraTargetPosition=[12, 12, 0]
     )
-    if load_ground_plane:
-        return p.loadURDF("plane.urdf")
-    return None
-
-
-def build_terrain(grid, cell_size=WORLD_CELL_SIZE, base_z=TERRAIN_BASE_Z, color=TERRAIN_COLOR):
-    """One static box "column" per grid cell, its top surface at
-    `grid.elevation[row][col]` -- the elevation analogue of
-    build_obstacles' one-box-per-cell approach, reusing the exact same
-    grid_to_world coordinate convention every other piece of this file
-    already relies on (obstacles, markers, paths) instead of introducing
-    PyBullet's separate heightfield coordinate/scaling conventions and
-    having to keep two systems in sync.
-
-    This produces genuinely *stepped* terrain -- a vertical face
-    wherever two adjacent cells differ in elevation -- rather than a
-    smoothly interpolated slope. That's an explicit, deliberate choice,
-    not a shortcut: a real heightfield collision shape would need its
-    own coordinate system reconciled against grid_to_world's, and one
-    box per cell is both simpler to verify correct (its footprint is
-    exactly one grid cell, exactly like every other body in this file)
-    and, for a wheeled robot climbing it, easier to reason about the
-    physics of (a short, wheel-height step per cell rather than a
-    continuous incline whose steepness varies with elevation data).
-
-    Replaces the flat ground plane entirely -- pass
-    `connect(gui, load_ground_plane=False)` first so there's no separate
-    flat plane underneath it. Collision *and* visual shapes are cached
-    per distinct column height (many cells commonly share the same
-    elevation, e.g. a multi-cell-wide ramp step), the same sharing
-    build_obstacles already does for collision shapes -- safe here for
-    visual shapes too since, unlike hide_obstacles/reveal_obstacles,
-    nothing ever calls changeVisualShape on a terrain body afterward."""
-    collision_cache = {}
-    visual_cache = {}
-    body_ids = []
-    for row in range(len(grid.cells)):
-        for col in range(len(grid.cells[row])):
-            top = grid.elevation[row][col]
-            half_height = max((top - base_z) / 2, cell_size * 0.01)
-            half_extents = [cell_size / 2, cell_size / 2, half_height]
-
-            collision_shape = collision_cache.get(half_height)
-            if collision_shape is None:
-                collision_shape = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents)
-                collision_cache[half_height] = collision_shape
-
-            visual_shape = visual_cache.get(half_height)
-            if visual_shape is None:
-                visual_shape = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=color)
-                visual_cache[half_height] = visual_shape
-
-            x, y, _ = grid_to_world(row, col, cell_size)
-            body_id = p.createMultiBody(
-                baseMass=0,
-                baseCollisionShapeIndex=collision_shape,
-                baseVisualShapeIndex=visual_shape,
-                basePosition=[x, y, base_z + half_height],
-            )
-            body_ids.append(body_id)
-    return body_ids
+    return p.loadURDF("plane.urdf")
 
 
 def build_obstacles(grid, cell_size=WORLD_CELL_SIZE, height=OBSTACLE_HEIGHT):
@@ -264,33 +207,77 @@ def label_cell(row, col, text, color, cell_size=WORLD_CELL_SIZE, height=1.2):
 
 
 def remove_debug_items(item_ids):
-    """Remove every debug item in `item_ids` (as returned by draw_xy_path /
-    draw_path). No-op for an empty/None list, and safe to call in headless
-    mode since the ids are already -1 there and PyBullet just ignores the
-    removal."""
+    """Remove every body in `item_ids` (as returned by draw_xy_path /
+    draw_path -- real GEOM_BOX multibodies, not PyBullet "debug items"
+    despite the name kept here for callers). No-op for an empty/None
+    list, and safe to call in headless mode since draw_xy_path never
+    creates any bodies there in the first place."""
     for item_id in item_ids or []:
-        p.removeUserDebugItem(item_id)
+        p.removeBody(item_id)
 
 
-def draw_xy_path(points_xy, color, z=0.05, width=PATH_WIDTH, gui=True, existing_ids=None):
-    """Draw a world-space (x, y) polyline as a sequence of debug line
-    segments, returning their ids. Pass the ids from a previous call back
-    in as `existing_ids` to erase the old line first -- a replan can
-    change the number of segments, so (unlike Hud/FollowLabel) this can't
-    just replaceItemUniqueId a fixed set of items in place; it has to tear
-    down and rebuild. No-op in DIRECT/headless mode: debug lines are a
-    GUI-only visualization aid, not part of the planning or driving logic."""
+def _path_segment_body(x1, y1, x2, y2, rgba, z, width, height):
+    """One flat GEOM_BOX spanning (x1, y1) -> (x2, y2), oriented so its
+    long axis follows the segment and its short axis is `width` wide --
+    the mesh analogue of a single addUserDebugLine call, sized in world
+    units instead of screen-space pixels (see PATH_WIDTH's comment for
+    why: debug lines never rasterize into getCameraImage at any pixel
+    width, so a real box is the only way for a path to actually show up
+    in a screenshot). Returns None for a zero-length segment (two
+    identical consecutive points) rather than creating a degenerate,
+    zero-extent box."""
+    dx, dy = x2 - x1, y2 - y1
+    length = math.hypot(dx, dy)
+    if length < 1e-6:
+        return None
+    yaw = math.atan2(dy, dx)
+    half_extents = [length / 2, width / 2, height / 2]
+    visual_shape = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=rgba)
+    return p.createMultiBody(
+        baseMass=0, baseVisualShapeIndex=visual_shape,
+        basePosition=[(x1 + x2) / 2, (y1 + y2) / 2, z],
+        baseOrientation=p.getQuaternionFromEuler([0, 0, yaw]),
+    )
+
+
+def _path_joint_body(x, y, rgba, z, width, height):
+    """A small square GEOM_BOX centered on one interior waypoint --
+    fills the gap two angled _path_segment_body boxes would otherwise
+    leave at a turn (their corners don't meet flush the way two
+    infinitely-thin lines would), so a path with direction changes
+    (every grid diagonal, every spline sample) still reads as one
+    continuous ribbon instead of a dashed one."""
+    half_extents = [width / 2, width / 2, height / 2]
+    visual_shape = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=rgba)
+    return p.createMultiBody(baseMass=0, baseVisualShapeIndex=visual_shape, basePosition=[x, y, z])
+
+
+def draw_xy_path(points_xy, color, z=0.05, width=PATH_WIDTH, gui=True, existing_ids=None, height=PATH_HEIGHT):
+    """Draw a world-space (x, y) polyline as a sequence of flat mesh
+    boxes (see _path_segment_body/_path_joint_body), returning their
+    body ids. Pass the ids from a previous call back in as `existing_ids`
+    to erase the old path first -- a replan can change the number of
+    segments, so (unlike Hud/FollowLabel) this can't just
+    replaceItemUniqueId a fixed set of items in place; it has to tear
+    down and rebuild. No-op in DIRECT/headless mode: a driven path's
+    visualization is a GUI-only aid, not part of the planning or driving
+    logic, same as every other draw_* helper in this file."""
     if not gui:
         return []
     remove_debug_items(existing_ids)
+    rgba = (*color[:3], 1.0)
     ids = []
     for (x1, y1), (x2, y2) in zip(points_xy, points_xy[1:]):
-        ids.append(p.addUserDebugLine([x1, y1, z], [x2, y2, z], lineColorRGB=color, lineWidth=width))
+        body_id = _path_segment_body(x1, y1, x2, y2, rgba, z, width, height)
+        if body_id is not None:
+            ids.append(body_id)
+    for x, y in points_xy[1:-1]:
+        ids.append(_path_joint_body(x, y, rgba, z, width, height))
     return ids
 
 
 def draw_path(path_cells, color, cell_size=WORLD_CELL_SIZE, z=0.05, width=PATH_WIDTH, gui=True, existing_ids=None):
-    """Draw a grid-cell path (list of (row, col)) as a debug polyline --
+    """Draw a grid-cell path (list of (row, col)) as a mesh polyline --
     used to visually compare the binary-obstacle route against the
     cost-map route on the same grid (see pybullet_main.py). See
     draw_xy_path for the `existing_ids` redraw-on-replan contract."""
@@ -421,6 +408,73 @@ def draw_waypoints(waypoints_xy, z=0.05, gui=True):
         return
     for x, y in waypoints_xy:
         p.addUserDebugLine([x, y, z], [x, y, z + 0.3], lineColorRGB=WAYPOINT_MARKER_COLOR[:3], lineWidth=1)
+
+
+def draw_terrain(grid, cell_size=WORLD_CELL_SIZE, z=0.04, base_z=0.002, gui=True):
+    """One big grass-colored quad covering the whole grid footprint,
+    plus one opaque quad per cell whose terrain isn't the default
+    TERRAIN_GRASS layered on top of it (see nav/config.py:
+    TERRAIN_COLORS/TERRAIN_COST) -- the flat-ground analogue of
+    build_terrain's old stepped height columns, and the same "colored
+    overlay on top of real geometry" approach draw_cost_map_tint already
+    uses for obstacle-inflation cost, just opaque and keyed by terrain
+    type instead of translucent and keyed by cost magnitude.
+
+    The base quad is what makes this "the whole grid is terrain" rather
+    than "one patch of terrain floating on the checkered ground plane" --
+    an earlier version skipped grass cells individually (grass being the
+    cost-1.0 default, same as bare ground, so a same-colored quad seemed
+    redundant), but that left plane.urdf's own checker pattern visible
+    everywhere except the painted patch, which reads as "one square of
+    terrain," not "a terrain demo." One large quad covers the same area
+    far more cheaply than 625 individual grass quads would, and avoids
+    seams between adjacent same-colored cells entirely.
+
+    z/base_z default to a 0.038 gap, not just-barely-above -- a first
+    pass at z=0.005/base_z=0.003 (a bare few mm apart) turned out to
+    z-fight visibly at this project's usual camera distance (22, see
+    connect()): not simple color-flicker z-fighting but shadow-map
+    self-shadowing (banded, mirror-like artifacts), which needed a much
+    larger gap to clear than plain co-planar color z-fighting would have
+    (confirmed empirically -- a few mm still showed banding, ~3cm+ was
+    clean). z (0.04) is set to clear that same threshold above base_z
+    (0.002) while still sitting below every caller's path z (see
+    pybullet_main.py's run_terrain_demo, which keeps its own paths at
+    >= 0.09 for the same reason -- terrain, cost tint, and path all need
+    that ~3cm+ separation from *each other*, not just a nonzero one, to
+    stay clean at this camera distance). Static, like draw_cost_map_tint:
+    call once after the terrain is painted, not per frame."""
+    if not gui:
+        return []
+    size = len(grid.cells)
+    half = cell_size / 2
+    body_ids = []
+
+    base_r, base_g, base_b = TERRAIN_COLORS[TERRAIN_GRASS]
+    base_extent = size * cell_size / 2
+    base_center = (size - 1) * cell_size / 2
+    base_visual = p.createVisualShape(
+        p.GEOM_BOX, halfExtents=[base_extent, base_extent, 0.001],
+        rgbaColor=(base_r / 255, base_g / 255, base_b / 255, 1.0),
+    )
+    body_ids.append(p.createMultiBody(
+        baseMass=0, baseVisualShapeIndex=base_visual, basePosition=[base_center, base_center, base_z]
+    ))
+
+    for row in range(size):
+        for col in range(size):
+            if grid.cells[row][col] == Grid.OBSTACLE:
+                continue
+            terrain_type = grid.terrain[row][col]
+            if terrain_type == TERRAIN_GRASS:
+                continue
+            r, g, b = TERRAIN_COLORS[terrain_type]
+            x, y, _ = grid_to_world(row, col, cell_size)
+            visual_shape = p.createVisualShape(
+                p.GEOM_BOX, halfExtents=[half, half, 0.001], rgbaColor=(r / 255, g / 255, b / 255, 1.0)
+            )
+            body_ids.append(p.createMultiBody(baseMass=0, baseVisualShapeIndex=visual_shape, basePosition=[x, y, z]))
+    return body_ids
 
 
 def draw_cost_map_tint(grid, cell_size=WORLD_CELL_SIZE, max_extra=COST_MAX_EXTRA, z=0.02, gui=True):

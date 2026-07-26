@@ -12,17 +12,16 @@ the PyBullet physics interface (nav/sim3d/).
     python3 pybullet_main.py --smooth spline      # Catmull-Rom spline (default)
     python3 pybullet_main.py --no-cost-map        # binary obstacles only, no clearance routing
     python3 pybullet_main.py --sensor             # lidar-limited knowledge, replans on discovery
-    python3 pybullet_main.py --elevation          # sloped/stepped terrain, elevation-aware routing
+    python3 pybullet_main.py --terrain            # mud/water terrain patch, naive vs cost-aware routing
     python3 pybullet_main.py --headless           # DIRECT mode, no GUI window, for automated runs
 """
 import argparse
-import math
 import time
 
 import pybullet as p
 
 from nav.algorithms import find_path, path_cost
-from nav.config import CONFIRMATION_THRESHOLD, ELEVATION_COST_FACTOR
+from nav.config import CONFIRMATION_THRESHOLD, TERRAIN_GRASS, TERRAIN_MUD, TERRAIN_WATER
 from nav.grid import Grid
 from nav.sensor import KnownGrid
 from nav.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
@@ -31,10 +30,10 @@ from nav.sim3d.lidar import Lidar3D
 from nav.sim3d.robot import Robot, DEFAULT_SPEED
 from nav.sim3d.smoothing import simplify_collinear, chaikin_smooth, catmull_rom_spline
 from nav.sim3d.world import (
-    connect, build_obstacles, build_terrain, hide_obstacles, reveal_obstacles, mark_cell,
-    draw_waypoints, draw_cost_map_tint, draw_trigger_marker, LivePath,
+    connect, build_obstacles, hide_obstacles, reveal_obstacles, mark_cell,
+    draw_waypoints, draw_cost_map_tint, draw_terrain, draw_trigger_marker, LivePath,
     BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, SENSOR_PATH_COLOR, START_COLOR, GOAL_COLOR,
-    ELEVATION_UNAWARE_PATH_COLOR, ELEVATION_AWARE_PATH_COLOR,
+    TERRAIN_NAIVE_PATH_COLOR, TERRAIN_AWARE_PATH_COLOR,
 )
 
 START = (12, 1)
@@ -43,15 +42,18 @@ SIM_HZ = 240
 SENSOR_SCAN_PERIOD_S = 0.3
 SENSOR_NUM_RAYS = 48
 SENSOR_RANGE = 6.0
-# A hill straddling the direct route from START to GOAL, tall/steep
-# enough that elevation-aware routing prefers going around it entirely
-# to climbing it (see WRITEUPS.md for the parameter search behind these
-# specific numbers, and why the margin matters physically, not just
-# numerically -- a route that clips even the hill's lower slope tipped
-# a driven robot over in testing, one that avoids it completely never did).
-HILL_CENTER = (12, 13)
-HILL_PEAK = 1.5
-HILL_RADIUS = 6
+# Small, discrete obstacle blocks for the sensor demo (see
+# build_scattered_grid) -- two sit within SENSOR_RANGE of START and are
+# revealed by the very first scan, two sit well outside it and are only
+# discovered once the robot drives closer. One of those far blocks
+# straddles the direct row-12 route from START to GOAL, so discovering it
+# forces a genuine mid-drive replan rather than a cosmetic-only reveal.
+SCATTERED_OBSTACLES = [
+    (9, 10, 4, 5),
+    (14, 15, 6, 7),
+    (11, 13, 13, 14),
+    (9, 10, 19, 20),
+]
 # How often the HUD text / debug-parameter sliders actually get read and
 # redrawn -- doing it every physics step (240/s) would spam PyBullet's
 # debug-item pipeline for no visible benefit; a human can't perceive HUD
@@ -88,18 +90,47 @@ def build_demo_grid():
     return grid
 
 
-def build_elevation_grid():
-    """No obstacles at all -- a single round hill (see HILL_CENTER/
-    HILL_PEAK/HILL_RADIUS) straddling the direct route between START
-    and GOAL, radially symmetric so its per-cell grade is the same in
-    every direction (max HILL_PEAK / HILL_RADIUS, comfortably within
-    what a driven robot can actually climb -- see WRITEUPS.md)."""
+def build_scattered_grid():
+    """Several small, discrete obstacle blocks (see SCATTERED_OBSTACLES)
+    instead of build_demo_grid's single wall -- mirrors pygame's
+    scenario_maze.py/scenario_bottleneck.py approach of scattering
+    obstacles rather than one contiguous block. Used only by the
+    sensor/lidar demo (see main()): a single wall gives the lidar exactly
+    one discovery event, not much to actually watch happen, whereas
+    several separated blocks -- some inside the robot's initial scan
+    radius, at least one well outside it and squarely on the direct
+    route -- produce multiple distinct reveal moments and a real
+    mid-drive replan. build_demo_grid's single wall stays exactly as it
+    was for the binary-vs-cost-map comparison, which depends on one clean
+    shared detour rather than several scattered ones."""
     grid = Grid()
-    for row in range(grid.size):
-        for col in range(grid.size):
-            dist = math.hypot(row - HILL_CENTER[0], col - HILL_CENTER[1])
-            if dist <= HILL_RADIUS:
-                grid.elevation[row][col] = HILL_PEAK * (1 - dist / HILL_RADIUS)
+    for row_start, row_end, col_start, col_end in SCATTERED_OBSTACLES:
+        for row in range(row_start, row_end + 1):
+            for col in range(col_start, col_end + 1):
+                grid.cells[row][col] = Grid.OBSTACLE
+    grid.place_start(*START)
+    grid.place_goal(*GOAL)
+    return grid
+
+
+def build_terrain_grid():
+    """No obstacles at all -- a mud-and-water patch (see
+    nav/config.py: TERRAIN_MUD/TERRAIN_WATER/TERRAIN_COST) straddling
+    the direct route between START and GOAL, same footprint and same
+    row-12 asymmetry build_demo_grid's wall uses (2 rows above START/GOAL's
+    row, 6 below) so the terrain-aware detour is the same clean
+    single-edge shape as the binary-obstacle one, just driven by cost
+    instead of impassability. Mud rings the whole patch; water -- costing
+    even more per step (see TERRAIN_COST) -- fills a smaller core, so the
+    two terrain types are both visible and both actually matter to the
+    routing decision, not just the outer one."""
+    grid = Grid()
+    for row in range(10, 19):
+        for col in range(9, 18):
+            grid.paint_terrain(row, col, TERRAIN_MUD)
+    for row in range(12, 17):
+        for col in range(11, 16):
+            grid.paint_terrain(row, col, TERRAIN_WATER)
     grid.place_start(*START)
     grid.place_goal(*GOAL)
     return grid
@@ -138,10 +169,10 @@ def parse_args():
                               "false positives (see nav/sim3d/lidar.py) -- and require "
                               f"{CONFIRMATION_THRESHOLD}+ repeated detections before trusting a cell "
                               "enough to replan on")
-    parser.add_argument("--elevation", action="store_true",
-                         help="sloped/stepped terrain instead of a flat plane -- drives the "
-                              "elevation-aware route around a hill instead of climbing straight over it "
-                              "(see nav/grid.py: elevation_aware, WRITEUPS.md)")
+    parser.add_argument("--terrain", action="store_true",
+                         help="mud/water terrain patch instead of a hard obstacle -- compares a route "
+                              "that ignores terrain cost against one that routes around it "
+                              "(see nav/grid.py: paint_terrain, TERRAIN_COST)")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--max-seconds", type=float, default=60.0,
                          help="safety cap so a headless/automated run can't hang forever")
@@ -178,7 +209,7 @@ def run_static_demo(args, grid, gui):
     draw_waypoints(drive_waypoints, gui=gui)
 
     start_xy = drive_waypoints[0]
-    robot_id = p.loadURDF("r2d2.urdf", basePosition=[start_xy[0], start_xy[1], 0.4])
+    robot_id = p.loadURDF("husky/husky.urdf", basePosition=[start_xy[0], start_xy[1], 0.15])
     robot = Robot(robot_id)
 
     print(f"driving {len(drive_waypoints)} waypoints "
@@ -221,69 +252,63 @@ def run_static_demo(args, grid, gui):
         print(f"stopped after {args.max_seconds}s safety cap ({idx}/{len(drive_waypoints)} waypoints)")
 
 
-def run_elevation_demo(args, grid, gui):
-    """Plan the hill crossing twice -- once ignoring elevation entirely
-    (a plain 4-directional search finds the straight line, since nothing
-    here is an actual obstacle to route around), once charging for
-    climbing (Grid.elevation_aware) -- and draw both, the same red-vs-
-    green comparison run_static_demo draws red-vs-blue for binary-vs-
-    cost-map routing.
+def run_terrain_demo(args, grid, gui):
+    """Plan the terrain crossing twice -- once blind to terrain cost
+    (temporarily flattening every cell to TERRAIN_GRASS so the search
+    just finds the shortest step-count route, the same 4-directional
+    straight line a hard-obstacle-only search would find here since
+    nothing is actually impassable), once respecting it -- and draw
+    both, the same red-vs-green comparison run_elevation_demo used to
+    draw for the hill crossing this demo replaces.
 
-    Only the elevation-aware route is actually driven. The unaware one
-    would send the robot straight over the hill's steepest point, and
-    that's not just numerically worse -- driving it was tried, and it
-    reliably tipped the robot over, at every speed tested, on both the
-    full hill crossing and its own (otherwise fine) elevation-aware
-    detour before the hill was made tall/steep enough to route around
-    entirely instead of just clipping its lower slope (see WRITEUPS.md).
-    A route that never touches a non-flat cell is exactly as drivable as
-    this project's other, flat-ground demos; one that still climbs
-    partway up a stepped slope turned out not to be, regardless of how
-    slowly it's driven."""
-    grid.elevation_aware = False
-    unaware_path, _, reason, _ = find_path(grid, "astar", grid.start, grid.goal)
-    if unaware_path is None:
-        raise RuntimeError(f"no elevation-unaware path found (reason={reason})")
+    Both routes are physically flat ground (mud and water are cost
+    penalties, not obstacles or elevation), so unlike the old elevation
+    demo there's no drivability reason to only drive one of them --
+    the cost-aware route is driven because it's the one the demo is
+    actually about, not because the naive one is unsafe."""
+    real_terrain = [row[:] for row in grid.terrain]
+    grid.terrain = [[TERRAIN_GRASS for _ in range(grid.size)] for _ in range(grid.size)]
+    grid.cost_map_enabled = False
+    grid.refresh_cost_map()
+    naive_path, _, reason, _ = find_path(grid, "astar", grid.start, grid.goal)
+    if naive_path is None:
+        raise RuntimeError(f"no terrain-naive path found (reason={reason})")
 
-    grid.elevation_aware = True
+    grid.terrain = real_terrain
+    grid.refresh_cost_map()
     aware_path, _, reason, _ = find_path(grid, "astar", grid.start, grid.goal)
     if aware_path is None:
-        raise RuntimeError(f"no elevation-aware path found (reason={reason})")
+        raise RuntimeError(f"no terrain-aware path found (reason={reason})")
 
-    # Cost both paths under the *same* (true, elevation-charging) cost
-    # model, now that grid.elevation_aware is left on -- unaware_path was
-    # found ignoring elevation, but its real cost, climb surcharge
-    # included, is the actual point of comparison; costing it with
-    # elevation_aware still off would just report its flat step count
-    # again and hide exactly what "ignoring elevation" costs.
-    unaware_cost = path_cost(grid, unaware_path)
+    # Cost both paths under the *same* (true, terrain-charging) cost
+    # model, now that grid.terrain is back to the real patch -- naive_path
+    # was found ignoring terrain, but its real cost, mud/water surcharge
+    # included, is the actual point of comparison.
+    naive_cost = path_cost(grid, naive_path)
     aware_cost = path_cost(grid, aware_path)
 
-    unaware_live = LivePath(ELEVATION_UNAWARE_PATH_COLOR, gui, SIM_HZ, z=0.05)
-    aware_live = LivePath(ELEVATION_AWARE_PATH_COLOR, gui, SIM_HZ, z=0.08)
-    unaware_live.set_path(to_world_xy(unaware_path), 0)
+    draw_terrain(grid, gui=gui)
+    # z=0.09/0.14, not the smaller offsets other paths use elsewhere in
+    # this file -- draw_terrain's own ground overlay sits right beneath
+    # these (up to z=0.04) and needs a real gap, not just a nonzero one,
+    # to avoid shadow-map z-fighting at this camera distance (see
+    # nav/sim3d/world.py: draw_terrain).
+    naive_live = LivePath(TERRAIN_NAIVE_PATH_COLOR, gui, SIM_HZ, z=0.09)
+    aware_live = LivePath(TERRAIN_AWARE_PATH_COLOR, gui, SIM_HZ, z=0.14)
+    naive_live.set_path(to_world_xy(naive_path), 0)
     aware_live.set_path(to_world_xy(aware_path), 0)
-    peak_unaware = max(grid.elevation[r][c] for r, c in unaware_path)
-    peak_aware = max(grid.elevation[r][c] for r, c in aware_path)
-    print(f"elevation-unaware path (straight over the hill): {len(unaware_path)} cells, cost {unaware_cost:.2f} "
-          f"(peak elevation crossed: {peak_unaware:.2f})")
-    print(f"elevation-aware path (routes around it):         {len(aware_path)} cells, cost {aware_cost:.2f} "
-          f"(peak elevation crossed: {peak_aware:.2f}) (drawn in green, red = elevation-unaware)")
+    print(f"terrain-naive path (straight through mud/water): {len(naive_path)} cells, cost {naive_cost:.2f}")
+    print(f"terrain-aware path (routes around it):           {len(aware_path)} cells, cost {aware_cost:.2f} "
+          f"(drawn in green, red = terrain-naive)")
 
     drive_waypoints = build_drive_waypoints(aware_path, args.smooth)
     draw_waypoints(drive_waypoints, gui=gui)
 
     start_xy = drive_waypoints[0]
-    start_z = grid.elevation[grid.start[0]][grid.start[1]] + 0.6
-    robot_id = p.loadURDF("r2d2.urdf", basePosition=[start_xy[0], start_xy[1], start_z])
-    # allow_vertical_fall=True: this route crosses stepped terrain (even
-    # though, by construction, only flat cells -- see the docstring
-    # above), so the robot needs to be able to actually settle onto the
-    # ground plane's true height rather than have gravity fought every
-    # control tick. See nav/sim3d/robot.py's Robot.allow_vertical_fall.
-    robot = Robot(robot_id, allow_vertical_fall=True)
+    robot_id = p.loadURDF("husky/husky.urdf", basePosition=[start_xy[0], start_xy[1], 0.15])
+    robot = Robot(robot_id)
 
-    print(f"driving the elevation-aware route: {len(drive_waypoints)} waypoints (smoothing={args.smooth})")
+    print(f"driving the terrain-aware route: {len(drive_waypoints)} waypoints (smoothing={args.smooth})")
 
     hud = Hud(HUD_POSITION, gui)
     speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
@@ -303,15 +328,15 @@ def run_elevation_demo(args, grid, gui):
 
         if steps >= next_hud_step:
             next_hud_step = steps + int(HUD_UPDATE_PERIOD_S * SIM_HZ)
-            unaware_live.tick(steps)
+            naive_live.tick(steps)
             aware_live.tick(steps)
             if speed_param is not None:
                 robot.speed = p.readUserDebugParameter(speed_param)
             status = "reached goal" if idx >= len(drive_waypoints) else "driving"
             hud.update([
-                f"[elevation] A* | elevation-aware | smoothing={args.smooth}",
-                f"path: {len(aware_path)} cells, cost {aware_cost:.2f} (unaware would cost "
-                f"{unaware_cost:.2f}) | waypoint {idx}/{len(drive_waypoints)}",
+                f"[terrain] A* | terrain-aware | smoothing={args.smooth}",
+                f"path: {len(aware_path)} cells, cost {aware_cost:.2f} (naive would cost "
+                f"{naive_cost:.2f}) | waypoint {idx}/{len(drive_waypoints)}",
                 f"{status} | t={steps / SIM_HZ:.1f}s",
             ])
 
@@ -342,7 +367,7 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     hide_obstacles(obstacle_bodies)
 
     start_xy = grid_to_world(*START)[:2]
-    robot_id = p.loadURDF("r2d2.urdf", basePosition=[start_xy[0], start_xy[1], 0.4])
+    robot_id = p.loadURDF("husky/husky.urdf", basePosition=[start_xy[0], start_xy[1], 0.15])
     robot = Robot(robot_id)
     lidar = Lidar3D(num_rays=SENSOR_NUM_RAYS, max_range=SENSOR_RANGE, ignore_body_id=robot_id,
                      noisy=args.noisy_sensor)
@@ -469,25 +494,25 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
 def main():
     args = parse_args()
     gui = not args.headless
-    # No flat plane for the elevation demo -- it builds its own terrain
-    # (build_terrain) matched to the hill's actual shape instead.
-    connect(gui=gui, load_ground_plane=not args.elevation)
+    connect(gui=gui)
 
-    if args.elevation:
-        grid = build_elevation_grid()
-        build_terrain(grid)
+    if args.terrain:
+        grid = build_terrain_grid()
         mark_cell(*START, color=START_COLOR)
         mark_cell(*GOAL, color=GOAL_COLOR)
-        run_elevation_demo(args, grid, gui)
+        run_terrain_demo(args, grid, gui)
+    elif args.sensor:
+        grid = build_scattered_grid()
+        obstacle_bodies = build_obstacles(grid)
+        mark_cell(*START, color=START_COLOR)
+        mark_cell(*GOAL, color=GOAL_COLOR)
+        run_sensor_demo(args, grid, gui, obstacle_bodies)
     else:
         grid = build_demo_grid()
         obstacle_bodies = build_obstacles(grid)
         mark_cell(*START, color=START_COLOR)
         mark_cell(*GOAL, color=GOAL_COLOR)
-        if args.sensor:
-            run_sensor_demo(args, grid, gui, obstacle_bodies)
-        else:
-            run_static_demo(args, grid, gui)
+        run_static_demo(args, grid, gui)
 
     if not args.headless:
         input("Press Enter to close...")

@@ -1,0 +1,80 @@
+PyBullet 3D Simulation -- Screenshot Guide
+===========================================
+
+Four screenshots, each demonstrating a different capability of the
+PyBullet port of this project's path-planning engine, driven by a
+Husky ground robot. legend.png is a standalone color/marker key meant
+to sit alongside these on a poster or slide, since the in-simulation
+HUD text is sized for an on-screen camera view and doesn't reproduce
+well in print.
+
+
+legend.png -- Legend
+---------------------
+Color and marker key for every element that appears across the three
+scenarios below: path colors, terrain types and their cost multipliers,
+obstacle states, and start/goal markers. Every swatch is pulled
+directly from the simulation's own color constants, so it always
+matches exactly what's on screen.
+
+
+binary_vs_costmap.png -- Binary Obstacles vs. Cost-Map Routing
+-----------------------------------------------------------------
+A robot faces a single wall blocking the direct route to its goal.
+Two paths are planned and drawn on the same map: a binary-obstacle
+search that treats every non-obstacle cell as equally good (red, 29
+cells, cost 28.0) and hugs the wall as tightly as geometry allows, and
+a cost-map search that adds a soft "keep your distance" penalty near
+obstacles (blue, 33 cells, cost 32.0), visible as the translucent
+orange halo around the wall. The cost-map route accepts a slightly
+longer path in exchange for real clearance -- the same tradeoff a
+Nav2-style costmap inflation layer makes for a physical robot that
+can't actually graze a wall the way a zero-radius grid search can.
+
+
+terrain_routing.png -- Terrain-Aware Routing
+-----------------------------------------------
+The obstacle wall is replaced with something a robot could physically
+drive through but shouldn't: a ring of mud (3.5x step cost) around a
+deeper patch of water (5x step cost). A route that's blind to terrain
+cost drives straight through both (red, cost 52.0) -- the shortest
+path by cell count, but the most expensive one to actually execute. A
+terrain-aware route detours around the whole patch instead (green,
+cost 28.0), trading a longer path for a cheaper one, the same
+reasoning an off-road vehicle applies when it takes the long way around
+a bog instead of the short way through it. The entire ground plane is
+rendered in terrain color (grass by default) rather than just the
+painted patch, so the terrain layer reads as a real property of the
+whole map, not a decal.
+
+
+sensor_before.png / sensor_after.png -- Lidar-Limited Sensing & Replanning
+------------------------------------------------------------------------------
+A before/after pair showing what happens when a robot can only plan
+against what it has actually sensed, not a perfect map. Real 3D
+raycasts (not a simple radius check) reveal obstacles as the robot's
+simulated lidar sweeps past them; anything not yet sensed stays
+dimmed almost to invisibility, faithful to what the robot genuinely
+doesn't know yet.
+
+  sensor_before.png: shortly after the robot's very first scan. Two
+  nearby obstacle blocks are already visible and folded into its route;
+  a third block -- squarely on the direct path to the goal -- is still
+  outside sensor range and effectively invisible.
+
+  sensor_after.png: moments later, the robot has driven close enough to
+  confirm that hidden block. The discovery is marked with a gold "X" on
+  the newly-confirmed cell, the old route is still visible fading out in
+  gray, and the fresh replanned route flashes in bright magenta beside
+  it -- a redraw that's actually visible frame to frame, not an
+  instantaneous, easy-to-miss swap.
+
+  Together, the pair is the core argument for sensor-limited planning:
+  the "best" path changes as the world becomes better known, and a
+  robot has to be able to notice that and react.
+
+
+Regenerating these screenshots
+-------------------------------
+    python3 screenshots/pybullet/legend.py     # legend.png
+    python3 screenshots/pybullet/capture.py    # the other four

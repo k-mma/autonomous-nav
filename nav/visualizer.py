@@ -294,7 +294,16 @@ def main(scenario=None):
 
     def planning_grid():
         if sensor_enabled and lidar is not None:
-            return KnownGrid(confirmed_cells(), diagonal=grid.diagonal)
+            # size=grid.size, not KnownGrid's own default (nav.config.
+            # GRID_SIZE) -- omitting it here used to silently plan
+            # against a 25x25 KnownGrid even in --demo mode's 20x20 grid
+            # (every scenario_*.py runs in demo mode), letting a search
+            # wander into KnownGrid's assumed-free cells past the real
+            # grid's actual boundary and return a path with a cell index
+            # weighted_path_length then couldn't look up in the real,
+            # smaller grid.cost -- see nav/replan_benchmark.py, which
+            # already passes size explicitly for the same reason.
+            return KnownGrid(confirmed_cells(), diagonal=grid.diagonal, size=grid.size)
         return grid
 
     def stop_robot():

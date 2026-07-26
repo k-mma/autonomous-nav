@@ -1,0 +1,96 @@
+Pygame 3-Panel Visualizer -- Screenshot Guide
+================================================
+
+Seven screenshots, one per preset scenario in scenarios/, each run
+through the same 3-panel comparison tool (Dijkstra | A* | RRT) so the
+three algorithms are always shown solving the exact same map side by
+side. Every panel's explored cells, path, and cost are computed live
+by this project's actual planning code -- these aren't mockups.
+
+
+forest_corridor.png -- "Forest Corridor"
+-------------------------------------------
+Two walls, each with a single narrow gap, force all three algorithms
+through the identical pair of chokepoints -- there's no room for one
+algorithm to simply find an easier route than another. Dijkstra's
+wavefront still floods the whole reachable map (259 cells) before
+settling on the shortest path; A* reaches the same 21.0 cost while
+exploring 208 fewer cells (51) by always expanding toward the goal
+first. RRT finds a valid but longer route (cost 25.8) by random
+sampling, the tradeoff for not doing a systematic search at all.
+
+
+costed_clearing.png -- "Costed Clearing"
+--------------------------------------------
+The one scenario with obstacle-inflation cost-map weighting (K) and
+diagonal movement both switched on, plus a water crossing through the
+middle. The peach halo around every obstacle is the inflation cost
+pushing routes away from walls, most visible in the RRT panel where it
+isn't hidden under a wall of solid explored cells; diagonal movement
+lets Dijkstra and A* cut corners instead of stair-stepping. Dijkstra
+and A* land on the identical 72.8-cost route; RRT's route costs
+noticeably more (130.0) since it isn't optimizing for the weighted
+cost field at all, only for a route that's collision-free.
+
+
+deep_forest.png -- "Deep Forest"
+------------------------------------
+A generated maze -- by construction, exactly one route exists between
+any two cells, with mud painted into several dead-end branches. This
+is the scenario built to make RRT struggle: with only one true path
+through the corridors, random sampling repeatedly lands in dead ends
+and has to backtrack, visible as the tangle of short green tree edges
+doubling back on themselves. Dijkstra and A* instead follow the maze's
+single corridor directly and land on the same 40.0-cost path, A*
+reaching it after exploring 20 fewer cells (51 vs. 71).
+
+
+open_field.png -- "Open Field"
+------------------------------------
+Sparse, scattered obstacles on otherwise open ground -- nothing forces
+a particular route, so this is a clean look at each algorithm's raw
+search behavior with nothing else going on. Dijkstra's explored region
+is a near-perfect radial blob (365 cells); A* reaches the identical
+34.0-cost path while only touching 241 cells, visibly narrower and
+aimed at the goal; RRT's tree sprawls in every direction before finding
+a serviceable but longer route (cost 40.2).
+
+
+search_snapshot.png -- "Search Snapshot" (step mode)
+---------------------------------------------------------
+The other six scenarios all show a finished search. This one is frozen
+mid-expansion instead, 60 steps into each algorithm's run, to show what
+search actually looks like while it's happening rather than only its
+result: Dijkstra's wavefront as a diamond still expanding outward
+(60/375 cells revealed), A*'s comparably narrow frontier already
+angled toward the goal (60/304), and RRT's tree already complete at
+this point (27/27 nodes) -- illustrating that RRT's "search" and
+"result" are much closer together in time than a grid search's.
+
+
+hidden_animals.png -- "Hidden Animals"
+--------------------------------------------
+A robot walking its planned route with a simulated lidar sensor
+(magenta ring) instead of a perfect map -- solid black cells are
+obstacles the sensor has actually detected; faint outlined cells are
+obstacles the robot doesn't know about yet. Five moving "animals"
+wander the map, and one has already been spotted (orange) inside the
+sensor ring. The status line confirms the robot is mid-walk,
+following RRT's route in this frame, and will replan the moment a
+newly-sensed or moving obstacle lands on its path.
+
+
+unreliable_sensor.png -- "Unreliable Sensor"
+--------------------------------------------------
+The same idea as Hidden Animals, but the sensor itself is now
+imperfect -- missed detections, position-jittered readings, and
+occasional false positives. The status line's "43 raw / 19 confirmed"
+is the point of this scenario: raw sensor reports are noisy enough
+that they can't be trusted individually, so the robot only acts on a
+cell once it's been reported multiple times, the same "don't replan on
+a single suspicious reading" caution a real noisy sensor demands.
+
+
+Regenerating these screenshots
+-------------------------------
+    python3 screenshots/pygame/capture.py
