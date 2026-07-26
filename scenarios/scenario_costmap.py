@@ -20,13 +20,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import random
 
-from nav.config import TERRAIN_WATER
+from nav.config import TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER
 from nav.scenario import ScenarioConfig
-from nav.scenario_helpers import scatter_obstacles
+from nav.scenario_helpers import scatter_obstacles, scatter_terrain
 from nav.visualizer import main
 
 SEED = 20260727
 OBSTACLE_DENSITY = 0.10
+BUSH_DENSITY = 0.10
+MUD_DENSITY = 0.07
 
 
 def build(grid):
@@ -35,6 +37,11 @@ def build(grid):
     grid.place_goal(size - 2, size - 2)
 
     scatter_obstacles(grid, random.Random(SEED), OBSTACLE_DENSITY)
+    # Bush/mud scattered broadly first, so the cost-map/diagonal story
+    # isn't the only terrain in the shot -- the water strip below is
+    # painted last so it always wins the middle row regardless.
+    scatter_terrain(grid, random.Random(SEED + 1), TERRAIN_BUSH, BUSH_DENSITY)
+    scatter_terrain(grid, random.Random(SEED + 2), TERRAIN_MUD, MUD_DENSITY)
 
     # A water strip across the middle, away from start/goal, so a
     # diagonal path has an obvious reason to route around rather than

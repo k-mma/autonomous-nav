@@ -67,8 +67,23 @@ def draw_grid_panel(screen, grid, explored, path, algo, reason, moving_cells,
                      sensor_enabled, known_obstacles, x_off, y_off, grid_size, cell_size):
     """Draw one algorithm's panel -- same per-cell priority order as the
     single-panel version had: start/goal, path, explored, obstacle,
-    cost-map tint, terrain background (see Step 3/4)."""
+    cost-map tint, terrain background (see Step 3/4).
+
+    Path and explored are drawn as a smaller inset square over a
+    full-cell terrain-colored background, leaving a visible terrain-
+    colored border ring around the cell, rather than painting over the
+    terrain entirely (an earlier version blended the two colors
+    together instead, which visibly washed out the difference between
+    terrain types once mixed with a strongly-saturated overlay color --
+    bush, mud, and water all blend toward nearly the same muddy yellow
+    once mixed with enough YELLOW, since blending averages away exactly
+    the hue difference that distinguishes them). Keeping both colors at
+    full, unmixed saturation -- terrain in the border, path/explored in
+    the center -- means a viewer never has to guess which terrain type
+    is under a busy Dijkstra wavefront; it's still right there, just
+    framing the cell instead of filling it."""
     path_set = set(path) if path else set()
+    border = max(2, cell_size // 6)
 
     for row in range(grid_size):
         for col in range(grid_size):
@@ -76,17 +91,18 @@ def draw_grid_panel(screen, grid, explored, path, algo, reason, moving_cells,
             pos = (row, col)
             hidden = sensor_enabled and cell == Grid.OBSTACLE and pos not in known_obstacles
             terrain_color = TERRAIN_COLORS[grid.terrain[row][col]]
+            inset_color = None
 
             if cell == Grid.START:
                 color = DARK_RED if reason == "start_blocked" else GREEN
             elif cell == Grid.GOAL:
                 color = DARK_RED if reason in ("goal_blocked", "no_path") else RED
             elif pos in path_set:
-                color = YELLOW
+                color, inset_color = terrain_color, YELLOW
             # RRT's tree is drawn separately as edges -- filling every
             # tree node here would look like Dijkstra's solid explored blob.
             elif pos in explored and algo != "rrt":
-                color = EXPLORED_COLOR
+                color, inset_color = terrain_color, EXPLORED_COLOR
             elif cell == Grid.OBSTACLE and not hidden:
                 color = ORANGE if pos in moving_cells else BLACK
             elif grid.cost_map_enabled and not hidden and grid.cost[row][col] > 1.0:
@@ -98,6 +114,8 @@ def draw_grid_panel(screen, grid, explored, path, algo, reason, moving_cells,
 
             rect = pygame.Rect(x_off + col * cell_size, y_off + row * cell_size, cell_size, cell_size)
             pygame.draw.rect(screen, color, rect)
+            if inset_color is not None:
+                pygame.draw.rect(screen, inset_color, rect.inflate(-2 * border, -2 * border))
             pygame.draw.rect(screen, GRAY, rect, 1)
             if hidden:
                 pygame.draw.rect(screen, HIDDEN_OBSTACLE_OUTLINE, rect, 2)

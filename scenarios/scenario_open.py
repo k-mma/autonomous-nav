@@ -1,9 +1,10 @@
 """Open Field -- sparse fixed obstacles scattered across otherwise open
-ground, with a small bush/mud terrain patch near the center. Start near
-top-left, goal near bottom-right, so there's nothing forcing a
-particular route -- this is meant to show Dijkstra's full radial
-exploration blob against A*'s directed search and RRT's random
-sampling, all with (mostly) nothing in the way.
+ground, with bush/mud/water terrain scattered across the whole field
+plus a denser bush/mud patch near the center. Start near top-left, goal
+near bottom-right, so there's nothing forcing a particular route -- this
+is meant to show Dijkstra's full radial exploration blob against A*'s
+directed search and RRT's random sampling, all with (mostly) nothing in
+the way.
 
 Shows: how Dijkstra, A*, and RRT each explore the same open, mostly
 unobstructed ground differently.
@@ -15,13 +16,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import random
 
-from nav.config import TERRAIN_BUSH, TERRAIN_MUD
+from nav.config import TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER
 from nav.scenario import ScenarioConfig
-from nav.scenario_helpers import scatter_obstacles
+from nav.scenario_helpers import scatter_obstacles, scatter_terrain
 from nav.visualizer import main
 
 SEED = 20260725
 OBSTACLE_DENSITY = 0.08
+BUSH_DENSITY = 0.12
+MUD_DENSITY = 0.08
+WATER_DENSITY = 0.05
 
 
 def build(grid):
@@ -30,9 +34,14 @@ def build(grid):
     grid.place_goal(size - 2, size - 2)
 
     scatter_obstacles(grid, random.Random(SEED), OBSTACLE_DENSITY)
+    scatter_terrain(grid, random.Random(SEED + 1), TERRAIN_BUSH, BUSH_DENSITY)
+    scatter_terrain(grid, random.Random(SEED + 2), TERRAIN_MUD, MUD_DENSITY)
+    scatter_terrain(grid, random.Random(SEED + 3), TERRAIN_WATER, WATER_DENSITY)
 
-    # A small bush/mud patch near the center -- two adjacent blocks so
-    # the two terrain types are clearly next to each other in one shot.
+    # A denser bush/mud patch near the center on top of the broad
+    # scatter -- two adjacent blocks so the two terrain types are
+    # clearly next to each other in one shot, not just wherever chance
+    # placed them.
     mid = size // 2
     for row in range(mid - 2, mid + 1):
         for col in range(mid - 3, mid):

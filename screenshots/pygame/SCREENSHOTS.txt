@@ -5,90 +5,127 @@ Seven screenshots, one per preset scenario in scenarios/, each run
 through the same 3-panel comparison tool (Dijkstra | A* | RRT) so the
 three algorithms are always shown solving the exact same map side by
 side. Every panel's explored cells, path, and cost are computed live
-by this project's actual planning code -- these aren't mockups.
+by this project's actual planning code -- these aren't mockups. (RRT's
+own numbers can vary a little run to run -- it's the one algorithm here
+that samples randomly rather than searching systematically, so its
+exact node/cost count isn't perfectly reproducible the way the other
+two panels' are; that's a real property of RRT, not a rendering bug.)
+
+Every scenario now scatters bush, mud, and/or water across most of its
+map rather than one small patch, and every cell's terrain color is
+always drawn at full strength -- a path or explored cell is drawn as a
+smaller solid-color square inset over the full terrain-colored cell,
+leaving a visible terrain-colored border around it, instead of the two
+colors being mixed together. An earlier version blended path/explored
+color into the terrain color, which technically kept some terrain
+visible but visually washed out the difference between terrain types
+once mixed with a strongly-saturated overlay (bush, mud, and water all
+blend toward nearly the same muddy yellow under enough path-yellow).
+Keeping both colors at full saturation -- terrain in the border,
+overlay in the center -- means every terrain type stays as easy to
+identify under a busy Dijkstra wavefront as it is on open ground.
 
 
 forest_corridor.png -- "Forest Corridor"
 -------------------------------------------
 Two walls, each with a single narrow gap, force all three algorithms
 through the identical pair of chokepoints -- there's no room for one
-algorithm to simply find an easier route than another. Dijkstra's
-wavefront still floods the whole reachable map (259 cells) before
+algorithm to simply find an easier route than another. Bush, mud, and
+water are scattered across the whole map now (not just flanking the
+gaps, though that deliberate bush border is still there), each staying
+fully visible as a colored ring around every explored or path cell that
+crosses it. Dijkstra floods the whole reachable map (243 cells) before
 settling on the shortest path; A* reaches the same 21.0 cost while
-exploring 208 fewer cells (51) by always expanding toward the goal
-first. RRT finds a valid but longer route (cost 25.8) by random
-sampling, the tradeoff for not doing a systematic search at all.
+exploring 200 fewer cells (43) by always expanding toward the goal
+first. RRT finds a valid but longer route by random sampling, the
+tradeoff for not doing a systematic search at all.
 
 
 costed_clearing.png -- "Costed Clearing"
 --------------------------------------------
 The one scenario with obstacle-inflation cost-map weighting (K) and
-diagonal movement both switched on, plus a water crossing through the
-middle. The peach halo around every obstacle is the inflation cost
-pushing routes away from walls, most visible in the RRT panel where it
-isn't hidden under a wall of solid explored cells; diagonal movement
-lets Dijkstra and A* cut corners instead of stair-stepping. Dijkstra
-and A* land on the identical 72.8-cost route; RRT's route costs
-noticeably more (130.0) since it isn't optimizing for the weighted
-cost field at all, only for a route that's collision-free.
+diagonal movement both switched on, with bush and mud scattered
+broadly plus a dedicated water strip across the middle. The water
+strip stays recognizably blue-gray even where Dijkstra and A*'s
+explored cells cover it. The peach halo around every obstacle is the
+inflation cost pushing routes away from walls, clearest in the RRT
+panel where cells aren't bordered by an explored overlay at all;
+diagonal movement lets Dijkstra and A* cut corners instead of
+stair-stepping. Dijkstra and A* land on the identical 76.1-cost route;
+RRT's route costs noticeably more since it isn't optimizing for the
+weighted cost field, only for a route that's collision-free.
 
 
 deep_forest.png -- "Deep Forest"
 ------------------------------------
 A generated maze -- by construction, exactly one route exists between
-any two cells, with mud painted into several dead-end branches. This
-is the scenario built to make RRT struggle: with only one true path
-through the corridors, random sampling repeatedly lands in dead ends
-and has to backtrack, visible as the tangle of short green tree edges
-doubling back on themselves. Dijkstra and A* instead follow the maze's
-single corridor directly and land on the same 40.0-cost path, A*
-reaching it after exploring 20 fewer cells (51 vs. 71).
+any two cells -- with mud and bush filling most of its dead-end
+branches (alternating the two so neighboring dead ends are easy to
+tell apart, not just "some terrain in here somewhere"). This is the
+scenario built to make RRT struggle: with only one true path through
+the corridors, random sampling repeatedly lands in dead ends and has
+to backtrack, visible as the tangle of short green tree edges doubling
+back on themselves. Dijkstra and A* instead follow the maze's single
+corridor directly and land on the same 40.0-cost path, A* reaching it
+after exploring 23 fewer cells (48 vs. 71).
 
 
 open_field.png -- "Open Field"
 ------------------------------------
-Sparse, scattered obstacles on otherwise open ground -- nothing forces
-a particular route, so this is a clean look at each algorithm's raw
-search behavior with nothing else going on. Dijkstra's explored region
-is a near-perfect radial blob (365 cells); A* reaches the identical
-34.0-cost path while only touching 241 cells, visibly narrower and
-aimed at the goal; RRT's tree sprawls in every direction before finding
-a serviceable but longer route (cost 40.2).
+Sparse, scattered obstacles on otherwise open ground, now with bush,
+mud, and water scattered across the entire field plus a denser bush/
+mud patch near the center -- this went from the sparsest-terrain
+scenario in the set to one of the richest, since "open ground" doesn't
+have to mean "empty of terrain," just empty of anything that forces a
+particular route. Dijkstra's explored region is a near-perfect radial
+blob (361 cells) that fully covers the terrain, all of it still
+identifiable underneath; A* reaches the identical 36.0-cost path while
+only touching 121 cells, visibly narrower and aimed at the goal; RRT's
+tree sprawls in every direction before finding a serviceable but
+longer route.
 
 
 search_snapshot.png -- "Search Snapshot" (step mode)
 ---------------------------------------------------------
 The other six scenarios all show a finished search. This one is frozen
-mid-expansion instead, 60 steps into each algorithm's run, to show what
-search actually looks like while it's happening rather than only its
-result: Dijkstra's wavefront as a diamond still expanding outward
-(60/375 cells revealed), A*'s comparably narrow frontier already
-angled toward the goal (60/304), and RRT's tree already complete at
-this point (27/27 nodes) -- illustrating that RRT's "search" and
+mid-expansion instead, 60 steps into each algorithm's run, over a map
+with bush, mud, and water scattered across nearly all of it -- a frozen
+wavefront is exactly where terrain just ahead of (and bordering) the
+revealed cells is easiest to actually see, since the eye can compare
+"revealed, terrain visible at the edge" against "not yet revealed,
+terrain in full" side by side. Dijkstra's wavefront is still a diamond
+expanding outward (60/370 cells revealed), A*'s frontier is already
+angled toward the goal (60/132), and RRT's tree is already complete at
+this point (29/29 nodes) -- illustrating that RRT's "search" and
 "result" are much closer together in time than a grid search's.
 
 
 hidden_animals.png -- "Hidden Animals"
 --------------------------------------------
 A robot walking its planned route with a simulated lidar sensor
-(magenta ring) instead of a perfect map -- solid black cells are
-obstacles the sensor has actually detected; faint outlined cells are
-obstacles the robot doesn't know about yet. Five moving "animals"
-wander the map, and one has already been spotted (orange) inside the
-sensor ring. The status line confirms the robot is mid-walk,
-following RRT's route in this frame, and will replan the moment a
-newly-sensed or moving obstacle lands on its path.
+(magenta ring) instead of a perfect map, across a forest floor of
+bush, mud, and water -- solid black cells are obstacles the sensor has
+actually detected; faint outlined cells are obstacles the robot
+doesn't know about yet. Five moving "animals" wander the map, and one
+has already been spotted (orange) inside the sensor ring. This
+particular frame catches the robot mid-replan -- the status line reads
+"REPLANNING...", meaning a newly-sensed or moving obstacle just landed
+on its route and a fresh path is being computed right now, not just a
+robot calmly walking a route it already knows is clear.
 
 
 unreliable_sensor.png -- "Unreliable Sensor"
 --------------------------------------------------
 The same idea as Hidden Animals, but the sensor itself is now
 imperfect -- missed detections, position-jittered readings, and
-occasional false positives. The status line's "43 raw / 19 confirmed"
-is the point of this scenario: raw sensor reports are noisy enough
-that they can't be trusted individually, so the robot only acts on a
-cell once it's been reported multiple times, the same "don't replan on
-a single suspicious reading" caution a real noisy sensor demands.
+occasional false positives -- crossing a heavier, slightly different
+terrain mix (bush/mud/water vs. Hidden Animals' bush/mud/water at
+different densities) so the two sensor scenarios don't look identical.
+The status line's "22 raw / 8 confirmed" is the point of this
+scenario: raw sensor reports are noisy enough that they can't be
+trusted individually, so the robot only acts on a cell once it's been
+reported multiple times, the same "don't replan on a single suspicious
+reading" caution a real noisy sensor demands.
 
 
 Regenerating these screenshots
