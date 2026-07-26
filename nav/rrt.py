@@ -59,7 +59,8 @@ def _clear_line(grid, frm, to):
 
 
 def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
-        goal_sample_rate=RRT_GOAL_SAMPLE_RATE, goal_radius=RRT_GOAL_RADIUS, rng=None):
+        goal_sample_rate=RRT_GOAL_SAMPLE_RATE, goal_radius=RRT_GOAL_RADIUS, rng=None,
+        order_out=None):
     """
     Rapidly-exploring Random Tree: grow a tree from `start` by repeatedly
     sampling a random free cell, stepping from the nearest tree node toward
@@ -71,6 +72,12 @@ def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
     guarantee the shortest path (or even the same path twice). `rng` is
     exposed so callers (e.g. the benchmark) can get reproducible runs.
 
+    `order_out`, if given a list, gets each node appended to it in the
+    exact order it was added to the tree (`nodes`, below, already *is*
+    this order -- this just mirrors it out for callers, the same optional
+    replay hook dijkstra/astar accept, so nav/visualizer.py's step-by-step
+    replay mode (Step 6) can treat all three algorithms identically).
+
     Returns (path, tree_nodes, came_from) -- same shape as dijkstra/astar
     so find_path and the visualizer can treat all three identically.
     tree_nodes is every node grown (RRT's equivalent of "cells explored").
@@ -79,6 +86,8 @@ def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
     rng = rng or random.Random()
     came_from = {}
     nodes = [start]
+    if order_out is not None:
+        order_out.append(start)
     tree = KDTree()
     tree.insert(start)
 
@@ -94,12 +103,16 @@ def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
 
         came_from[new_node] = nearest
         nodes.append(new_node)
+        if order_out is not None:
+            order_out.append(new_node)
         tree.insert(new_node)
 
         if math.hypot(new_node[0] - goal[0], new_node[1] - goal[1]) <= goal_radius:
             if new_node != goal:
                 came_from[goal] = new_node
                 nodes.append(goal)
+                if order_out is not None:
+                    order_out.append(goal)
             # Local import: nav.algorithms imports this module lazily too,
             # to avoid a circular import between the two.
             from nav.algorithms import reconstruct

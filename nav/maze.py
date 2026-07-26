@@ -49,3 +49,11 @@ def generate_maze(grid, rng=None):
         grid.cells[next_row][next_col] = Grid.FREE
         visited.add((next_row, next_col))
         stack.append((next_row, next_col))
+
+    # FIX (Step 1 audit): every wall/passage above is carved by writing
+    # grid.cells directly, bypassing toggle_obstacle (which keeps
+    # grid.cost in sync on every change). Without this, generating a
+    # maze while cost-map mode (K) was already on left grid.cost at
+    # its pre-maze values -- the cost tint and cost-aware A*/Dijkstra
+    # silently ignored the maze's walls entirely.
+    grid.refresh_cost_map()

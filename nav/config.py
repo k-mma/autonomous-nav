@@ -2,37 +2,83 @@
 
 GRID_SIZE = 25
 CELL_SIZE = 28          # Pixels per cell
-WINDOW_WIDTH = GRID_SIZE * CELL_SIZE
+
+# --demo sizing (nav/visualizer.py's --demo flag) -- smaller grid,
+# bigger cells, so the 3-panel window still fits comfortably on a normal
+# screen and reads well in a screenshot. Window dimensions themselves
+# are no longer fixed constants here (Step 5): the 3-panel layout's
+# width/height depend on which of GRID_SIZE/CELL_SIZE vs. these two are
+# in effect, so nav/visualizer.py computes them at startup instead.
+DEMO_GRID_SIZE = 20
+DEMO_CELL_SIZE = 30
+
 STATUS_LINE_HEIGHT = 21
 STATUS_LINES = 4
 STATUS_BAR_HEIGHT = STATUS_LINES * STATUS_LINE_HEIGHT + 12
-WINDOW_HEIGHT = WINDOW_WIDTH + STATUS_BAR_HEIGHT
+
+# Step 5: 3 side-by-side panels (Dijkstra / A* / RRT), each showing its
+# own explored set and path against the same shared grid.
+PANEL_DIVIDER_WIDTH = 4
+PANEL_DIVIDER_COLOR = (120, 120, 120)
+# Height reserved above each panel's grid for its algorithm-name label.
+PANEL_LABEL_HEIGHT = 26
+PANEL_LABEL_BG = (225, 225, 225)
+PANEL_LABEL_TEXT = (30, 30, 30)
 
 
 # Cell colors
+#
+# STEP 4 color audit: every color below (and TERRAIN_COLORS further down)
+# was checked pairwise against the others for hue/value separation, since
+# terrain now paints a background color on *every* cell and several other
+# overlays (explored, cost tint, sensor ring) also have to stay legible
+# against all four terrain colors, not just white. Each change below has
+# its own comment explaining what it was checked against.
+#
+# Re-audit: the first pass only checked raw RGB distance, which missed a
+# real clash -- ORANGE and the old MUD were nearly hue-twins (~5 deg
+# apart on the color wheel), just at very different brightness/
+# saturation, so the RGB-distance number looked fine while the actual
+# hue was nearly identical. This pass fixed it from the terrain side
+# (see TERRAIN_COLORS below) rather than moving ORANGE, since darkening/
+# desaturating terrain overall -- so it reads as a muted backdrop
+# markers clearly sit on top of -- was needed regardless of this one pair.
 
-# Free cell
+# Free cell -- background color math only now (grid lines, lerp base
+# when a cell has no terrain painted, i.e. TERRAIN_GRASS -- see
+# TERRAIN_COLORS). No longer the default cell fill; see draw_grid.
 WHITE = (255, 255, 255)
-# Obstacle
+# Obstacle -- a tree or rock, in this project's forest framing
 BLACK = (30, 30, 30)
 # Grid lines
 GRAY = (200, 200, 200)
-# Start cell
-GREEN = (50, 200, 100)
+# Start cell -- STEP 4: brightened/re-hued from (50, 200, 100) to a more
+# saturated, slightly bluer green so it stays clearly apart from
+# TERRAIN_BUSH_COLOR (a duller, yellower olive) below -- both are
+# "green," and start is drawn solid over whatever terrain sits under it.
+GREEN = (34, 197, 94)
 # Goal cell
 RED = (220, 60, 60)
-# Explored cells, Dijkstra
-LIGHT_BLUE = (100, 180, 255)
-# Explored cells, A*
-LIGHT_PURPLE = (190, 160, 255)
+# STEP 4: Dijkstra's LIGHT_BLUE and A*'s LIGHT_PURPLE are merged into one
+# EXPLORED_COLOR -- the visualizer only ever shows one algorithm's
+# explored set at a time, so a viewer never needs the color itself to
+# tell which algorithm produced it (the status line already says so).
+# One shared color also means only one color needs to be kept distinct
+# from the four terrain backgrounds instead of two. Chosen as a light
+# lavender specifically because none of the four terrain hues (pale
+# green, olive, brown, blue) drift anywhere near purple.
+EXPLORED_COLOR = (196, 168, 255)
 # Path cells
 YELLOW = (255, 210, 50)
 # Unreachable goal
 DARK_RED = (160, 30, 30)
-# Moving obstacle cells
+# Moving obstacle cells -- an animal, in this project's forest framing
 ORANGE = (255, 140, 0)
-# Robot marker
-CYAN = (0, 190, 190)
+# Robot marker -- STEP 4: raised brightness/saturation from (0, 190, 190)
+# so it stays visible both over RRT_TREE_COLOR (a darker, less saturated
+# teal) and over TERRAIN_WATER_COLOR (a muted, darker blue) -- pushed
+# well above both so it doesn't blend into either.
+CYAN = (0, 220, 255)
 
 STATUS_BG = (245, 245, 245)
 STATUS_TEXT = (60, 60, 60)
@@ -50,7 +96,12 @@ RRT_MAX_ITERS = 5000
 RRT_STEP_SIZE = 2.0
 RRT_GOAL_SAMPLE_RATE = 0.1
 RRT_GOAL_RADIUS = 1.5
-# Tree edges/nodes
+# Tree edges/nodes -- STEP 4: checked against EXPLORED_COLOR (a much
+# lighter lavender, no hue overlap) and against all four terrain colors;
+# closest is TERRAIN_WATER_COLOR (also blue-leaning) but far enough apart
+# in hue (teal vs. blue-purple) and, being a thin drawn line rather than
+# a cell fill, low risk of being confused with a terrain background even
+# where the hues are somewhat close.
 RRT_TREE_COLOR = (0, 150, 130)
 
 
@@ -58,7 +109,15 @@ RRT_TREE_COLOR = (0, 150, 130)
 
 COST_INFLUENCE_RADIUS = 3
 COST_MAX_EXTRA = 4.0
-# Free-cell tint at maximum cost; blends toward WHITE as cost drops to 1.0
+# STEP 3/4: extra-cost tint blended toward from whatever the cell's
+# terrain color is (not from flat WHITE anymore, now that terrain paints
+# its own background -- see draw_grid in nav/visualizer.py, which also
+# divides the terrain cost multiplier back out before computing the
+# blend amount, so this tint reflects obstacle-proximity inflation only,
+# not terrain cost double-counted on top of its own color). Kept a warm
+# peach specifically because every terrain color below is either cool
+# (bush green, water blue) or a desaturated earth tone (mud), so a warm,
+# fairly saturated tint reads clearly as "extra cost" against any of them.
 COST_TINT = (255, 205, 150)
 
 # Elevation-aware routing (Grid.elevation / Grid.elevation_aware, see
@@ -88,12 +147,77 @@ COST_TINT = (255, 205, 150)
 ELEVATION_COST_FACTOR = 10.0
 
 
+# Terrain (Step 3) -- purely a cosmetic/cost layer on top of the existing
+# obstacle grid, framed as forest undergrowth: still obstacles are
+# trees/rocks, moving obstacles are animals, terrain is the ground
+# itself (grass/bush/mud/water). Every cell starts as TERRAIN_GRASS;
+# painting a cell some other type multiplies its cost by the
+# corresponding entry in TERRAIN_COST wherever the active grid's cost
+# field gets refreshed (see Grid.refresh_cost_map), regardless of
+# whether the obstacle-inflation cost map (K) is on -- unlike inflation,
+# terrain cost is a real property of the ground, not a planning aid, so
+# it always applies once painted. The robot can still traverse every
+# terrain type; some just cost a lot more to cross.
+TERRAIN_GRASS = 0
+TERRAIN_BUSH = 1
+TERRAIN_MUD = 2
+TERRAIN_WATER = 3
+# All four terrain types, in a fixed display order -- used where every
+# type needs to be listed (e.g. the legend), regardless of what's
+# actually paintable.
+TERRAIN_CYCLE = [TERRAIN_GRASS, TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER]
+# What the T key / left-click paint actually cycles through -- grass is
+# excluded here since it's just the default tile every cell already
+# starts as; there's nothing to "paint" it into.
+TERRAIN_PAINT_CYCLE = [TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER]
+
+TERRAIN_NAMES = {
+    TERRAIN_GRASS: "Grass",
+    TERRAIN_BUSH: "Bush",
+    TERRAIN_MUD: "Mud",
+    TERRAIN_WATER: "Water",
+}
+
+TERRAIN_COST = {
+    TERRAIN_GRASS: 1.0,
+    TERRAIN_BUSH: 2.0,
+    TERRAIN_MUD: 3.5,
+    TERRAIN_WATER: 5.0,
+}
+
+# Color re-audit: the first pass (Step 4) only checked raw RGB distance,
+# which missed a real problem -- ORANGE (moving obstacle, hue ~33 deg)
+# and the old MUD (hue ~28 deg) were nearly hue-twins, differing only in
+# brightness/saturation, since RGB distance is dominated by that
+# brightness gap rather than hue. Terrain is now deliberately darker and
+# less saturated across the board (grass stays near-white/unobtrusive by
+# design) so it reads as a muted backdrop that every marker color -- all
+# of which stay near-maximum saturation/brightness -- clearly sits on
+# top of, regardless of how close two hues land on the wheel. Bush, mud,
+# and water all kept their original hue (still clearly bush/mud/water)
+# but each had saturation and value pulled down roughly 30-40%.
+TERRAIN_COLORS = {
+    TERRAIN_GRASS: (231, 240, 223),
+    TERRAIN_BUSH: (90, 115, 60),
+    TERRAIN_MUD: (110, 90, 72),
+    TERRAIN_WATER: (85, 120, 150),
+}
+
+
 # Lidar sensor model
 
 LIDAR_RADIUS = 5
 # Outline drawn around a real obstacle the robot hasn't sensed yet
 HIDDEN_OBSTACLE_OUTLINE = (170, 170, 170)
-SENSOR_RING_COLOR = (0, 140, 200)
+# Sensor radius ring -- STEP 4: moved off blue (its old value,
+# (0, 140, 200)) once TERRAIN_WATER_COLOR claimed that hue for the water
+# terrain type. An amber replacement was tried first, but that's too
+# close to YELLOW (path) and ORANGE (moving obstacle) -- the ring can
+# pass directly over a yellow path cell, so it needs to read as a
+# distinct hue there too, not just against terrain. Magenta/pink has no
+# other claimant anywhere in this palette and sits far (RGB distance
+# > 150) from every other color and all four terrain colors.
+SENSOR_RING_COLOR = (230, 25, 170)
 
 # Sensor noise -- both LidarSensor (nav/sensor.py) and Lidar3D
 # (nav/sim3d/lidar.py) are perfect by default (every real obstacle in

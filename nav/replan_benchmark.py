@@ -4,9 +4,9 @@ faster than re-running A* from scratch, on the two scenarios this
 project already replans repeatedly on a live grid? Recreates both:
 
 - **Moving obstacle** (nav/obstacles.py's MovingObstacle + the replanning
-  policy in nav/visualizer.py): an obstacle bounces between two adjacent
-  free cells; every time it moves, the robot needs an up-to-date route
-  from wherever it currently is to the goal.
+  policy in nav/visualizer.py): an obstacle random-walks between free
+  cardinal neighbors; every time it moves, the robot needs an up-to-date
+  route from wherever it currently is to the goal.
 - **Sensor discovery** (nav/sensor.py's LidarSensor/KnownGrid + the
   replanning policy in nav/visualizer.py, `nav/scratch/lidar_test.py`):
   the robot only knows about obstacles it's sensed; every time a scan
@@ -76,18 +76,23 @@ def _random_grid(size, rng, density=DENSITY):
 
 
 def _place_moving_obstacle(grid, size, rng, avoid):
+    # Only needs to return a single starting cell now -- MovingObstacle
+    # random-walks from one cell instead of bouncing between two fixed
+    # ones (see nav/obstacles.py). Still requires at least one free
+    # neighbor so the obstacle actually has somewhere to walk to; a cell
+    # with zero free neighbors would never move, defeating this
+    # benchmark's whole point of measuring repeated replans.
     free = [(r, c) for r in range(size) for c in range(size)
             if grid.cells[r][c] == Grid.FREE and (r, c) not in avoid]
     rng.shuffle(free)
     for cell in free:
-        neighbor = find_free_neighbor(grid, cell)
-        if neighbor is not None and neighbor not in avoid:
-            return cell, neighbor
-    return None, None
+        if find_free_neighbor(grid, cell) is not None:
+            return cell
+    return None
 
 
-def _moving_obstacle_astar(grid, start, goal, cell_a, cell_b, num_events):
-    obstacle = MovingObstacle(cell_a, cell_b)
+def _moving_obstacle_astar(grid, start, goal, cell, obstacle_seed, num_events):
+    obstacle = MovingObstacle(cell, rng=random.Random(obstacle_seed))
     current = start
     total_s = 0.0
     replans = 0
@@ -105,8 +110,13 @@ def _moving_obstacle_astar(grid, start, goal, cell_a, cell_b, num_events):
     return total_s, replans
 
 
-def _moving_obstacle_dstar(grid, start, goal, cell_a, cell_b, num_events):
-    obstacle = MovingObstacle(cell_a, cell_b)
+def _moving_obstacle_dstar(grid, start, goal, cell, obstacle_seed, num_events):
+    # Same obstacle_seed as _moving_obstacle_astar's obstacle -- both
+    # calls get their own MovingObstacle instance (each on its own cloned
+    # grid), but seeding both from the same value keeps their random-walk
+    # move sequences identical, which is what makes the astar-vs-D*-Lite
+    # timing comparison apples to apples (see module docstring).
+    obstacle = MovingObstacle(cell, rng=random.Random(obstacle_seed))
     planner = DStarLite(grid, start, goal)
     current = start
     total_s = 0.0
@@ -139,17 +149,15 @@ def run_moving_obstacle_trial(size, seed):
         p, _, _ = astar(grid, start, goal)
         if p is None:
             continue
-        cell_a, cell_b = _place_moving_obstacle(grid, size, rng, avoid={start, goal})
-        if cell_a is None:
+        cell = _place_moving_obstacle(grid, size, rng, avoid={start, goal})
+        if cell is None:
             continue
-        # MovingObstacle itself only marks a cell as Grid.OBSTACLE the
-        # first time _move() swaps it in (see nav/obstacles.py) -- it
-        # doesn't mark its own starting cell at construction. For this
-        # benchmark's scenario, the obstacle needs to actually be there
-        # from the start, so both planners' very first plan already
-        # accounts for it -- which means re-checking solvability *with*
-        # it placed, since adding it could have closed the only route.
-        grid.cells[cell_a[0]][cell_a[1]] = Grid.OBSTACLE
+        # MovingObstacle.place() marks its own starting cell as an
+        # obstacle immediately (see nav/obstacles.py) -- needed here too
+        # so both planners' very first plan already accounts for it,
+        # which means re-checking solvability *with* it placed, since
+        # adding it could have closed the only route.
+        grid.cells[cell[0]][cell[1]] = Grid.OBSTACLE
         p, _, _ = astar(grid, start, goal)
         if p is None:
             continue
@@ -162,9 +170,10 @@ def run_moving_obstacle_trial(size, seed):
     # with grid size -- a fixed event count would let a huge grid finish
     # its whole trial without the obstacle ever mattering.
     num_events = min(200, max(40, len(p)))
+    obstacle_seed = rng.randrange(2 ** 31)
 
-    a_s, a_replans = _moving_obstacle_astar(_clone_grid(grid), start, goal, cell_a, cell_b, num_events)
-    d_s, d_replans = _moving_obstacle_dstar(_clone_grid(grid), start, goal, cell_a, cell_b, num_events)
+    a_s, a_replans = _moving_obstacle_astar(_clone_grid(grid), start, goal, cell, obstacle_seed, num_events)
+    d_s, d_replans = _moving_obstacle_dstar(_clone_grid(grid), start, goal, cell, obstacle_seed, num_events)
     return {
         "scenario": "moving_obstacle",
         "grid_size": size,

@@ -1,13 +1,21 @@
 import heapq
+import math
 
 from nav.grid import DIAGONAL_COST
 from nav.heuristics import manhattan
 
 
-def dijkstra(grid, start, goal):
+def dijkstra(grid, start, goal, order_out=None):
     """
     Shortest path from start to goal by cost, expanding the cheapest known
     cell first. Guaranteed optimal for any grid.get_neighbors() step costs.
+
+    `order_out`, if given a list, gets each cell appended to it in the
+    exact order it's settled -- a plain `set` (what's returned as
+    `settled`) doesn't preserve that order, and nav/visualizer.py's
+    step-by-step replay mode (Step 6) needs it to reveal cells one at a
+    time in the order they were actually explored. Optional and additive
+    so every existing caller that doesn't pass it sees no change at all.
 
     Returns (path, settled, came_from). path is None if goal is unreachable.
     settled is every cell the search finished expanding (for visualizing
@@ -27,6 +35,8 @@ def dijkstra(grid, start, goal):
         if current in settled:
             continue
         settled.add(current)
+        if order_out is not None:
+            order_out.append(current)
 
         if current == goal:
             return reconstruct(came_from, start, goal), settled, came_from
@@ -43,7 +53,7 @@ def dijkstra(grid, start, goal):
     return None, settled, came_from
 
 
-def astar(grid, start, goal, heuristic=manhattan):
+def astar(grid, start, goal, heuristic=manhattan, order_out=None):
     """
     Like dijkstra, but expands the cell with the lowest f = g + h first,
     where g is the cost so far and h = heuristic(cell, goal) estimates the
@@ -51,6 +61,8 @@ def astar(grid, start, goal, heuristic=manhattan):
     overestimates the true remaining cost (see nav/heuristics.py) -- an
     inadmissible heuristic can make it settle for a longer path (see
     WRITEUPS.md).
+
+    `order_out` -- see dijkstra's docstring; same optional replay hook.
 
     Returns (path, settled, came_from). path is None if goal is unreachable.
     """
@@ -70,6 +82,8 @@ def astar(grid, start, goal, heuristic=manhattan):
         if current in settled:
             continue
         settled.add(current)
+        if order_out is not None:
+            order_out.append(current)
 
         if current == goal:
             return reconstruct(came_from, start, goal), settled, came_from
@@ -115,6 +129,25 @@ def path_cost(grid, path):
     return cost
 
 
+def weighted_path_length(grid, path):
+    """Like path_cost, generalized to paths whose steps aren't always
+    exactly 1 or sqrt(2) cells long -- RRT's waypoints can be up to
+    RRT_STEP_SIZE cells apart, so path_cost's "diagonal or 1" step-cost
+    assumption doesn't hold for it. Uses the real Euclidean length of
+    each edge instead, scaled by the terrain cost of the cell being
+    entered, same as path_cost. For a grid-adjacent path (every
+    Dijkstra/A* path) this gives the exact same number path_cost does,
+    since hypot(1, 0) == 1 and hypot(1, 1) == sqrt(2) -- so
+    nav/visualizer.py's 3-panel comparison (Step 5) can use this one
+    function for all three algorithms instead of branching per algorithm.
+    """
+    total = 0.0
+    for (r1, c1), (r2, c2) in zip(path, path[1:]):
+        dist = math.hypot(r2 - r1, c2 - c1)
+        total += dist * grid.cost[r2][c2] + grid._elevation_cost(r1, c1, r2, c2)
+    return total
+
+
 def validate_endpoints(grid, start, goal):
     """Reason a search from start to goal can't even be attempted, or None if it's fine."""
     if start == goal:
@@ -126,12 +159,15 @@ def validate_endpoints(grid, start, goal):
     return None
 
 
-def find_path(grid, algo_name, start, goal, heuristic=None):
+def find_path(grid, algo_name, start, goal, heuristic=None, order_out=None):
     """
     Run dijkstra/astar/rrt/rrt_star from start to goal, handling the edge
     cases the raw algorithms don't check for: same start/goal cell, and
     either endpoint sitting on an obstacle. `heuristic` is only used when
-    algo_name is "astar"; it defaults to Manhattan distance.
+    algo_name is "astar"; it defaults to Manhattan distance. `order_out`
+    -- see dijkstra's docstring -- is only honored for "dijkstra", "astar",
+    and "rrt" (the three nav/visualizer.py actually replays step-by-step);
+    passed through unused otherwise.
 
     Returns (path, explored, reason, came_from). reason is None on an
     ordinary run, "no_path" if the search exhausted its budget without
@@ -147,13 +183,14 @@ def find_path(grid, algo_name, start, goal, heuristic=None):
         return None, set(), reason, {}
 
     if algo_name == "astar":
-        path, explored, came_from = astar(grid, start, goal, heuristic=heuristic or manhattan)
+        path, explored, came_from = astar(grid, start, goal, heuristic=heuristic or manhattan,
+                                           order_out=order_out)
     elif algo_name == "rrt":
         # Imported here, not at module level, because nav.rrt imports
         # `reconstruct` from this module -- a top-level import here would
         # be circular.
         from nav.rrt import rrt
-        path, explored, came_from = rrt(grid, start, goal)
+        path, explored, came_from = rrt(grid, start, goal, order_out=order_out)
     elif algo_name == "rrt_star":
         # Same circular-import reasoning as "rrt" above.
         from nav.rrt_star import rrt_star
@@ -166,7 +203,7 @@ def find_path(grid, algo_name, start, goal, heuristic=None):
         from nav.dstar_lite import dstar_lite
         path, explored, came_from = dstar_lite(grid, start, goal)
     else:
-        path, explored, came_from = dijkstra(grid, start, goal)
+        path, explored, came_from = dijkstra(grid, start, goal, order_out=order_out)
 
     if path is None:
         return None, explored, "no_path", came_from

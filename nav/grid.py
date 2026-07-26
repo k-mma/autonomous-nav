@@ -1,6 +1,9 @@
 import math
 
-from nav.config import GRID_SIZE, COST_INFLUENCE_RADIUS, COST_MAX_EXTRA, ELEVATION_COST_FACTOR
+from nav.config import (
+    GRID_SIZE, COST_INFLUENCE_RADIUS, COST_MAX_EXTRA, ELEVATION_COST_FACTOR,
+    TERRAIN_GRASS, TERRAIN_COST,
+)
 
 DIAGONAL_COST = math.sqrt(2)
 CARDINAL_DIRS = [(-1, 0), (1, 0), (0, -1), (0, 1)]
@@ -50,6 +53,14 @@ class Grid:
         # cost_map_enabled, so a grid with elevation data set but this
         # left off plans exactly as if the terrain were flat.
         self.elevation_aware = False
+        # Terrain layer (Step 3) -- purely cosmetic/cost, every cell
+        # starts as grass (TERRAIN_COST[TERRAIN_GRASS] == 1.0, so this is
+        # a no-op on cost until something gets painted). Populated via
+        # paint_terrain, the same setter-method pattern place_start/
+        # place_goal use, rather than direct assignment like
+        # `cells`/`elevation` -- terrain needs to reject obstacle/start/
+        # goal cells, so it needs a real method, not just an array.
+        self.terrain = [[TERRAIN_GRASS for _ in range(self.size)] for _ in range(self.size)]
 
 
     def clear(self):
@@ -59,6 +70,7 @@ class Grid:
         self.start = None
         self.goal = None
         self.elevation = [[0.0 for _ in range(self.size)] for _ in range(self.size)]
+        self.terrain = [[TERRAIN_GRASS for _ in range(self.size)] for _ in range(self.size)]
         self.refresh_cost_map()
 
 
@@ -119,7 +131,23 @@ class Grid:
         self.cells[row][col] = Grid.GOAL
         self.goal = (row, col)
 
-    
+
+    def paint_terrain(self, row, col, terrain_type):
+        """Set (row, col)'s terrain type -- no-op if the cell is out of
+        bounds or is an obstacle, start, or goal (terrain is undergrowth
+        the ground itself has; those three occupy the cell instead of
+        sitting on it). Recomputes the cost field immediately so the new
+        terrain's multiplier (see TERRAIN_COST) is reflected right away,
+        same as toggle_obstacle already does for obstacle-inflation cost.
+        """
+        if not self.is_valid(row, col):
+            return
+        if self.cells[row][col] in (Grid.OBSTACLE, Grid.START, Grid.GOAL):
+            return
+        self.terrain[row][col] = terrain_type
+        self.refresh_cost_map()
+
+
     def _elevation_cost(self, row, col, r, c):
         """Extra cost for moving from (row, col) into (r, c), on top of
         the baseline step/terrain cost -- zero unless elevation_aware is
@@ -168,12 +196,24 @@ class Grid:
         return neighbors
 
     def refresh_cost_map(self):
-        """Recompute the cost field if cost-map mode is on, else keep it flat."""
+        """Recompute the cost field: obstacle-inflation cost if cost-map
+        mode is on (else flat 1.0 baseline), then always multiply in each
+        cell's terrain cost on top (see TERRAIN_COST) -- terrain is a
+        real property of the ground, so unlike the K-toggle inflation
+        halo it applies whether or not cost-map mode is on. Applying it
+        last, uniformly, is also what lets draw_grid recover "was this
+        cell inflated by K" on its own: dividing grid.cost back by the
+        cell's own terrain multiplier gives exactly the pre-terrain
+        inflation value, without needing to store that separately.
+        """
         size = len(self.cells)
         if self.cost_map_enabled:
             self.compute_cost_map()
         else:
             self.cost = [[1.0 for _ in range(size)] for _ in range(size)]
+        for row in range(size):
+            for col in range(size):
+                self.cost[row][col] *= TERRAIN_COST[self.terrain[row][col]]
 
     def compute_cost_map(self, influence_radius=COST_INFLUENCE_RADIUS, max_extra=COST_MAX_EXTRA):
         """
