@@ -303,14 +303,13 @@ def run_terrain_demo(args, grid, gui):
     still routes around every real obstacle -- trees/rocks stay
     impassable in both searches -- but no longer prefers grass over
     bush/mud/water among the cells that are open), once respecting it
-    -- and draw both, the same red-vs-green comparison run_elevation_demo
-    used to draw for the hill crossing this demo replaces.
+    -- and draw both, the same red-vs-green naive/aware comparison.
 
     Both routes are physically flat ground (bush/mud/water are cost
-    penalties, not elevation), so unlike the old elevation demo there's
-    no drivability reason to only drive one of them -- the cost-aware
-    route is driven because it's the one the demo is actually about,
-    not because the naive one is unsafe."""
+    penalties, not elevation), so there's no drivability reason to only
+    drive one of them -- the cost-aware route is driven because it's the
+    one the demo is actually about, not because the naive one is
+    unsafe."""
     # cost_map_enabled=True for *both* searches, not just a naive/aware
     # toggle -- obstacles are real, scattered geometry now (see
     # build_terrain_grid), not the empty flat ground this demo used to

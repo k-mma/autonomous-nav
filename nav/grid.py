@@ -1,7 +1,7 @@
 import math
 
 from nav.config import (
-    GRID_SIZE, COST_INFLUENCE_RADIUS, COST_MAX_EXTRA, ELEVATION_COST_FACTOR,
+    GRID_SIZE, COST_INFLUENCE_RADIUS, COST_MAX_EXTRA,
     TERRAIN_GRASS, TERRAIN_COST,
 )
 
@@ -36,30 +36,13 @@ class Grid:
         # Weighted-terrain mode (obstacle inflation, see compute_cost_map)
         self.cost_map_enabled = False
         self.cost = [[1.0 for _ in range(self.size)] for _ in range(self.size)]
-        # Terrain elevation (world units, 0.0 = flat baseline everywhere).
-        # A separate array from `cost`, not folded into it: cost-map
-        # inflation is symmetric (a cell's cost to enter is the same
-        # regardless of which neighbor you came from), but elevation cost
-        # is inherently directional -- climbing into a cell costs more,
-        # descending into the exact same cell from the exact same
-        # neighbor doesn't -- so it can't be expressed as a single
-        # per-cell multiplier the way `cost` is. See get_neighbors.
-        # Populated directly (`grid.elevation[r][c] = ...`) by whatever
-        # builds the grid, the same way obstacles are set directly via
-        # `grid.cells[r][c] = Grid.OBSTACLE` rather than through a setter.
-        self.elevation = [[0.0 for _ in range(self.size)] for _ in range(self.size)]
-        # Whether get_neighbors actually charges the elevation cost
-        # below -- off by default, same opt-in pattern as
-        # cost_map_enabled, so a grid with elevation data set but this
-        # left off plans exactly as if the terrain were flat.
-        self.elevation_aware = False
         # Terrain layer (Step 3) -- purely cosmetic/cost, every cell
         # starts as grass (TERRAIN_COST[TERRAIN_GRASS] == 1.0, so this is
         # a no-op on cost until something gets painted). Populated via
         # paint_terrain, the same setter-method pattern place_start/
-        # place_goal use, rather than direct assignment like
-        # `cells`/`elevation` -- terrain needs to reject obstacle/start/
-        # goal cells, so it needs a real method, not just an array.
+        # place_goal use, rather than direct assignment like `cells` --
+        # terrain needs to reject obstacle/start/goal cells, so it needs
+        # a real method, not just an array.
         self.terrain = [[TERRAIN_GRASS for _ in range(self.size)] for _ in range(self.size)]
 
 
@@ -69,7 +52,6 @@ class Grid:
                 self.cells[row][col] = Grid.FREE
         self.start = None
         self.goal = None
-        self.elevation = [[0.0 for _ in range(self.size)] for _ in range(self.size)]
         self.terrain = [[TERRAIN_GRASS for _ in range(self.size)] for _ in range(self.size)]
         self.refresh_cost_map()
 
@@ -148,39 +130,22 @@ class Grid:
         self.refresh_cost_map()
 
 
-    def _elevation_cost(self, row, col, r, c):
-        """Extra cost for moving from (row, col) into (r, c), on top of
-        the baseline step/terrain cost -- zero unless elevation_aware is
-        on, and even then, zero unless (r, c) is actually *uphill* of
-        (row, col). Flat and downhill moves cost exactly the same as
-        they would on level ground; only climbing costs extra. Since
-        this is always >= 0, it only ever raises a step's true cost
-        above the baseline Manhattan/octile already assume, never below
-        it -- see WRITEUPS.md for why that's exactly what keeps both
-        heuristics admissible under this cost model."""
-        if not self.elevation_aware:
-            return 0.0
-        gain = self.elevation[r][c] - self.elevation[row][col]
-        return max(0.0, gain) * ELEVATION_COST_FACTOR
-
     def get_neighbors(self, row, col):
         """
         Passable neighbors of (row, col) as (cell, step_cost) pairs.
         Cardinal steps cost 1, diagonal steps (only when self.diagonal is
         on) cost sqrt(2) -- each scaled by self.cost[r][c], the terrain
         weight of the cell being entered (1.0 everywhere unless
-        compute_cost_map has inflated it near an obstacle), plus an
-        elevation surcharge for climbing (see _elevation_cost, only
-        charged when self.elevation_aware is on). Diagonal moves are
-        skipped if either of the two orthogonal cells they'd cut past is
-        an obstacle -- otherwise a "diagonal" move could clip straight
-        through a solid wall corner.
+        compute_cost_map has inflated it near an obstacle). Diagonal
+        moves are skipped if either of the two orthogonal cells they'd
+        cut past is an obstacle -- otherwise a "diagonal" move could clip
+        straight through a solid wall corner.
         """
         neighbors = []
         for dr, dc in CARDINAL_DIRS:
             r, c = row + dr, col + dc
             if self.is_valid(r, c) and not self.is_obstacle(r, c):
-                cost = 1 * self.cost[r][c] + self._elevation_cost(row, col, r, c)
+                cost = 1 * self.cost[r][c]
                 neighbors.append(((r, c), cost))
 
         if self.diagonal:
@@ -190,7 +155,7 @@ class Grid:
                     continue
                 if self.is_obstacle(row + dr, col) or self.is_obstacle(row, col + dc):
                     continue
-                cost = DIAGONAL_COST * self.cost[r][c] + self._elevation_cost(row, col, r, c)
+                cost = DIAGONAL_COST * self.cost[r][c]
                 neighbors.append(((r, c), cost))
 
         return neighbors

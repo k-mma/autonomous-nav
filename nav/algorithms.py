@@ -127,12 +127,11 @@ def path_cost(grid, path):
     diagonal step else 1, scaled by the terrain cost of the cell being
     entered (see Grid.cost / compute_cost_map -- 1.0 everywhere when
     cost-map mode is off, so this collapses to the old diagonal-only
-    cost in that case), plus an elevation surcharge for climbing (see
-    Grid._elevation_cost -- 0 everywhere unless elevation_aware is on)."""
+    cost in that case)."""
     cost = 0
     for (r1, c1), (r2, c2) in zip(path, path[1:]):
         step = DIAGONAL_COST if r1 != r2 and c1 != c2 else 1
-        cost += step * grid.cost[r2][c2] + grid._elevation_cost(r1, c1, r2, c2)
+        cost += step * grid.cost[r2][c2]
     return cost
 
 
@@ -151,7 +150,7 @@ def weighted_path_length(grid, path):
     total = 0.0
     for (r1, c1), (r2, c2) in zip(path, path[1:]):
         dist = math.hypot(r2 - r1, c2 - c1)
-        total += dist * grid.cost[r2][c2] + grid._elevation_cost(r1, c1, r2, c2)
+        total += dist * grid.cost[r2][c2]
     return total
 
 
