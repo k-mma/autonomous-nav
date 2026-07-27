@@ -1,9 +1,11 @@
 PyBullet 3D Simulation -- Screenshot Guide
 ===========================================
 
-Four screenshots, each demonstrating a different capability of the
-PyBullet port of this project's path-planning engine, driven by a
-Husky ground robot. legend.png is a standalone color/marker key meant
+Six screenshots, each demonstrating a different capability of the
+PyBullet port of this project's path-planning engine: four single-robot
+scenarios driven by a Husky ground robot, plus the two multi-robot
+demos (r2d2 robots) that put several of those single-robot pieces
+together at once. legend.png is a standalone color/marker key meant
 to sit alongside these on a poster or slide, since the in-simulation
 HUD text is sized for an on-screen camera view and doesn't reproduce
 well in print.
@@ -56,7 +58,13 @@ against what it has actually sensed, not a perfect map. Real 3D
 raycasts (not a simple radius check) reveal obstacles as the robot's
 simulated lidar sweeps past them; anything not yet sensed stays
 dimmed almost to invisibility, faithful to what the robot genuinely
-doesn't know yet.
+doesn't know yet. The ground is now a scattered bush/mud/water forest
+floor across the whole grid too (mirroring terrain_routing.png's "whole
+grid, not one patch" treatment, and pygame's own hidden_animals.png/
+unreliable_sensor.png) -- purely cosmetic here, since nav.sensor.KnownGrid
+(what the robot actually plans against in sensor mode) never carries
+terrain cost over from the real grid, so the route shown is exactly as
+terrain-blind as it was before; only the rendered world changed.
 
   sensor_before.png: shortly after the robot's very first scan. Two
   nearby obstacle blocks are already visible and folded into its route;
@@ -75,7 +83,40 @@ doesn't know yet.
   robot has to be able to notice that and react.
 
 
+multi_robot_corridor.png -- Two Robots, One Corridor
+---------------------------------------------------------
+Four buildings leave a 3-cell-wide "plus" of open street through the
+grid; robot A (cyan, north-south) and robot B (orange, east-west) start
+on opposite streets and are spawned already aimed so their straight-line
+routes would cross the center at the same moment. Every 0.05s both
+robots replan symmetrically against the real grid plus a block placed
+around the other robot's current cell -- so the detour visible here
+(one path bending into the street's spare lane rather than driving
+straight through) is a genuine, wall-verified A* replan on both sides,
+not a steering nudge layered on top of a fixed plan. This frame is
+captured right around the two robots' closest approach, which is where
+that live avoidance is actually visible; a frame from earlier or later
+in the run would just show one robot driving a straight line.
+(pybullet_multi_robot_main.py)
+
+
+cbs_intersection.png -- Four Robots, One Intersection (Conflict-Based Search)
+------------------------------------------------------------------------------------
+The same four-way intersection, but with all four compass arms in use
+at once and no live replanning at all: every robot's entire route is
+solved once, offline, as a single jointly conflict-free set of
+time-indexed paths by nav/cbs.py's Conflict-Based Search, then driven
+in lockstep (every robot advances to its next per-timestep waypoint
+only once every robot has reached its current one, so the fleet's
+simulated positions always correspond to one shared CBS timestep).
+Captured partway through the shared route, with all four color-coded
+paths visible and every robot near the shared crossing at once -- the
+actual claim CBS makes is about the whole joint plan, not any one
+robot's leg of it. (pybullet_cbs_main.py)
+
+
 Regenerating these screenshots
 -------------------------------
-    python3 screenshots/pybullet/legend.py     # legend.png
-    python3 screenshots/pybullet/capture.py    # the other four
+    python3 screenshots/pybullet/legend.py             # legend.png
+    python3 screenshots/pybullet/capture.py             # the four single-robot screenshots
+    python3 screenshots/pybullet/capture_multi_robot.py # multi_robot_corridor.png, cbs_intersection.png

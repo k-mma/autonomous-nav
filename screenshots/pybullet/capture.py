@@ -49,7 +49,15 @@ def screenshot(name, width=1600, height=1200):
     one at alpha=1.0), which would silently break both
     HIDDEN_OBSTACLE_COLOR's near-invisible undiscovered obstacles and
     draw_cost_map_tint/draw_terrain's translucent overlays -- the
-    hardware renderer blends them correctly."""
+    hardware renderer blends them correctly.
+
+    Re-enables GUI rendering first -- capture_sensor_pair() turns it off
+    for its long drive-forward loop (see its own comment) to avoid
+    syncing the GUI window on every one of several thousand physics
+    steps, which is far slower wall-clock than headless DIRECT mode even
+    with no time.sleep in the loop; nothing in that run-up is ever
+    actually looked at, only the moment this function captures."""
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     for _ in range(5):
         p.stepSimulation()
     cam = p.getDebugVisualizerCamera()
@@ -198,14 +206,20 @@ def capture_sensor_pair():
     obstacle_bodies = build_obstacles(grid)
     mark_cell(*pm.START, color=START_COLOR)
     mark_cell(*pm.GOAL, color=GOAL_COLOR)
+    draw_terrain(grid, gui=True)
     hide_obstacles(obstacle_bodies)
 
     start_xy = grid_to_world(*pm.START)[:2]
     robot_id = p.loadURDF("husky/husky.urdf", basePosition=[start_xy[0], start_xy[1], ROBOT_SPAWN_Z])
     robot = Robot(robot_id)
     lidar = Lidar3D(num_rays=pm.SENSOR_NUM_RAYS, max_range=pm.SENSOR_RANGE, ignore_body_id=robot_id)
-    live_path = LivePath(SENSOR_PATH_COLOR, True, pm.SIM_HZ)
+    # z=0.09, matching pybullet_main.py's run_sensor_demo -- draw_terrain's
+    # own overlay sits at z=0.04 and needs a real (~3cm+) gap from
+    # anything drawn above it to avoid shadow-map z-fighting at this
+    # project's usual camera distance (see nav/sim3d/world.py: draw_terrain).
+    live_path = LivePath(SENSOR_PATH_COLOR, True, pm.SIM_HZ, z=0.09)
     hud = Hud(pm.HUD_POSITION, True)
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
 
     # The scattered block squarely on the direct row-12 route (see
     # SCATTERED_OBSTACLES) -- the one this capture drives toward and
@@ -252,6 +266,7 @@ def capture_sensor_pair():
         p.stepSimulation()
     live_path.tick(110)
     screenshot("sensor_before.png")
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
 
     # Drive forward, rescanning on the usual cadence, until the target
     # block is actually confirmed.

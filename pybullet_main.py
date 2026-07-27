@@ -73,6 +73,15 @@ FOREST_OBSTACLE_DENSITY = 0.05
 FOREST_BUSH_DENSITY = 0.12
 FOREST_MUD_DENSITY = 0.08
 FOREST_WATER_DENSITY = 0.05
+# Terrain scattering for the sensor/lidar demo (see build_scattered_grid)
+# -- a different seed from FOREST_SEED so the two terrain-scattered demos
+# don't happen to paint the same pattern, same density values as the
+# terrain demo otherwise (no reason for this one to look sparser/denser,
+# it's the same "forest floor" ground either way).
+SENSOR_TERRAIN_SEED = 20260827
+SENSOR_BUSH_DENSITY = 0.12
+SENSOR_MUD_DENSITY = 0.08
+SENSOR_WATER_DENSITY = 0.05
 # How often the HUD text / debug-parameter sliders actually get read and
 # redrawn -- doing it every physics step (240/s) would spam PyBullet's
 # debug-item pipeline for no visible benefit; a human can't perceive HUD
@@ -121,7 +130,17 @@ def build_scattered_grid():
     route -- produce multiple distinct reveal moments and a real
     mid-drive replan. build_demo_grid's single wall stays exactly as it
     was for the binary-vs-cost-map comparison, which depends on one clean
-    shared detour rather than several scattered ones."""
+    shared detour rather than several scattered ones.
+
+    Also scatters bush/mud/water across the whole grid (see SENSOR_*_
+    DENSITY), mirroring pygame's own sensor scenarios (hidden_animals.py/
+    unreliable_sensor.py), which are terrain-scattered the same way. This
+    is purely cosmetic here, not a second thing being tested alongside
+    sensing: run_sensor_demo plans against nav.sensor.KnownGrid, which
+    (per its own docstring) never carries cost-map/terrain weighting over
+    from the real grid at all, so the routes driven are exactly as
+    terrain-blind as they were before -- only the rendered world (and the
+    real, if unused-by-planning, cost field on `grid` itself) changes."""
     grid = Grid()
     for row_start, row_end, col_start, col_end in SCATTERED_OBSTACLES:
         for row in range(row_start, row_end + 1):
@@ -129,6 +148,9 @@ def build_scattered_grid():
                 grid.cells[row][col] = Grid.OBSTACLE
     grid.place_start(*START)
     grid.place_goal(*GOAL)
+    scatter_terrain(grid, random.Random(SENSOR_TERRAIN_SEED), TERRAIN_BUSH, SENSOR_BUSH_DENSITY)
+    scatter_terrain(grid, random.Random(SENSOR_TERRAIN_SEED + 1), TERRAIN_MUD, SENSOR_MUD_DENSITY)
+    scatter_terrain(grid, random.Random(SENSOR_TERRAIN_SEED + 2), TERRAIN_WATER, SENSOR_WATER_DENSITY)
     return grid
 
 
@@ -415,7 +437,13 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
     hud = Hud(HUD_POSITION, gui)
     speed_param = p.addUserDebugParameter("robot speed", 5.0, 40.0, DEFAULT_SPEED) if gui else None
     full_map_param = p.addUserDebugParameter("reveal full map (visual only)", 0, 1, 0) if gui else None
-    live_path = LivePath(SENSOR_PATH_COLOR, gui, SIM_HZ)
+    # z=0.09, not LivePath's z=0.05 default -- draw_terrain's own overlay
+    # (called in main() before this) sits at z=0.04, and its own
+    # docstring documents needing a ~3cm+ gap from anything drawn above
+    # it to avoid shadow-map z-fighting at this project's usual camera
+    # distance; run_terrain_demo's paths clear the same overlay the same
+    # way.
+    live_path = LivePath(SENSOR_PATH_COLOR, gui, SIM_HZ, z=0.09)
 
     def replan_from(position):
         cell = world_to_grid(position[0], position[1])
@@ -548,6 +576,7 @@ def main():
             obstacle_bodies = build_obstacles(grid)
             mark_cell(*START, color=START_COLOR)
             mark_cell(*GOAL, color=GOAL_COLOR)
+            draw_terrain(grid, gui=gui)
             run_sensor_demo(args, grid, gui, obstacle_bodies)
         else:
             grid = build_demo_grid()
