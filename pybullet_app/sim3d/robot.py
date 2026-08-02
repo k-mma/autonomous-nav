@@ -31,7 +31,7 @@ class Robot:
     it looks smooth automatically once it's handed the many closely
     spaced points a corner-cut or spline path produces, because the same
     controller then only ever has to make small heading corrections.
-    That's the whole point of nav/sim3d/smoothing.py -- this class never
+    That's the whole point of pybullet_app/sim3d/smoothing.py -- this class never
     changes between the two.
     """
 

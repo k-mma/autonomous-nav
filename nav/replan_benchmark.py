@@ -4,14 +4,14 @@ faster than re-running A* from scratch, on the two scenarios this
 project already replans repeatedly on a live grid? Recreates both:
 
 - **Moving obstacle** (nav/obstacles.py's MovingObstacle + the replanning
-  policy in nav/visualizer.py): an obstacle random-walks between free
+  policy in pygame_app/visualizer.py): an obstacle random-walks between free
   cardinal neighbors; every time it moves, the robot needs an up-to-date
   route from wherever it currently is to the goal.
 - **Sensor discovery** (nav/sensor.py's LidarSensor/KnownGrid + the
-  replanning policy in nav/visualizer.py, `nav/scratch/lidar_test.py`):
+  replanning policy in pygame_app/visualizer.py, `nav/scratch/lidar_test.py`):
   the robot only knows about obstacles it's sensed; every time a scan
   reveals something new that's actually on its planned route (the exact
-  trigger condition nav/visualizer.py uses:
+  trigger condition pygame_app/visualizer.py uses:
   `newly_seen and (newly_seen & remaining or robot_pos in newly_seen)`),
   it needs a fresh route.
 

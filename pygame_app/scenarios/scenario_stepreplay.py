@@ -12,20 +12,20 @@ of a finished result.
 Bush/mud/water terrain is scattered in too -- previously this scenario
 painted none at all, and a frozen mid-expansion state is exactly where
 terrain peeking out ahead of the wavefront (revealed cells now leave a
-terrain-colored border instead of covering it, see nav/visualizer.py:
+terrain-colored border instead of covering it, see pygame_app/visualizer.py:
 draw_grid_panel) is easiest to actually see.
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import random
 
 from nav.config import TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER
-from nav.scenario import ScenarioConfig
+from pygame_app.scenario import ScenarioConfig
 from nav.scenario_helpers import scatter_obstacles, scatter_terrain
-from nav.visualizer import main
+from pygame_app.visualizer import main
 
 SEED = 20260728
 OBSTACLE_DENSITY = 0.08

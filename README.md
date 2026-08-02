@@ -42,31 +42,33 @@ narrative and the algorithm/interview explanations behind the code).
   scratch on every replan -- `nav/replan_benchmark.py` measures it against
   fresh A* on this project's own moving-obstacle and sensor-discovery
   replanning scenarios (see `benchmark_results/replan_writeup.md`).
-- `scenarios/*.py` are standalone launchers that open the visualizer
-  straight into a preset scene (e.g. `scenarios/scenario_maze.py`,
-  `scenarios/scenario_costmap.py`) instead of needing manual clicks to
-  reach it -- built on `nav/scenario.py`'s `ScenarioConfig`.
+- `pygame_app/scenarios/*.py` are standalone launchers that open the
+  visualizer straight into a preset scene (e.g.
+  `pygame_app/scenarios/scenario_maze.py`,
+  `pygame_app/scenarios/scenario_costmap.py`) instead of needing manual
+  clicks to reach it -- built on `pygame_app/scenario.py`'s
+  `ScenarioConfig`.
 - `nav/benchmark.py` runs all three original algorithms across 20 random
   grids and plots the comparison (see results below); `nav/scale_benchmark.py`
   reruns the comparison holding density fixed and scaling grid size instead
   (20x20 through 200x200) -- see "Scale benchmark" below.
-- `pybullet_main.py` ports the grid into a real 3D PyBullet world: the
-  same `find_path`/A* code plans a route around a 3D obstacle block, a
-  Catmull-Rom spline smooths it into something a robot base can actually
-  follow, and a Husky robot drives it with velocity control (not
+- `pybullet_app/pybullet_main.py` ports the grid into a real 3D PyBullet
+  world: the same `find_path`/A* code plans a route around a 3D obstacle
+  block, a Catmull-Rom spline smooths it into something a robot base can
+  actually follow, and a Husky robot drives it with velocity control (not
   teleportation). `--sensor` swaps that for a real raycast lidar
   (`pybullet.rayTestBatch`) that only knows what it's actually seen and
   replans as it explores. See "PyBullet 3D port" below.
-- `pybullet_multi_robot_main.py` runs two robots at once through a
-  single-width corridor, forcing a head-on conflict, resolved with a
-  priority policy (one robot always has right of way; the other detours
-  around or waits for it) plus a hard safety-distance stop as a failsafe.
-  See "Multiple robots" below.
-- `pybullet_cbs_main.py` runs N robots (default 4) through a shared 4-way
-  intersection at once, coordinated by `nav/cbs.py`'s Conflict-Based
-  Search -- every robot's route is planned jointly, offline, as a single
-  conflict-free set of time-indexed paths, rather than replanning live
-  like the two-robot corridor demo.
+- `pybullet_app/pybullet_multi_robot_main.py` runs two robots at once
+  through a single-width corridor, forcing a head-on conflict, resolved
+  with a priority policy (one robot always has right of way; the other
+  detours around or waits for it) plus a hard safety-distance stop as a
+  failsafe. See "Multiple robots" below.
+- `pybullet_app/pybullet_cbs_main.py` runs N robots (default 4) through a
+  shared 4-way intersection at once, coordinated by `nav/cbs.py`'s
+  Conflict-Based Search -- every robot's route is planned jointly,
+  offline, as a single conflict-free set of time-indexed paths, rather
+  than replanning live like the two-robot corridor demo.
 
 ## How to run
 
@@ -75,16 +77,23 @@ python3 -m venv nav-env
 source nav-env/bin/activate
 pip install -r requirements.txt
 
-python3 main.py                       # the pygame visualizer
-python3 scenarios/scenario_maze.py    # ... or straight into a preset scenario
-python3 -m nav.benchmark              # regenerate benchmark_results/
-python3 -m nav.scale_benchmark        # regenerate the grid-size scaling results
-python3 -m nav.replan_benchmark       # regenerate the D* Lite vs A* replanning results
-python3 pybullet_main.py              # the PyBullet 3D demo (single robot)
-python3 pybullet_main.py --sensor     # ... with the raycast lidar instead of a perfect map
-python3 pybullet_multi_robot_main.py  # two robots, forced corridor conflict
-python3 pybullet_cbs_main.py          # N robots through an intersection, coordinated by CBS
+python3 pygame_app/main.py                       # the pygame visualizer
+python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
+python3 -m nav.benchmark                         # regenerate benchmark_results/
+python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
+python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
+python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
+python3 pybullet_app/pybullet_main.py --sensor    # ... with the raycast lidar instead of a perfect map
+python3 pybullet_app/pybullet_multi_robot_main.py # two robots, forced corridor conflict
+python3 pybullet_app/pybullet_cbs_main.py         # N robots through an intersection, coordinated by CBS
 ```
+
+Pygame-only files live under `pygame_app/`, PyBullet-only files under
+`pybullet_app/`; `nav/` holds the shared, framework-agnostic core (grid,
+search algorithms, sensor model, benchmarks) both of them import from.
+See "Repo layout" below. (Neither app directory is literally named
+`pygame` or `pybullet` -- that would shadow the real installed libraries
+of the same name for any script that adds the repo root to `sys.path`.)
 
 If `pip install` fails building `pybullet` from source (no prebuilt wheel
 for your platform/Python combo, common on very new macOS/Xcode Command
@@ -180,8 +189,8 @@ way Dijkstra/A* are here), in `benchmark_results/writeup.md`.
 
 ## PyBullet 3D port
 
-`pybullet_main.py` builds the identical `nav.grid.Grid` the pygame
-visualizer uses -- a 25x25 grid with a 9x9 obstacle block sitting
+`pybullet_app/pybullet_main.py` builds the identical `nav.grid.Grid` the
+pygame visualizer uses -- a 25x25 grid with a 9x9 obstacle block sitting
 directly between a start and goal placed on the same row, forcing a
 detour around it -- projects it into a 3D PyBullet world (one static box
 per obstacle cell, 1 grid cell = 1 meter), and plans across it with
@@ -191,9 +200,9 @@ per obstacle cell, 1 grid cell = 1 meter), and plans across it with
    obstacles) and once with it on, and draws both as debug lines in the
    GUI (red vs blue) so you can see the clearance routing directly.
 2. Smooths the chosen route -- corner-cutting first, then a Catmull-Rom
-   spline (`nav/sim3d/smoothing.py`) -- since A*'s sharp 90-degree grid
-   waypoints aren't something a robot base can track without stopping to
-   pivot at every one.
+   spline (`pybullet_app/sim3d/smoothing.py`) -- since A*'s sharp
+   90-degree grid waypoints aren't something a robot base can track
+   without stopping to pivot at every one.
 3. Drives a Husky robot along the result using **velocity control**
    (`pybullet.resetBaseVelocity`, not teleportation) -- the same
    turn-then-drive controller for every smoothing mode; the visible
@@ -201,16 +210,16 @@ per obstacle cell, 1 grid cell = 1 meter), and plans across it with
    waypoints it's given are, not from anything robot-specific.
 
 ```bash
-python3 pybullet_main.py                     # cost-map path, spline-smoothed (default)
-python3 pybullet_main.py --smooth raw        # raw A* waypoints, sharp turns, no smoothing
-python3 pybullet_main.py --smooth corner_cut # Chaikin corner-cutting instead of a spline
-python3 pybullet_main.py --no-cost-map       # binary obstacles only, no clearance routing
-python3 pybullet_main.py --headless          # DIRECT mode, no GUI window
+python3 pybullet_app/pybullet_main.py                     # cost-map path, spline-smoothed (default)
+python3 pybullet_app/pybullet_main.py --smooth raw        # raw A* waypoints, sharp turns, no smoothing
+python3 pybullet_app/pybullet_main.py --smooth corner_cut # Chaikin corner-cutting instead of a spline
+python3 pybullet_app/pybullet_main.py --no-cost-map       # binary obstacles only, no clearance routing
+python3 pybullet_app/pybullet_main.py --headless          # DIRECT mode, no GUI window
 ```
 
-`nav/scratch/pybullet_setup_test.py` is the standalone sanity check this
-was built on top of: load `plane.urdf` + `r2d2.urdf`, let it settle,
-confirm the GUI window actually opens.
+`pybullet_app/scratch/pybullet_setup_test.py` is the standalone sanity
+check this was built on top of: load `plane.urdf` + `r2d2.urdf`, let it
+settle, confirm the GUI window actually opens.
 
 Full writeup -- the grid-to-world coordinate mapping, why velocity
 control instead of teleporting, the corner-cutting/spline math, and why
@@ -219,22 +228,22 @@ cost-map routing visible -- is in `WRITEUPS.md`.
 
 ## Lidar sensor in 3D
 
-`--sensor` swaps the perfect-map planning above for `nav/sim3d/lidar.py`'s
-`Lidar3D`: a real raycast sensor (`pybullet.rayTestBatch`, 48 rays in a
-circle) instead of pygame's 2D radius circle -- a wall can block the view
-of what's behind it now, which a radius circle can't represent. The robot
-plans against `nav.sensor.KnownGrid` (the *exact* class the pygame sensor
-mode uses, unchanged) built from whatever the lidar has actually hit,
-rescans every 0.3s as it moves, and replans the instant it discovers
-something new:
+`--sensor` swaps the perfect-map planning above for
+`pybullet_app/sim3d/lidar.py`'s `Lidar3D`: a real raycast sensor
+(`pybullet.rayTestBatch`, 48 rays in a circle) instead of pygame's 2D
+radius circle -- a wall can block the view of what's behind it now,
+which a radius circle can't represent. The robot plans against
+`nav.sensor.KnownGrid` (the *exact* class the pygame sensor mode uses,
+unchanged) built from whatever the lidar has actually hit, rescans every
+0.3s as it moves, and replans the instant it discovers something new:
 
 ```bash
-python3 pybullet_main.py --sensor                # lidar-limited knowledge, replans on discovery
-python3 pybullet_main.py --sensor --smooth raw   # same, but undo the path smoothing too
+python3 pybullet_app/pybullet_main.py --sensor                # lidar-limited knowledge, replans on discovery
+python3 pybullet_app/pybullet_main.py --sensor --smooth raw   # same, but undo the path smoothing too
 ```
 
-`nav/scratch/pybullet_lidar_test.py` is the standalone sanity check: one
-scan from a fixed position against a hardcoded wall, confirming the raycasts
+`pybullet_app/scratch/pybullet_lidar_test.py` is the standalone sanity
+check: one scan from a fixed position against a hardcoded wall, confirming the raycasts
 actually find it. Building the real version surfaced a genuine bug worth
 knowing about: a ray hits an obstacle's surface at an exact cell boundary
 (e.g. `x=8.5` for a 1-meter cell), which is ambiguous to round to a grid
@@ -246,7 +255,7 @@ the ray, past the surface, before converting it to a cell -- see
 
 ## Multiple robots
 
-`pybullet_multi_robot_main.py`: four buildings, one per quadrant, leave a
+`pybullet_app/pybullet_multi_robot_main.py`: four buildings, one per quadrant, leave a
 3-cell-wide "plus" of open street down the middle of the grid -- a real
 cross-street intersection. Robot A drives the north-south street start to
 finish; robot B drives the east-west street start to finish. All four
@@ -290,7 +299,7 @@ contact, and nudging a robot's aim point risks steering it into a wall
 its plan never accounted for (real, and it happened). Replanning doesn't
 have that problem: a shifted route is A*-verified against the real grid
 every time, for both robots, so it can never point either one through a
-wall. `nav/scratch/pybullet_multi_robot_test.py` is the standalone sanity
+wall. `pybullet_app/scratch/pybullet_multi_robot_test.py` is the standalone sanity
 check: two robots on non-conflicting paths, no avoidance needed,
 confirming the basics work before adding the forced conflict.
 
@@ -321,7 +330,7 @@ underneath it -- see "Multiple robots" in `WRITEUPS.md` for the full
 account of each one and its fix.
 
 ```bash
-python3 pybullet_multi_robot_main.py --headless --max-seconds 60
+python3 pybullet_app/pybullet_multi_robot_main.py --headless --max-seconds 60
 ```
 
 ## Scale benchmark
@@ -353,8 +362,15 @@ tree list is the real bottleneck, not the tuning. Full breakdown in
 
 ## Repo layout
 
+Pygame-only and PyBullet-only code live in their own top-level
+directories, separate from each other and from the shared `nav/` core.
+(Neither is named literally `pygame/` or `pybullet/` -- a directory with
+that exact name, sitting on `sys.path`, would shadow the real installed
+library of the same name for `import pygame`/`import pybullet` anywhere
+in the project.)
+
 ```
-nav/
+nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ import from this
   grid.py          Grid model: cells, obstacles, start/goal, neighbors, cost map, size param
   algorithms.py    Dijkstra, A*, edge-case handling, path cost
   rrt.py           RRT (Rapidly-exploring Random Tree)
@@ -366,12 +382,27 @@ nav/
   heuristics.py    Manhattan / Euclidean / Chebyshev / Octile / scaled
   obstacles.py     Moving obstacles + the replanning policy
   maze.py          Recursive-backtracking maze generator
-  scenario.py      ScenarioConfig -- preset state for the scenarios/*.py launchers
-  scenario_helpers.py Shared obstacle/terrain-scattering helpers for scenarios/*.py
-  visualizer.py    The pygame app
+  scenario_helpers.py Shared obstacle/terrain-scattering helpers used by both
+                       pygame_app/scenarios/*.py and pybullet_app/pybullet_main.py
   benchmark.py        20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
   scale_benchmark.py  20x20 - 200x200 grid-size scaling benchmark -> CSV + plot
   replan_benchmark.py D* Lite vs fresh A* on moving-obstacle/sensor-discovery replanning -> CSV + plot
+  scratch/         Standalone throwaway scripts used to prove each piece
+                    works before it was wired into the visualizer/pybullet_main
+                    (framework-agnostic tests only -- pygame/PyBullet-specific
+                    ones live under pygame_app/ and pybullet_app/ instead)
+
+pygame_app/        Everything that touches pygame
+  main.py            Entry point: opens the interactive visualizer
+  visualizer.py      The pygame app
+  scenario.py        ScenarioConfig -- preset state for scenarios/*.py
+  scenarios/         Standalone launchers that open the visualizer into a preset scene
+                      (maze, cost map, bottleneck, noisy sensor, step replay, ...)
+
+pybullet_app/      Everything that touches PyBullet
+  pybullet_main.py             Single-robot PyBullet demo (plan -> smooth -> drive, + --sensor/--terrain)
+  pybullet_multi_robot_main.py Two-robot corridor-conflict + priority/deadlock demo
+  pybullet_cbs_main.py         N-robot intersection demo, coordinated by CBS
   sim3d/           PyBullet world-building, path smoothing, robot control
     coords.py        Grid-cell <-> world-meter conversion
     world.py         Ground plane, obstacle bodies, debug-line path drawing
@@ -379,14 +410,11 @@ nav/
     robot.py         Robot: drives a body (Husky or r2d2) toward waypoints via velocity control
     lidar.py         Lidar3D: real raycast sensor (pybullet.rayTestBatch)
     hud.py           World-space debug-text HUD and per-robot follow labels
-  scratch/         Standalone throwaway scripts used to prove each piece
-                    works before it was wired into the visualizer/pybullet_main
-scenarios/         Standalone launchers that open the visualizer into a preset scene
-                    (maze, cost map, bottleneck, noisy sensor, step replay, ...)
+  scratch/         PyBullet-specific standalone sanity checks (setup, raycast
+                    lidar, lidar noise, multi-robot) -- same role as nav/scratch/,
+                    just for the pieces that need a real PyBullet connection
+
 benchmark_results/  Generated CSVs, plots, and writeups from all three benchmarks
-pybullet_main.py             Single-robot PyBullet demo (plan -> smooth -> drive, + --sensor/--terrain)
-pybullet_multi_robot_main.py Two-robot corridor-conflict + priority/deadlock demo
-pybullet_cbs_main.py         N-robot intersection demo, coordinated by CBS
 WRITEUPS.md         Algorithm explanations, replanning policy, cost map,
                      sensor model, PyBullet port, 3D lidar, multi-robot
                      coordination, and the heuristic experiments' findings

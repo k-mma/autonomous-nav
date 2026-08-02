@@ -2,7 +2,7 @@
 demos, headless (DIRECT mode has no debug-visualizer camera to read
 back from, so this actually opens a real GUI connection, same as
 pybullet_main.py does by default -- getCameraImage still works exactly
-the same way, it's just reading the camera nav.sim3d.world.connect()
+the same way, it's just reading the camera pybullet_app.sim3d.world.connect()
 already set up instead of a hand-rolled one, so every screenshot uses
 the exact same framing (distance 22, yaw 45, pitch -55, target
 [12, 12, 0]) a live viewer would see.
@@ -18,14 +18,14 @@ import numpy as np
 import pybullet as p
 from PIL import Image
 
-import pybullet_main as pm
+import pybullet_app.pybullet_main as pm
 from nav.algorithms import find_path
 from nav.config import TERRAIN_GRASS
-from nav.sim3d.coords import grid_to_world, WORLD_CELL_SIZE
-from nav.sim3d.hud import Hud
-from nav.sim3d.lidar import Lidar3D
-from nav.sim3d.robot import Robot
-from nav.sim3d.world import (
+from pybullet_app.sim3d.coords import grid_to_world, WORLD_CELL_SIZE
+from pybullet_app.sim3d.hud import Hud
+from pybullet_app.sim3d.lidar import Lidar3D
+from pybullet_app.sim3d.robot import Robot
+from pybullet_app.sim3d.world import (
     connect, build_obstacles, hide_obstacles, reveal_obstacles, mark_cell, draw_terrain,
     draw_cost_map_tint, draw_path, LivePath, _path_segment_body,
     BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, SENSOR_PATH_COLOR, START_COLOR, GOAL_COLOR,
@@ -71,10 +71,10 @@ def screenshot(name, width=1600, height=1200):
 
 def draw_trigger_x(row, col, z=1.15, size=1.3, thickness=0.35, height=0.1):
     """A mesh 'X' over a grid cell, standing in for
-    nav.sim3d.world.draw_trigger_marker for screenshot purposes only --
+    pybullet_app.sim3d.world.draw_trigger_marker for screenshot purposes only --
     that function draws its X with addUserDebugLine, which (like the old
     line-based path renderer -- see PATH_WIDTH's comment in
-    nav/sim3d/world.py) never appears in a getCameraImage() capture at
+    pybullet_app/sim3d/world.py) never appears in a getCameraImage() capture at
     any lineWidth. Left un-ported in the shared module since the fix
     there was scoped to draw_xy_path/draw_path specifically, and
     draw_trigger_marker's debug-line auto-expiry (lifeTime=1.2s) is
@@ -83,7 +83,7 @@ def draw_trigger_x(row, col, z=1.15, size=1.3, thickness=0.35, height=0.1):
     script. This screenshot-only version has no lifetime; the capture
     script never needs one removed.
 
-    z defaults above OBSTACLE_HEIGHT (1.0m, see nav/sim3d/world.py), not
+    z defaults above OBSTACLE_HEIGHT (1.0m, see pybullet_app/sim3d/world.py), not
     just above the husky (~0.4m) -- the cell being marked is the one
     that just turned solid (see reveal_obstacles in the caller), so the
     marker has to clear the obstacle box itself, not only the robot.
@@ -99,7 +99,7 @@ def draw_trigger_x(row, col, z=1.15, size=1.3, thickness=0.35, height=0.1):
     rgba = (*TRIGGER_MARKER_COLOR[:3], 1.0)
     half = size / 2
     # World-axis-aligned (not corner-to-corner diagonal) on purpose: this
-    # capture's camera sits at cameraYaw=45 (see nav.sim3d.world.connect),
+    # capture's camera sits at cameraYaw=45 (see pybullet_app.sim3d.world.connect),
     # which rotates the view exactly enough that a world-space "+"
     # (horizontal/vertical) reads as a screen-space "X" to the viewer,
     # while a world-space corner-to-corner "X" (what
@@ -172,7 +172,7 @@ def capture_terrain():
 
     draw_terrain(grid, gui=True)
     # z=0.09/0.14 -- matches pybullet_main.py's run_terrain_demo; see
-    # nav/sim3d/world.py's draw_terrain docstring for why these need a
+    # pybullet_app/sim3d/world.py's draw_terrain docstring for why these need a
     # real gap above its z=0.04, not just a nonzero one.
     draw_path(naive_path, TERRAIN_NAIVE_PATH_COLOR, z=0.09, gui=True)
     draw_path(aware_path, TERRAIN_AWARE_PATH_COLOR, z=0.14, gui=True)
@@ -216,7 +216,7 @@ def capture_sensor_pair():
     # z=0.09, matching pybullet_main.py's run_sensor_demo -- draw_terrain's
     # own overlay sits at z=0.04 and needs a real (~3cm+) gap from
     # anything drawn above it to avoid shadow-map z-fighting at this
-    # project's usual camera distance (see nav/sim3d/world.py: draw_terrain).
+    # project's usual camera distance (see pybullet_app/sim3d/world.py: draw_terrain).
     live_path = LivePath(SENSOR_PATH_COLOR, True, pm.SIM_HZ, z=0.09)
     hud = Hud(pm.HUD_POSITION, True)
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)

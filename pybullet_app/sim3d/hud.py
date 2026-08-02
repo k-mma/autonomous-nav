@@ -6,7 +6,7 @@ DEFAULT_TEXT_SIZE = 1.15
 
 class Hud:
     """A multi-line status readout rendered as world-space debug text,
-    mirroring nav/visualizer.py's status bar (active mode/algorithm, path
+    mirroring pygame_app/visualizer.py's status bar (active mode/algorithm, path
     cost or waypoint count, a replanning/waiting indicator, elapsed sim
     time). Updated in place every frame via replaceItemUniqueId so it
     never spawns a new debug text item per call -- PyBullet has no notion

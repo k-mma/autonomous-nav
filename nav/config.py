@@ -3,12 +3,12 @@
 GRID_SIZE = 25
 CELL_SIZE = 28          # Pixels per cell
 
-# --demo sizing (nav/visualizer.py's --demo flag) -- smaller grid,
+# --demo sizing (pygame_app/visualizer.py's --demo flag) -- smaller grid,
 # bigger cells, so the 3-panel window still fits comfortably on a normal
 # screen and reads well in a screenshot. Window dimensions themselves
 # are no longer fixed constants here (Step 5): the 3-panel layout's
 # width/height depend on which of GRID_SIZE/CELL_SIZE vs. these two are
-# in effect, so nav/visualizer.py computes them at startup instead.
+# in effect, so pygame_app/visualizer.py computes them at startup instead.
 DEMO_GRID_SIZE = 20
 DEMO_CELL_SIZE = 30
 
@@ -111,7 +111,7 @@ COST_INFLUENCE_RADIUS = 3
 COST_MAX_EXTRA = 4.0
 # STEP 3/4: extra-cost tint blended toward from whatever the cell's
 # terrain color is (not from flat WHITE anymore, now that terrain paints
-# its own background -- see draw_grid in nav/visualizer.py, which also
+# its own background -- see draw_grid in pygame_app/visualizer.py, which also
 # divides the terrain cost multiplier back out before computing the
 # blend amount, so this tint reflects obstacle-proximity inflation only,
 # not terrain cost double-counted on top of its own color). Kept a warm
@@ -194,7 +194,7 @@ HIDDEN_OBSTACLE_OUTLINE = (170, 170, 170)
 SENSOR_RING_COLOR = (230, 25, 170)
 
 # Sensor noise -- both LidarSensor (nav/sensor.py) and Lidar3D
-# (nav/sim3d/lidar.py) are perfect by default (every real obstacle in
+# (pybullet_app/sim3d/lidar.py) are perfect by default (every real obstacle in
 # range is detected, at its exact cell, and nothing else is); passing
 # noisy=True to either makes them imperfect in three independent ways,
 # each governed by one of these rates:
@@ -215,3 +215,41 @@ NOISE_FALSE_POSITIVE_RATE = 0.02
 # replan on -- see LidarSensor.confirmed_obstacles / Lidar3D.confirmed_obstacles
 # and WRITEUPS.md for why a single noisy reading isn't enough on its own.
 CONFIRMATION_THRESHOLD = 2
+
+
+# Occupancy belief model (nav/occupancy.py) -- a per-cell probability of
+# being occupied, updated from LidarSensor observations via a log-odds
+# rule (Thrun/Burgard/Fox's standard occupancy-grid-mapping update)
+# instead of nav/sensor.py's binary known_obstacles set. Feeds
+# nav/policies.py's BeliefPolicy.
+OCCUPANCY_PRIOR = 0.5
+# Log-odds increment applied per single free/occupied observation.
+# Occupied is weighted more heavily than free so a handful of genuine
+# detections outweighs a long run of "saw nothing here" observations --
+# matching a real lidar's asymmetry, where a miss (NOISE_MISS_RATE) is
+# possible but a hit essentially never lies about a cell being clear.
+OCCUPANCY_LOGODDS_FREE = -0.4
+OCCUPANCY_LOGODDS_OCCUPIED = 0.85
+# Clamp on accumulated log-odds so a cell's probability can get very
+# close to but never exactly reach 0.0/1.0 -- keeps a single
+# contradicting observation able to move a saturated estimate back,
+# instead of it being numerically stuck.
+OCCUPANCY_LOGODDS_CLAMP = 6.0
+# Probability at/above which BeliefGrid (nav/occupancy.py) treats a cell
+# as a hard obstacle rather than just an expensive one to enter.
+OCCUPANCY_OBSTACLE_THRESHOLD = 0.9
+# Cost multipliers BeliefGrid interpolates between as a cell's occupancy
+# probability climbs from 0 toward OCCUPANCY_OBSTACLE_THRESHOLD -- see
+# nav/occupancy.py's BeliefGrid.
+OCCUPANCY_FREE_COST_MULT = 1.0
+OCCUPANCY_BLOCKED_COST_MULT = 12.0
+
+
+# Field variance (nav/field_variance.py) -- how far a "ground truth" grid
+# is allowed to drift from the assumed map a policy plans against, at
+# variance_level == 1.0 (nav/uncertainty_benchmark.py's sweep knob).
+# Each deviation type scales linearly with variance_level from 0 at 0.0
+# up to the bound below at 1.0 -- see generate_ground_truth's docstring
+# for the exact mapping.
+FIELD_VARIANCE_MAX_START_DRIFT_RADIUS = 3
+FIELD_VARIANCE_MAX_OBSTACLE_DRIFT_COUNT = 6

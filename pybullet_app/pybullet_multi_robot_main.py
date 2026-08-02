@@ -45,22 +45,26 @@ reliably prevent actual contact):
   unconditionally, every step, no exceptions. With replanning doing its
   job, this should rarely fire in practice.
 
-    python3 pybullet_multi_robot_main.py
-    python3 pybullet_multi_robot_main.py --headless --max-seconds 60
+    python3 pybullet_app/pybullet_multi_robot_main.py
+    python3 pybullet_app/pybullet_multi_robot_main.py --headless --max-seconds 60
 """
 import argparse
 import math
+import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pybullet as p
 
 from nav.algorithms import find_path
 from nav.grid import Grid
-from pybullet_main import build_drive_waypoints
-from nav.sim3d.coords import grid_to_world, world_to_grid
-from nav.sim3d.hud import Hud, FollowLabel
-from nav.sim3d.robot import Robot, DEFAULT_SPEED
-from nav.sim3d.world import (
+from pybullet_app.pybullet_main import build_drive_waypoints
+from pybullet_app.sim3d.coords import grid_to_world, world_to_grid
+from pybullet_app.sim3d.hud import Hud, FollowLabel
+from pybullet_app.sim3d.robot import Robot, DEFAULT_SPEED
+from pybullet_app.sim3d.world import (
     connect, build_obstacles, mark_cell, mark_goal_cell, label_cell, draw_trigger_marker, LivePath,
     ROBOT_A_COLOR, ROBOT_B_COLOR,
 )
@@ -77,8 +81,8 @@ SAFETY_STOP_RADIUS = 0.55
 # throttled well below the 240Hz physics rate.
 HUD_UPDATE_PERIOD_S = 0.1
 # How long the "replanning..." HUD indicator stays lit after a real
-# replan, mirroring nav/visualizer.py's REPLAN_FLASH_MS -- matched to
-# nav/sim3d/world.py's PATH_LINGER_SECONDS, same reasoning as
+# replan, mirroring pygame_app/visualizer.py's REPLAN_FLASH_MS -- matched to
+# pybullet_app/sim3d/world.py's PATH_LINGER_SECONDS, same reasoning as
 # pybullet_main.py's REPLAN_FLASH_S.
 REPLAN_FLASH_S = 1.2
 HUD_POSITION = (2, 2, 9)
@@ -186,7 +190,7 @@ class NavAgent:
         that does find a fresh route should never leave the *old* line
         drawn alongside the new one). The redraw itself flashes in and
         the superseded route lingers rather than an instant swap -- see
-        nav/sim3d/world.py: LivePath."""
+        pybullet_app/sim3d/world.py: LivePath."""
         grid = blocked_grid(self.base_grid, blocked_cells) if blocked_cells else self.base_grid
         cell = self.current_cell()
         if cell == self.goal:

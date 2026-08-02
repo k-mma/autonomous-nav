@@ -5,7 +5,7 @@ import pybullet_data
 
 from nav.config import COST_MAX_EXTRA, TERRAIN_COLORS, TERRAIN_GRASS
 from nav.grid import Grid
-from nav.sim3d.coords import grid_to_world, WORLD_CELL_SIZE
+from .coords import grid_to_world, WORLD_CELL_SIZE
 
 OBSTACLE_HEIGHT = 1.0
 OBSTACLE_COLOR = (0.15, 0.15, 0.15, 1.0)
@@ -13,7 +13,7 @@ OBSTACLE_COLOR = (0.15, 0.15, 0.15, 1.0)
 # instead of fully removed, since the collision shape underneath still has
 # to exist (both for the robot to physically bump into and for lidar's own
 # raycasts to hit), so "hidden" here means "dim", not "absent". Mirrors
-# nav/visualizer.py's sensor mode drawing an undiscovered obstacle as a
+# pygame_app/visualizer.py's sensor mode drawing an undiscovered obstacle as a
 # free cell with a faint outline.
 HIDDEN_OBSTACLE_COLOR = (0.15, 0.15, 0.15, 0.05)
 BINARY_PATH_COLOR = (0.9, 0.15, 0.15)
@@ -38,7 +38,7 @@ ROBOT_A_COLOR = (0.1, 0.7, 0.9, 1.0)
 ROBOT_B_COLOR = (0.95, 0.55, 0.1, 1.0)
 # Top color of the cost-map ground tint at maximum extra cost; blends
 # toward invisible (alpha 0) as cost drops to 1.0. Same hue family as
-# nav/visualizer.py's COST_TINT, just expressed as a translucent overlay
+# pygame_app/visualizer.py's COST_TINT, just expressed as a translucent overlay
 # instead of an opaque cell fill since it sits on top of the ground plane
 # rather than replacing it.
 COST_TINT_COLOR = (0.95, 0.55, 0.25)
@@ -480,7 +480,7 @@ def draw_terrain(grid, cell_size=WORLD_CELL_SIZE, z=0.04, base_z=0.002, gui=True
 def draw_cost_map_tint(grid, cell_size=WORLD_CELL_SIZE, max_extra=COST_MAX_EXTRA, z=0.02, gui=True):
     """Flat, semi-transparent quads over every cell with grid.cost > 1.0
     (see Grid.compute_cost_map), colored by magnitude -- the 3D analogue
-    of nav/visualizer.py's orange cost tint, drawn as an overlay on the
+    of pygame_app/visualizer.py's orange cost tint, drawn as an overlay on the
     ground plane instead of an opaque cell fill since there's real
     geometry underneath it here. Static: call once after the cost map is
     computed, not per frame -- the cost field doesn't change without a

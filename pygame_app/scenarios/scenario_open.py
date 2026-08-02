@@ -12,14 +12,14 @@ unobstructed ground differently.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import random
 
 from nav.config import TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER
-from nav.scenario import ScenarioConfig
+from pygame_app.scenario import ScenarioConfig
 from nav.scenario_helpers import scatter_obstacles, scatter_terrain
-from nav.visualizer import main
+from pygame_app.visualizer import main
 
 SEED = 20260725
 OBSTACLE_DENSITY = 0.08

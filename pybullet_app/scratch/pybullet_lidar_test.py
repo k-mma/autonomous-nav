@@ -1,19 +1,23 @@
 """
 Standalone sanity check: does pybullet.rayTestBatch actually work the way
-nav/sim3d/lidar.py assumes? Hardcoded 3D layout, one scan from a fixed
+pybullet_app/sim3d/lidar.py assumes? Hardcoded 3D layout, one scan from a fixed
 position, print which rays hit something and what grid cell each hit
 maps back to. No robot, no driving, no visualizer -- just the raycast.
 
-    python3 -m nav.scratch.pybullet_lidar_test [--headless]
+    python3 -m pybullet_app.scratch.pybullet_lidar_test [--headless]
 """
 import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import pybullet as p
 
 from nav.grid import Grid
-from nav.sim3d.lidar import Lidar3D
-from nav.sim3d.world import connect, build_obstacles
-from nav.sim3d.coords import grid_to_world
+from pybullet_app.sim3d.lidar import Lidar3D
+from pybullet_app.sim3d.world import connect, build_obstacles
+from pybullet_app.sim3d.coords import grid_to_world
 
 
 def build_test_grid():

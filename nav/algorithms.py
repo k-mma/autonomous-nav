@@ -12,7 +12,7 @@ def dijkstra(grid, start, goal, order_out=None):
 
     `order_out`, if given a list, gets each cell appended to it in the
     exact order it's settled -- a plain `set` (what's returned as
-    `settled`) doesn't preserve that order, and nav/visualizer.py's
+    `settled`) doesn't preserve that order, and pygame_app/visualizer.py's
     step-by-step replay mode (Step 6) needs it to reveal cells one at a
     time in the order they were actually explored. Optional and additive
     so every existing caller that doesn't pass it sees no change at all.
@@ -144,7 +144,7 @@ def weighted_path_length(grid, path):
     entered, same as path_cost. For a grid-adjacent path (every
     Dijkstra/A* path) this gives the exact same number path_cost does,
     since hypot(1, 0) == 1 and hypot(1, 1) == sqrt(2) -- so
-    nav/visualizer.py's 3-panel comparison (Step 5) can use this one
+    pygame_app/visualizer.py's 3-panel comparison (Step 5) can use this one
     function for all three algorithms instead of branching per algorithm.
     """
     total = 0.0
@@ -173,7 +173,7 @@ def find_path(grid, algo_name, start, goal, heuristic=None, order_out=None):
     algo_name is "astar"; see astar()'s docstring for its default (Manhattan,
     or octile once `grid.diagonal` is on). `order_out`
     -- see dijkstra's docstring -- is only honored for "dijkstra", "astar",
-    and "rrt" (the three nav/visualizer.py actually replays step-by-step);
+    and "rrt" (the three pygame_app/visualizer.py actually replays step-by-step);
     passed through unused otherwise.
 
     Returns (path, explored, reason, came_from). reason is None on an

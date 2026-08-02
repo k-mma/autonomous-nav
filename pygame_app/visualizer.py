@@ -205,12 +205,12 @@ def draw_legend(screen, font, window_width, window_height):
 
 
 def main(scenario=None):
-    """`scenario`, if given, is a nav.scenario.ScenarioConfig -- it's
+    """`scenario`, if given, is a pygame_app.scenario.ScenarioConfig -- it's
     applied to the grid right after setup, before the event loop starts,
     so a scenario_*.py file can launch straight into a preset,
     already-run (or already-walking) result with no interaction needed.
     Duck-typed rather than imported/isinstance-checked here so this
-    module doesn't need to depend on nav.scenario at all.
+    module doesn't need to depend on pygame_app.scenario at all.
     """
     # --demo (Step 5): smaller grid, bigger cells, for screenshot-friendly
     # output. Every drawing function takes grid_size/cell_size explicitly

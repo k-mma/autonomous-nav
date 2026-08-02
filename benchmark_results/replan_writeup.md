@@ -55,7 +55,7 @@ here, both real, not artifacts:
    grid is this size) that D* Lite's bookkeeping overhead per event
    costs more than the search it's replacing.
 2. Building a `KnownGrid` from scratch every replan -- exactly what
-   `nav/visualizer.py`'s `planning_grid()` and this benchmark's astar
+   `pygame_app/visualizer.py`'s `planning_grid()` and this benchmark's astar
    baseline both do -- also isn't very expensive at 25x25 (comparable to
    the search itself), so there's less baseline cost to begin with for
    an incremental approach to beat.

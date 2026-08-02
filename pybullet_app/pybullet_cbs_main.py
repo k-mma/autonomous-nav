@@ -31,21 +31,25 @@ pybullet_multi_robot_main.py) for the same reason: smoothing shifts
 where along the path a robot actually is at a given moment, which would
 undermine the same synchronization.
 
-    python3 pybullet_cbs_main.py                  # 4 robots, one per compass arm
-    python3 pybullet_cbs_main.py --robots 6        # 6 robots, doubled up in adjacent lanes
-    python3 pybullet_cbs_main.py --headless --max-seconds 60
+    python3 pybullet_app/pybullet_cbs_main.py                  # 4 robots, one per compass arm
+    python3 pybullet_app/pybullet_cbs_main.py --robots 6        # 6 robots, doubled up in adjacent lanes
+    python3 pybullet_app/pybullet_cbs_main.py --headless --max-seconds 60
 """
 import argparse
+import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pybullet as p
 
 from nav.cbs import cbs, solution_cost
-from nav.sim3d.coords import grid_to_world
-from nav.sim3d.hud import Hud, FollowLabel
-from nav.sim3d.robot import Robot, DEFAULT_SPEED
-from nav.sim3d.world import connect, build_obstacles, mark_cell, mark_goal_cell, LivePath
-from pybullet_multi_robot_main import build_intersection_grid, CENTER, STREET_HALF_WIDTH
+from pybullet_app.sim3d.coords import grid_to_world
+from pybullet_app.sim3d.hud import Hud, FollowLabel
+from pybullet_app.sim3d.robot import Robot, DEFAULT_SPEED
+from pybullet_app.sim3d.world import connect, build_obstacles, mark_cell, mark_goal_cell, LivePath
+from pybullet_app.pybullet_multi_robot_main import build_intersection_grid, CENTER, STREET_HALF_WIDTH
 
 SIM_HZ = 240
 HUD_UPDATE_PERIOD_S = 0.1
@@ -105,7 +109,7 @@ class CBSAgent:
         self.label = FollowLabel(name, gui, color=color)
         # CBS never replans live (see the module docstring), so this path
         # never changes after being set once -- LivePath is still worth
-        # using for its flash-in reveal (see nav/sim3d/world.py), so the
+        # using for its flash-in reveal (see pybullet_app/sim3d/world.py), so the
         # route actually announces itself onscreen instead of just
         # appearing, same as every other demo's paths now do.
         self.live_path = LivePath(color[:3], gui, SIM_HZ, z=0.04)

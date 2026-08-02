@@ -4,20 +4,24 @@ visualizer, plus a lidar-sensor mode: the robot plans against only what
 it's actually seen via real raycasts, and replans as it discovers more.
 Everything planning-related here is imported unchanged from
 nav/algorithms.py, nav/grid.py, and nav/sensor.py -- the only new code is
-the PyBullet physics interface (nav/sim3d/).
+the PyBullet physics interface (pybullet_app/sim3d/).
 
-    python3 pybullet_main.py                     # cost-map path, spline-smoothed
-    python3 pybullet_main.py --smooth raw         # raw A* waypoints, sharp turns, no smoothing
-    python3 pybullet_main.py --smooth corner_cut  # Chaikin corner-cutting instead of a spline
-    python3 pybullet_main.py --smooth spline      # Catmull-Rom spline (default)
-    python3 pybullet_main.py --no-cost-map        # binary obstacles only, no clearance routing
-    python3 pybullet_main.py --sensor             # lidar-limited knowledge, replans on discovery
-    python3 pybullet_main.py --terrain            # scattered forest terrain, naive vs cost-aware routing
-    python3 pybullet_main.py --headless           # DIRECT mode, no GUI window, for automated runs
+    python3 pybullet_app/pybullet_main.py                     # cost-map path, spline-smoothed
+    python3 pybullet_app/pybullet_main.py --smooth raw         # raw A* waypoints, sharp turns, no smoothing
+    python3 pybullet_app/pybullet_main.py --smooth corner_cut  # Chaikin corner-cutting instead of a spline
+    python3 pybullet_app/pybullet_main.py --smooth spline      # Catmull-Rom spline (default)
+    python3 pybullet_app/pybullet_main.py --no-cost-map        # binary obstacles only, no clearance routing
+    python3 pybullet_app/pybullet_main.py --sensor             # lidar-limited knowledge, replans on discovery
+    python3 pybullet_app/pybullet_main.py --terrain            # scattered forest terrain, naive vs cost-aware routing
+    python3 pybullet_app/pybullet_main.py --headless           # DIRECT mode, no GUI window, for automated runs
 """
 import argparse
 import random
+import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pybullet as p
 
@@ -26,12 +30,12 @@ from nav.config import CONFIRMATION_THRESHOLD, TERRAIN_BUSH, TERRAIN_GRASS, TERR
 from nav.grid import Grid
 from nav.scenario_helpers import scatter_obstacles, scatter_terrain
 from nav.sensor import KnownGrid
-from nav.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
-from nav.sim3d.hud import Hud
-from nav.sim3d.lidar import Lidar3D
-from nav.sim3d.robot import Robot, DEFAULT_SPEED
-from nav.sim3d.smoothing import simplify_collinear, chaikin_smooth, catmull_rom_spline
-from nav.sim3d.world import (
+from pybullet_app.sim3d.coords import grid_to_world, world_to_grid, WORLD_CELL_SIZE
+from pybullet_app.sim3d.hud import Hud
+from pybullet_app.sim3d.lidar import Lidar3D
+from pybullet_app.sim3d.robot import Robot, DEFAULT_SPEED
+from pybullet_app.sim3d.smoothing import simplify_collinear, chaikin_smooth, catmull_rom_spline
+from pybullet_app.sim3d.world import (
     connect, build_obstacles, hide_obstacles, reveal_obstacles, mark_cell,
     draw_waypoints, draw_cost_map_tint, draw_terrain, draw_trigger_marker, LivePath,
     BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, SENSOR_PATH_COLOR, START_COLOR, GOAL_COLOR,
@@ -88,8 +92,8 @@ SENSOR_WATER_DENSITY = 0.05
 # updates faster than this anyway.
 HUD_UPDATE_PERIOD_S = 0.1
 # How long the "REPLANNING..." HUD indicator stays lit after a real
-# replan, mirroring nav/visualizer.py's REPLAN_FLASH_MS -- matched to
-# nav/sim3d/world.py's PATH_LINGER_SECONDS so the HUD text and the old
+# replan, mirroring pygame_app/visualizer.py's REPLAN_FLASH_MS -- matched to
+# pybullet_app/sim3d/world.py's PATH_LINGER_SECONDS so the HUD text and the old
 # path's on-screen linger both clear at roughly the same moment.
 REPLAN_FLASH_S = 1.2
 HUD_POSITION = (4, 4, 6)
@@ -211,7 +215,7 @@ def parse_args():
                          help="plan against lidar-discovered knowledge only, replanning as it explores")
     parser.add_argument("--noisy-sensor", action="store_true",
                          help="(with --sensor) make the lidar imperfect -- misses, position noise, and "
-                              "false positives (see nav/sim3d/lidar.py) -- and require "
+                              "false positives (see pybullet_app/sim3d/lidar.py) -- and require "
                               f"{CONFIRMATION_THRESHOLD}+ repeated detections before trusting a cell "
                               "enough to replan on")
     parser.add_argument("--terrain", action="store_true",
@@ -344,7 +348,7 @@ def run_terrain_demo(args, grid, gui):
     # this file -- draw_terrain's own ground overlay sits right beneath
     # these (up to z=0.04) and needs a real gap, not just a nonzero one,
     # to avoid shadow-map z-fighting at this camera distance (see
-    # nav/sim3d/world.py: draw_terrain).
+    # pybullet_app/sim3d/world.py: draw_terrain).
     naive_live = LivePath(TERRAIN_NAIVE_PATH_COLOR, gui, SIM_HZ, z=0.09)
     aware_live = LivePath(TERRAIN_AWARE_PATH_COLOR, gui, SIM_HZ, z=0.14)
     naive_live.set_path(to_world_xy(naive_path), 0)
@@ -399,7 +403,7 @@ def run_terrain_demo(args, grid, gui):
 
 
 def run_sensor_demo(args, grid, gui, obstacle_bodies):
-    """The robot only knows about obstacles nav/sim3d/lidar.py has
+    """The robot only knows about obstacles pybullet_app/sim3d/lidar.py has
     actually raycast-hit. It plans against a KnownGrid (the exact same
     class the pygame sensor mode uses -- unseen cells assumed
     free), drives toward that plan, and rescans every SENSOR_SCAN_PERIOD_S
@@ -412,7 +416,7 @@ def run_sensor_demo(args, grid, gui, obstacle_bodies):
 
     Real obstacles start dimmed to near-invisible (see
     hide_obstacles/reveal_obstacles) and only turn solid once the lidar
-    actually raycasts them -- matching nav/visualizer.py's sensor mode,
+    actually raycasts them -- matching pygame_app/visualizer.py's sensor mode,
     which draws an undiscovered obstacle as a free cell with just a faint
     outline instead of its real fill color."""
     total_obstacles = sum(row.count(Grid.OBSTACLE) for row in grid.cells)

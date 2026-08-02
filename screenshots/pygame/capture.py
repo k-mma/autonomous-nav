@@ -1,6 +1,6 @@
 """Captures one screenshot per scenarios/scenario_*.py, headless.
 
-Runs nav.visualizer.main(CONFIG) for real -- the exact same setup and
+Runs pygame_app.visualizer.main(CONFIG) for real -- the exact same setup and
 drawing code an interactive session uses -- under SDL's "dummy" video
 driver (no real window/display needed) instead of duplicating any of
 main()'s drawing logic here. pygame.display.flip is patched to save the
@@ -29,13 +29,13 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCENARIOS_DIR = REPO_ROOT / "scenarios"
+SCENARIOS_DIR = REPO_ROOT / "pygame_app" / "scenarios"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(SCENARIOS_DIR))
 
 import pygame
 
-import nav.visualizer as visualizer
+import pygame_app.visualizer as visualizer
 
 OUT_DIR = Path(__file__).resolve().parent
 

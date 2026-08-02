@@ -24,14 +24,14 @@ import pybullet as p
 from PIL import Image
 
 from nav.cbs import cbs
-from nav.sim3d.coords import grid_to_world
-from nav.sim3d.hud import Hud
-from nav.sim3d.world import (
+from pybullet_app.sim3d.coords import grid_to_world
+from pybullet_app.sim3d.hud import Hud
+from pybullet_app.sim3d.world import (
     connect, build_obstacles, mark_cell, mark_goal_cell, label_cell,
     ROBOT_A_COLOR, ROBOT_B_COLOR,
 )
-from pybullet_cbs_main import build_agents, CBSAgent, PALETTE
-from pybullet_multi_robot_main import (
+from pybullet_app.pybullet_cbs_main import build_agents, CBSAgent, PALETTE
+from pybullet_app.pybullet_multi_robot_main import (
     build_intersection_grid, NavAgent, cell_block,
     ROBOT_A_START, ROBOT_A_GOAL, ROBOT_B_START, ROBOT_B_GOAL,
     SIM_HZ, REPLAN_PERIOD_S, BLOCK_RADIUS, SAFETY_STOP_RADIUS,

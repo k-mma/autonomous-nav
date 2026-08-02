@@ -1,7 +1,7 @@
 """
-Standalone demonstration of Lidar3D's noise model (nav/sim3d/lidar.py),
+Standalone demonstration of Lidar3D's noise model (pybullet_app/sim3d/lidar.py),
 before it's wired into pybullet_main.py --sensor. Same wall-in-a-corridor
-layout as nav/scratch/pybullet_lidar_test.py, scanned repeatedly from a
+layout as pybullet_app/scratch/pybullet_lidar_test.py, scanned repeatedly from a
 fixed position with `noisy=True`, mirroring nav/scratch/lidar_noise_test.py's
 structure exactly so the two sensor models' noise can be compared
 side by side. Answers the same question that one does: does
@@ -9,10 +9,14 @@ side by side. Answers the same question that one does: does
 than once) turn a noisy sensor's readings back into something a planner
 can actually trust, and at what cost?
 
-    python3 -m nav.scratch.pybullet_lidar_noise_test [--headless]
+    python3 -m pybullet_app.scratch.pybullet_lidar_noise_test [--headless]
 """
 import argparse
 import random
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import pybullet as p
 
@@ -20,9 +24,9 @@ from nav.algorithms import astar, find_path, path_cost
 from nav.config import CONFIRMATION_THRESHOLD
 from nav.grid import Grid
 from nav.sensor import KnownGrid
-from nav.sim3d.coords import grid_to_world
-from nav.sim3d.lidar import Lidar3D
-from nav.sim3d.world import connect, build_obstacles
+from pybullet_app.sim3d.coords import grid_to_world
+from pybullet_app.sim3d.lidar import Lidar3D
+from pybullet_app.sim3d.world import connect, build_obstacles
 
 START, GOAL = (10, 0), (10, 24)
 WALL = {(row, 12) for row in range(8, 15)}

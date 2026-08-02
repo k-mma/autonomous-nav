@@ -7,20 +7,24 @@ pybullet_multi_robot_main.py's forced-corridor-conflict scenario is for.
 This just confirms the basics: two robots can be loaded and driven
 simultaneously in one simulation without interfering with each other.
 
-    python3 -m nav.scratch.pybullet_multi_robot_test [--headless]
+    python3 -m pybullet_app.scratch.pybullet_multi_robot_test [--headless]
 """
 import argparse
 import math
+import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import pybullet as p
 
 from nav.algorithms import find_path
 from nav.grid import Grid
-from pybullet_main import build_drive_waypoints
-from nav.sim3d.coords import grid_to_world
-from nav.sim3d.robot import Robot
-from nav.sim3d.world import connect, build_obstacles
+from pybullet_app.pybullet_main import build_drive_waypoints
+from pybullet_app.sim3d.coords import grid_to_world
+from pybullet_app.sim3d.robot import Robot
+from pybullet_app.sim3d.world import connect, build_obstacles
 
 SIM_HZ = 240
 ROBOT_A = ((2, 2), (2, 22))

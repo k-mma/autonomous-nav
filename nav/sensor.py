@@ -143,3 +143,21 @@ class KnownGrid(Grid):
         self.diagonal = diagonal
         for row, col in known_obstacles:
             self.cells[row][col] = Grid.OBSTACLE
+
+
+def blocks_remaining_path(newly_seen, current_cell, remaining_path):
+    """True if a sensor reading actually requires a replan: some cell in
+    `newly_seen` (a LidarSensor.sense() return value) lies on
+    `remaining_path` (the cells from the current position onward), or an
+    obstacle showed up directly underfoot. This is the exact trigger
+    condition pygame_app/visualizer.py's live replanning and nav/replan_
+    benchmark.py's sensor-discovery scenario both use -- pulled out here
+    so nav/policies.py's ReactivePolicy can reuse it as a third caller
+    instead of re-inlining the same check a third time. `current_cell` is
+    checked on its own (not just membership in `remaining_path`) so an
+    obstacle appearing on the cell the robot is standing on always
+    triggers a replan even if the caller's `remaining_path` doesn't
+    happen to include that cell."""
+    if not newly_seen:
+        return False
+    return bool(newly_seen & set(remaining_path)) or current_cell in newly_seen

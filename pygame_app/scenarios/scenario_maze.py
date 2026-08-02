@@ -13,15 +13,15 @@ corridors, compared to Dijkstra/A*'s systematic search.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import random
 
 from nav.config import TERRAIN_BUSH, TERRAIN_MUD
 from nav.maze import generate_maze
-from nav.scenario import ScenarioConfig
+from pygame_app.scenario import ScenarioConfig
 from nav.scenario_helpers import find_dead_ends, paint_branch
-from nav.visualizer import main
+from pygame_app.visualizer import main
 
 MAZE_SEED = 7
 DEAD_END_SEED = 8

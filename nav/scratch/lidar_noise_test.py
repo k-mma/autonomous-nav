@@ -1,6 +1,6 @@
 """
 Standalone demonstration of LidarSensor's noise model (nav/sensor.py),
-before it's wired into nav/visualizer.py. Same corridor-with-hidden-
+before it's wired into pygame_app/visualizer.py. Same corridor-with-hidden-
 obstacles setup as nav/scratch/lidar_test.py, but scanned repeatedly from
 a fixed position with `noisy=True` instead of moved through once, so the
 three noise types actually show up in the output:

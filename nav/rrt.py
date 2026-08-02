@@ -66,7 +66,7 @@ def rrt(grid, start, goal, max_iters=RRT_MAX_ITERS, step_size=RRT_STEP_SIZE,
     `order_out`, if given a list, gets each node appended to it in the
     exact order it was added to the tree (`nodes`, below, already *is*
     this order -- this just mirrors it out for callers, the same optional
-    replay hook dijkstra/astar accept, so nav/visualizer.py's step-by-step
+    replay hook dijkstra/astar accept, so pygame_app/visualizer.py's step-by-step
     replay mode (Step 6) can treat all three algorithms identically).
 
     Returns (path, tree_nodes, came_from) -- same shape as dijkstra/astar

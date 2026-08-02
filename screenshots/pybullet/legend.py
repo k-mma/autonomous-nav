@@ -1,12 +1,12 @@
 """Generates a standalone legend graphic (screenshots/pybullet/legend.png)
-for the printed poster board -- the in-sim Hud (nav/sim3d/hud.py) renders
+for the printed poster board -- the in-sim Hud (pybullet_app/sim3d/hud.py) renders
 world-space debug text sized for an on-screen camera view, which reads as
 an illegible speck once a screenshot is shrunk down to fit next to two
 other panels on a printed board. This draws the same color/marker
 vocabulary used across pybullet_main.py's three demos as flat swatches
 with labels, sized to be read from a few feet away instead.
 
-Every color is imported from nav/config.py and nav/sim3d/world.py rather
+Every color is imported from nav/config.py and pybullet_app/sim3d/world.py rather
 than re-typed here, so the legend can never silently drift out of sync
 with what the sim actually renders.
 
@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from PIL import Image, ImageDraw, ImageFont
 
 from nav.config import TERRAIN_COLORS, TERRAIN_COST, TERRAIN_NAMES, TERRAIN_CYCLE
-from nav.sim3d.world import (
+from pybullet_app.sim3d.world import (
     BINARY_PATH_COLOR, COST_MAP_PATH_COLOR, SENSOR_PATH_COLOR,
     TERRAIN_NAIVE_PATH_COLOR, TERRAIN_AWARE_PATH_COLOR,
     FLASH_COLOR, LINGER_COLOR, TRIGGER_MARKER_COLOR,
@@ -54,7 +54,7 @@ SUB_FONT = _font("Arial.ttf", 26)
 
 
 def to_rgb255(color):
-    """Path/marker colors in nav/sim3d/world.py are 0-1 floats (3- or
+    """Path/marker colors in pybullet_app/sim3d/world.py are 0-1 floats (3- or
     4-tuples, pybullet's rgbaColor convention); terrain colors in
     nav/config.py are already 0-255 ints (pygame's convention). Normalize
     either to a 0-255 RGB tuple PIL can draw."""

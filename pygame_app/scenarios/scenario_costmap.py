@@ -6,7 +6,7 @@ one enables both: a scattered-obstacle field with cost-map inflation on
 movement on (so Dijkstra/A*'s paths cut corners instead of
 stair-stepping), plus a water crossing so the terrain-cost and
 inflation-cost tints can be told apart in the same shot (see
-nav/visualizer.py's draw_grid_panel -- the tint blends from the cell's
+pygame_app/visualizer.py's draw_grid_panel -- the tint blends from the cell's
 own terrain color, dividing the terrain multiplier back out first,
 specifically so the two don't get confused with each other).
 
@@ -16,14 +16,14 @@ movement, side by side with terrain cost.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import random
 
 from nav.config import TERRAIN_BUSH, TERRAIN_MUD, TERRAIN_WATER
-from nav.scenario import ScenarioConfig
+from pygame_app.scenario import ScenarioConfig
 from nav.scenario_helpers import scatter_obstacles, scatter_terrain
-from nav.visualizer import main
+from pygame_app.visualizer import main
 
 SEED = 20260727
 OBSTACLE_DENSITY = 0.10

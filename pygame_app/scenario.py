@@ -7,7 +7,7 @@ from nav.grid import Grid
 @dataclass
 class ScenarioConfig:
     """Preset state for one of the standalone scenario_*.py entry points
-    -- passed to nav.visualizer.main(scenario=...), which applies it to
+    -- passed to pygame_app.visualizer.main(scenario=...), which applies it to
     the freshly built grid before the event loop starts, instead of each
     scenario file duplicating the visualizer's own setup/drawing logic.
 
@@ -36,7 +36,7 @@ class ScenarioConfig:
     auto_run: bool = True
     # Start the robot walking immediately after auto_run (ignored if
     # step_snapshot is set -- step mode and walking don't mix, see
-    # nav/visualizer.py's start_robot).
+    # pygame_app/visualizer.py's start_robot).
     auto_walk: bool = False
 
     # If set, enters step mode and reveals this many cells/nodes per

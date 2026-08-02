@@ -220,7 +220,7 @@ That's a much stronger assumption than any real range sensor gets to
 make, and it's worth being honest that everything in the section above
 (the discover-and-replan loop, the "stale belief" simplification) was
 built and verified against that unrealistically clean signal. `noisy=True`
-(`LidarSensor` in `nav/sensor.py`, `Lidar3D` in `nav/sim3d/lidar.py` --
+(`LidarSensor` in `nav/sensor.py`, `Lidar3D` in `pybullet_app/sim3d/lidar.py` --
 same three parameters, same behavior, one per 2D radius-cell and one per
 3D raycast) replaces it with three independent failure modes, each
 governed by its own rate in `nav/config.py`:
@@ -262,7 +262,7 @@ the same rate again.
 
 **Does this actually matter, concretely, or is it a theoretical nicety?**
 Measured, not asserted (`nav/scratch/lidar_noise_test.py`,
-`nav/scratch/pybullet_lidar_noise_test.py` -- both scanning a hidden
+`pybullet_app/scratch/pybullet_lidar_noise_test.py` -- both scanning a hidden
 obstacle repeatedly from a fixed position, then replanning against
 `confirmed_obstacles` at increasing thresholds and comparing the
 resulting path cost to the true optimum):
@@ -291,7 +291,7 @@ act on it at all. A robot that needs to react instantly to a single
 sensor ping cannot also demand five confirmations first; this project's
 `CONFIRMATION_THRESHOLD = 2` is a middle-of-the-road default, not a
 tuned optimum, and callers that want a different point on that tradeoff
-(`nav/visualizer.py`'s `N` key, `pybullet_main.py --sensor
+(`pygame_app/visualizer.py`'s `N` key, `pybullet_app/pybullet_main.py --sensor
 --noisy-sensor`) can pass a different `min_detections` to
 `confirmed_obstacles` directly.
 
@@ -317,8 +317,8 @@ possibly work, chosen deliberately over that added complexity the same
 way the "known_obstacles only grows" simplification was, and both
 tradeoffs are recorded here rather than hidden.
 
-**Wiring**: both `nav/visualizer.py` (`N` key, alongside `S` for the
-sensor itself) and `pybullet_main.py --sensor --noisy-sensor` gained a
+**Wiring**: both `pygame_app/visualizer.py` (`N` key, alongside `S` for the
+sensor itself) and `pybullet_app/pybullet_main.py --sensor --noisy-sensor` gained a
 noise toggle that's off by default, and both switched their replanning
 trigger from "any newly reported cell" to "any newly *confirmed* cell"
 (computing `confirmed_cells()` before and after each scan and diffing
@@ -326,7 +326,7 @@ the two sets) -- with noise off this is provably identical to the old
 behavior, since `confirmed_obstacles(1) == known_obstacles` always; with
 noise on, it's what keeps a single stray false positive from kicking off
 a wasted replan on its own. The live "hidden obstacle" visual in both
-(`nav/visualizer.py`'s outline, `pybullet_main.py`'s dim/reveal) is
+(`pygame_app/visualizer.py`'s outline, `pybullet_app/pybullet_main.py`'s dim/reveal) is
 deliberately left showing *raw* sensor output, not confirmed -- so a
 human watching the demo can see the sensor's actual noisy behavior in
 real time, while the planner underneath only ever acts on what it's
@@ -427,21 +427,21 @@ visualizer and the replanning logic.
 
 The goal was a robot navigating a 3D environment using the same A* code
 as the pygame visualizer, and it's worth being precise about how literal
-that is: `pybullet_main.py` imports `nav.grid.Grid` and
+that is: `pybullet_app/pybullet_main.py` imports `nav.grid.Grid` and
 `nav.algorithms.find_path` directly, unmodified, and calls them exactly
-the way `nav/visualizer.py` does. Every new file lives under
-`nav/sim3d/` and is strictly about the physics interface -- turning grid
+the way `pygame_app/visualizer.py` does. Every new file lives under
+`pybullet_app/sim3d/` and is strictly about the physics interface -- turning grid
 cells into 3D bodies, turning a cell path into a driveable trajectory,
 and turning that trajectory into motor commands. Planning logic and 3D
 plumbing never touch the same file.
 
-### Grid-to-world coordinates (`nav/sim3d/coords.py`)
+### Grid-to-world coordinates (`pybullet_app/sim3d/coords.py`)
 
 `grid_to_world(row, col)` maps `col -> x`, `row -> y`, `z = 0` at
 `WORLD_CELL_SIZE = 1.0` meter per cell -- the same `col`-is-horizontal,
-`row`-is-vertical convention `nav/visualizer.py` uses for pixels, just
+`row`-is-vertical convention `pygame_app/visualizer.py` uses for pixels, just
 with meters instead of pixels and an explicit up-axis. Every obstacle
-body, path debug-line, and waypoint in `nav/sim3d/world.py` goes through
+body, path debug-line, and waypoint in `pybullet_app/sim3d/world.py` goes through
 this one function, so the 3D obstacle layout lines up with the grid A*
 actually searched, cell for cell.
 
@@ -455,7 +455,7 @@ waypoint, ...)` every frame -- it would "work" in the sense of the robot
 visibly moving along the path, but it's not driving, it's teleporting;
 PyBullet's physics engine never gets a velocity to integrate, so nothing
 about the motion is actually simulated. `Robot.drive_toward`
-(`nav/sim3d/robot.py`) instead computes a heading error to the target and
+(`pybullet_app/sim3d/robot.py`) instead computes a heading error to the target and
 calls `p.resetBaseVelocity(body_id, linearVelocity=[...],
 angularVelocity=[...])` every step -- a real (if simplified) velocity
 command the physics engine has to integrate into position over time, the
@@ -466,7 +466,7 @@ specifically because `resetBaseVelocity` has no concept of "forward" --
 without that check the robot would happily strafe sideways toward a
 waypoint behind it, which no real wheeled base can do.
 
-### Path smoothing: corner-cutting, then a spline (`nav/sim3d/smoothing.py`)
+### Path smoothing: corner-cutting, then a spline (`pybullet_app/sim3d/smoothing.py`)
 
 Three functions, used in sequence:
 
@@ -490,7 +490,7 @@ Three functions, used in sequence:
    proved the concept. Unlike Chaikin, a Catmull-Rom spline passes
    *exactly* through every control point, not just the endpoints, while
    still arriving at each one smoothly instead of on a sharp corner.
-   This is what `pybullet_main.py` drives by default (`--smooth
+   This is what `pybullet_app/pybullet_main.py` drives by default (`--smooth
    spline`); `--smooth corner_cut` and `--smooth raw` (no smoothing at
    all, the pre-smoothing baseline) are there specifically so the
    difference is easy to see and describe, not just claimed.
@@ -508,7 +508,7 @@ for why smoothing matters, demonstrated rather than asserted.
 `grid.cost_map_enabled` / `grid.refresh_cost_map()` (`nav/grid.py`) were
 already built to work through `get_neighbors`, independent of who's
 rendering the grid -- so "porting" the cost map to PyBullet took zero
-new code. `pybullet_main.py` just plans twice, once with
+new code. `pybullet_app/pybullet_main.py` just plans twice, once with
 `cost_map_enabled = False` and once `True`, and draws both routes as
 PyBullet debug lines (red = binary-obstacle route, blue = cost-map
 route) so the difference in path *shape* is directly visible in the GUI
@@ -582,7 +582,7 @@ able to explain if asked about the PyBullet leg of this project.
 
 ### Making the robots faster
 
-`nav/sim3d/robot.py`'s defaults were raised well above the original
+`pybullet_app/sim3d/robot.py`'s defaults were raised well above the original
 2.0 m/s / 4.0 rad/s starting point, both for a snappier demo. Before
 raising them, the headroom was checked experimentally: 6, 8, and 10 m/s
 tested head-to-head (same `drive_toward` controller, same r2d2), and all
@@ -591,7 +591,7 @@ three reached the target with the base staying flat the whole time
 confirming there's plenty of margin above the original default before
 anything physically breaks.
 
-### Porting the sensor model to real raycasts (`nav/sim3d/lidar.py`)
+### Porting the sensor model to real raycasts (`pybullet_app/sim3d/lidar.py`)
 
 The 2D sensor was "every obstacle within radius R" -- a circle, with no
 concept of line of sight. `Lidar3D.scan` replaces that with
@@ -614,10 +614,10 @@ actually running it, not by reasoning about the API in the abstract:
 - **A hit lands exactly on a cell boundary, and rounding that is
   ambiguous.** An obstacle box's near face sits at, e.g., `x = 8.5` for
   a 1.0m cell size -- precisely the boundary between free cell 8 and
-  obstacle cell 9. `nav/scratch/pybullet_lidar_test.py`'s standalone scan
+  obstacle cell 9. `pybullet_app/scratch/pybullet_lidar_test.py`'s standalone scan
   didn't surface this because its one hardcoded scan never happened to
   land exactly on a boundary; the real integration in
-  `pybullet_main.py --sensor` did, immediately: `newly_seen` sets came
+  `pybullet_app/pybullet_main.py --sensor` did, immediately: `newly_seen` sets came
   back containing cells like `(12, 8)` -- the *free* cell directly in
   front of the real wall at column 9-17, not the wall itself. Python's
   `round()` is round-half-to-even, so a hit at exactly `x=8.5` doesn't
@@ -632,7 +632,7 @@ actually running it, not by reasoning about the API in the abstract:
   moving in the `+x` direction becomes `x=8.6`, which rounds to 9
   unambiguously.
 
-With both fixed, `pybullet_main.py --sensor` reliably explores roughly a
+With both fixed, `pybullet_app/pybullet_main.py --sensor` reliably explores roughly a
 quarter of the grid (21-24 of 81 real obstacle cells, across repeated
 runs) -- only what it actually needed to see to solve the specific
 route -- and replans live as each new obstacle enters view, verified by
@@ -640,7 +640,7 @@ the printed "sensed N new obstacle cell(s) -- replanning" trail matching
 up with the robot actually changing course rather than driving through
 where the (still just-discovered) wall is.
 
-### Multiple robots (`pybullet_multi_robot_main.py`)
+### Multiple robots (`pybullet_app/pybullet_multi_robot_main.py`)
 
 The layout is a real cross-street intersection: four square buildings,
 one per grid quadrant, leaving a 3-cell-wide "plus" of open street down
@@ -816,7 +816,7 @@ its exact spawn point. B, meanwhile, started moving immediately (its own
 first turn was small), so by the time A finally got going B already had
 a half-second head start -- enough that their paths, despite crossing at
 the exact center of the grid on paper, missed each other by 7+ meters in
-practice. Fixed with a two-phase turn controller in `nav/sim3d/robot.py`:
+practice. Fixed with a two-phase turn controller in `pybullet_app/sim3d/robot.py`:
 turn at the full `turn_speed` while the heading error is large
 (`TURN_EASE_THRESHOLD = 0.5` rad), and only switch to proportional easing
 close to the target heading, where smooth settling actually matters and
@@ -993,7 +993,7 @@ distance but topologically far away in the tree. `_is_ancestor` walks
 the parent chain before every rewire to rule this out; without it, a
 sufficiently winding tree could eventually loop.
 
-Wired into `nav/visualizer.py` as a fourth selectable algorithm (`T` key,
+Wired into `pygame_app/visualizer.py` as a fourth selectable algorithm (`T` key,
 alongside `D`/`A`/`R`) -- same explored-region suppression and tree-edge
 drawing RRT already gets, extended to check for `"rrt_star"` everywhere
 `"rrt"` was special-cased. Verified end to end with a headless pixel-
@@ -1069,7 +1069,7 @@ the final result.
 **Does it actually replan faster? Benchmarked on both named scenarios
 specifically** (`nav/replan_benchmark.py`, recreating `nav/obstacles.py`'s
 bouncing `MovingObstacle` and `nav/sensor.py`'s `LidarSensor`/`KnownGrid`
-discovery, including nav/visualizer.py's exact replan-trigger condition
+discovery, including pygame_app/visualizer.py's exact replan-trigger condition
 for the sensor case), swept across grid size the same way
 `nav/scale_benchmark.py` does, since this project's actual interactive
 grid is a fixed 25x25 and the honest answer turned out to depend on
@@ -1111,9 +1111,9 @@ every existing caller, which only ever runs at that default), the same
 gap `Grid` itself had before `nav/scale_benchmark.py` needed a `size`
 parameter added for exactly this reason.
 
-### Conflict-Based Search for 3+ robots (`nav/cbs.py`, `pybullet_cbs_main.py`)
+### Conflict-Based Search for 3+ robots (`nav/cbs.py`, `pybullet_app/pybullet_cbs_main.py`)
 
-`pybullet_multi_robot_main.py`'s two-robot policy -- each robot treats the
+`pybullet_app/pybullet_multi_robot_main.py`'s two-robot policy -- each robot treats the
 *other's* current cell as a temporary obstacle and replans around it,
 symmetrically -- has no clean symmetric extension past exactly two
 agents: with three or more, whose cell does agent A treat as blocked
@@ -1162,7 +1162,7 @@ exponentially when conflicts keep cascading into new conflicts, the same
 way a joint search would, just deferred to a smaller subset of hard
 cases instead of showing up on every instance.
 
-**pybullet_cbs_main.py drives N robots through the CBS plan in lockstep**
+**pybullet_app/pybullet_cbs_main.py drives N robots through the CBS plan in lockstep**
 -- the one real complication continuous 3D simulation adds that the
 discrete algorithm doesn't have to consider. CBS's guarantee ("no two
 agents at the same cell at the same *timestep*") is a claim about a
@@ -1175,7 +1175,7 @@ agent that's supposed to wait one timestep keeps "reporting ready"
 every physics tick without advancing, until the rest of the fleet
 catches up, at which point they all advance together. Paths are driven
 raw, with no corner-cutting/spline smoothing (unlike
-`pybullet_main.py`/`pybullet_multi_robot_main.py`), since smoothing
+`pybullet_app/pybullet_main.py`/`pybullet_app/pybullet_multi_robot_main.py`), since smoothing
 would shift where along the path a robot actually is at a given moment
 -- exactly the synchronization lockstep driving exists to preserve.
 

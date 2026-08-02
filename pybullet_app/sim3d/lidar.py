@@ -4,7 +4,7 @@ import random
 import pybullet as p
 
 from nav.config import NOISE_MISS_RATE, NOISE_POSITION_RATE, NOISE_FALSE_POSITIVE_RATE
-from nav.sim3d.coords import world_to_grid, WORLD_CELL_SIZE
+from .coords import world_to_grid, WORLD_CELL_SIZE
 
 DEFAULT_NUM_RAYS = 36
 DEFAULT_RANGE = 6.0

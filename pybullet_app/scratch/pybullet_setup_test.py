@@ -2,14 +2,14 @@
 Standalone sanity check: does PyBullet even work here? Load the empty
 world, drop the r2d2 example robot into it, let physics settle, confirm
 nothing explodes. Stop here -- the grid/A*/robot-driving work is
-nav/sim3d/ and pybullet_main.py, not this file.
+pybullet_app/sim3d/ and pybullet_main.py, not this file.
 
 Run with a real GUI window (the actual visual sanity check):
-    python3 -m nav.scratch.pybullet_setup_test
+    python3 -m pybullet_app.scratch.pybullet_setup_test
 
 Run headless, e.g. in CI or over SSH with no display (--headless swaps
 p.GUI for p.DIRECT and skips the "press enter" pause):
-    python3 -m nav.scratch.pybullet_setup_test --headless
+    python3 -m pybullet_app.scratch.pybullet_setup_test --headless
 """
 import argparse
 import time
