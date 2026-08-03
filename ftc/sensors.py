@@ -32,7 +32,8 @@ from ftc.config import (
     DISTANCE_SENSOR_COST_USD, DISTANCE_SENSOR_COUNT, DISTANCE_SENSOR_HALF_ANGLE_DEG,
     DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_RANGE_CELLS,
     ODOMETRY_POD_COST_USD, APRILTAG_COST_USD, APRILTAG_RANGE_CELLS, APRILTAG_FOV_DEG,
-    APRILTAG_CORRECTION_FACTOR, DEAD_RECKONING_DRIFT_PER_CELL, ODOMETRY_DRIFT_PER_CELL,
+    APRILTAG_CORRECTION_FACTOR_MAX, APRILTAG_RANGE_DEGRADATION, APRILTAG_ANGLE_DEGRADATION,
+    DEAD_RECKONING_DRIFT_PER_CELL, ODOMETRY_DRIFT_PER_CELL,
 )
 
 
@@ -147,8 +148,10 @@ class SensorSuite:
     def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng):
         """None if no tag is currently visible, else a float in [0, 1]:
         the fraction of accumulated pose error this detection removes
-        (APRILTAG_CORRECTION_FACTOR, plus a little per-detection
-        jitter so repeated corrections don't all land identically)."""
+        -- degrades with range and viewing obliquity (see
+        AprilTagSuite.tag_correction and ftc/config.py's APRILTAG_*
+        constants), plus a little per-detection jitter so repeated
+        corrections don't all land identically."""
         return None
 
 
@@ -217,17 +220,32 @@ class AprilTagSuite(SensorSuite):
     drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
 
     def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng):
+        """Correction quality isn't uniform across the detection
+        envelope -- it degrades linearly with range (fraction of
+        APRILTAG_RANGE_CELLS used) and, more steeply, with viewing
+        obliquity (fraction of the FOV half-angle used), both
+        independent of whether the tag clears the range/FOV/LOS gates
+        at all. `incidence` below is the exact same angle the FOV gate
+        just checked -- 0deg is dead-on, APRILTAG_FOV_DEG/2 is the edge
+        of the usable cone -- so a detection right at the edge of
+        either envelope is technically "in view" but contributes only
+        a fraction of APRILTAG_CORRECTION_FACTOR_MAX, not the same
+        correction a close, head-on detection would."""
         for tag in tag_sites:
             tag_cell = in_to_cell(tag.x_in, tag.y_in)
             dist = math.hypot(tag_cell[0] - true_position[0], tag_cell[1] - true_position[1])
             if dist > APRILTAG_RANGE_CELLS:
                 continue
             angle_tag_to_robot = heading_deg(tag_cell, true_position)
-            if abs(angular_diff(angle_tag_to_robot, tag.heading_deg)) > APRILTAG_FOV_DEG / 2:
+            incidence = abs(angular_diff(angle_tag_to_robot, tag.heading_deg))
+            if incidence > APRILTAG_FOV_DEG / 2:
                 continue
             if not line_of_sight(true_grid, tag_cell, true_position):
                 continue
-            return min(1.0, max(0.0, APRILTAG_CORRECTION_FACTOR + rng.gauss(0, 0.05)))
+            range_factor = 1.0 - APRILTAG_RANGE_DEGRADATION * (dist / APRILTAG_RANGE_CELLS)
+            angle_factor = 1.0 - APRILTAG_ANGLE_DEGRADATION * (incidence / (APRILTAG_FOV_DEG / 2))
+            correction = APRILTAG_CORRECTION_FACTOR_MAX * range_factor * angle_factor
+            return min(1.0, max(0.0, correction + rng.gauss(0, 0.05)))
         return None
 
 

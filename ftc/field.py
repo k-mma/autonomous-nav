@@ -7,17 +7,27 @@ obstacles in inches (FieldElement) plus optional AprilTag mount sites;
 a team can drop in their own season's surveyed layout as data without
 touching any code here.
 
-The obstacles get hard-inflated by the robot's radius (nav.config's
-Minkowski-sum trick, applied here rather than in nav/ since it's this
+The obstacles get hard-inflated by the robot's radius (a Minkowski-sum
+obstacle growth, applied here rather than in nav/ since it's this
 module that first has a robot with a real footprint) before the point-
 robot planner in nav/algorithms.py ever sees the grid -- an 18in robot
 in a 6in cell is 3 cells wide, and planning it as a point (nav/'s
 default assumption everywhere else) is optimistic: a route squeezed
 directly between two obstacles one cell apart would actually clip the
-robot's corners in reality. Hard-inflating first and then planning a
-point robot on the inflated grid is exactly equivalent to planning the
-real footprint on the original grid, and lets every existing nav/
-algorithm run completely unmodified.
+robot's corners in reality.
+
+This is the standard configuration-space (C-space) construction from
+the motion-planning literature (Lozano-Perez, 1983), not an ad hoc
+trick: the robot's true configuration is 2D (its center's (row, col)),
+and its obstacle region in that configuration space is exactly the
+Minkowski sum of every workspace obstacle with the robot's footprint
+reflected through its own reference point -- which, for the disc-like
+footprint a Chebyshev-radius inflation approximates here, collapses to
+"grow every obstacle by the footprint's radius." Planning a point
+robot through free *C-space* is provably equivalent to planning the
+real, extended-footprint robot through free *workspace* -- which is
+exactly what lets every existing nav/ algorithm (all written for a
+point robot) run completely unmodified against a real 3-cell-wide one.
 """
 import math
 from dataclasses import dataclass, field as dataclass_field
@@ -127,10 +137,16 @@ def _in_to_cell_range(pos_in, size_in, cell_size_in, grid_size):
 def _hard_inflate(grid, radius):
     """Grow every obstacle cell by Chebyshev `radius` -- a free cell
     counts as blocked if a robot centered there would have any part of
-    its footprint overlapping a real obstacle. Computed from the
-    original obstacle set (collected up front) rather than growing the
-    grid in place cell-by-cell, so inflation doesn't cascade past
-    `radius` from any real obstacle."""
+    its footprint overlapping a real obstacle. This is the actual
+    C-space-obstacle construction (see module docstring): `to_mark` is
+    the Minkowski sum of the real (workspace) obstacles with the
+    robot's footprint, and the grid this function returns is the free/
+    obstacle partition of *configuration* space, not workspace, even
+    though it's stored in the exact same (row, col) Grid representation
+    workspace obstacles were. Computed from the original obstacle set
+    (collected up front) rather than growing the grid in place
+    cell-by-cell, so inflation doesn't cascade past `radius` from any
+    real obstacle."""
     size = grid.size
     sources = [(r, c) for r in range(size) for c in range(size) if grid.cells[r][c] == Grid.OBSTACLE]
     to_mark = set()

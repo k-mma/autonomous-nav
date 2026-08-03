@@ -1198,6 +1198,28 @@ each one become necessary?* See README.md's "Research question" and
 "nav/ vs ftc/" sections for the framing and the reason the FTC-specific
 code lives in its own package instead of leaking into `nav/`.
 
+Formally, `nav/occupancy.py` + `BeliefPolicy`'s "plan against an
+expected-cost map instead of an assumed-true one" is a tractable
+approximation of **belief-space planning**: instead of planning a
+single path through the one grid the robot assumes is real, plan
+through the space of *distributions over grids* the robot's sensor
+history is consistent with. The fully general version of that problem
+-- acting optimally under both state uncertainty and future observation
+uncertainty -- is a **POMDP** (partially observable Markov decision
+process), which is famous for being intractable to solve exactly at any
+real-world scale. `OccupancyGrid`'s log-odds update sidesteps that
+intractability by not actually solving the POMDP: it collapses the full
+distribution over grids down to one number per cell (the marginal
+occupancy probability, tracked independently per cell) and plans a
+single path against the resulting expected-cost map, rather than
+reasoning jointly over the exponentially large space of ways the whole
+grid's true state and the robot's future observations of it could
+unfold together. That's a real approximation, not a free lunch -- see
+`benchmark_results/uncertainty_writeup.md` and the DistanceSensorSuite
+discussion below for two separate, concrete ways a per-cell-independent
+belief can still get a robot into trouble a jointly-reasoned one
+wouldn't.
+
 **The central modeling distinction this study is built around: not all
 deviation is the same kind of deviation.** A robot can be wrong about
 where *it* is (pose error -- it started a little off its mark, or its
@@ -1230,7 +1252,17 @@ travel nudges `error` by a suite-specific `drift_per_cell` (Gaussian,
 matching the ftc/config.py-documented physical reasoning that
 wheel-encoder slip accumulates with distance traveled, not with the
 clock), and every successful AprilTag detection shrinks it back down by
-`APRILTAG_CORRECTION_FACTOR`. Planning and obstacle-sensing both happen
+a fraction that itself degrades with range and viewing obliquity (see
+`AprilTagSuite.tag_correction` and `ftc/config.py`'s
+`APRILTAG_CORRECTION_FACTOR_MAX`/`APRILTAG_RANGE_DEGRADATION`/
+`APRILTAG_ANGLE_DEGRADATION`) rather than a flat constant applied
+uniformly whenever a tag merely clears the range/FOV/line-of-sight
+gates -- real fiducial pose estimation doesn't stay equally good
+everywhere inside that envelope, and the headline reliability-per-
+dollar result (AprilTag as the best-value suite) was specifically
+re-checked against this more pessimistic model rather than assumed to
+survive it; it did, by roughly the same margin. Planning and
+obstacle-sensing both happen
 entirely in the robot's own *believed* frame -- exactly what a real
 robot does, since it only ever has its own possibly-wrong idea of where
 it is -- and the resulting motion command gets translated into the true

@@ -101,10 +101,33 @@ APRILTAG_RANGE_CELLS = round(72.0 / CELL_SIZE_IN)  # 12 cells
 # FOV is commonly ~60-78deg; tag readability angle is the tighter
 # constraint at this range).
 APRILTAG_FOV_DEG = 60.0
-# Fraction of accumulated pose error removed by one successful tag
-# detection -- not a full reset, since vision-based pose estimation has
-# its own residual error.
-APRILTAG_CORRECTION_FACTOR = 0.85
+#
+# Correction quality degrades with range and with viewing obliquity
+# (incidence angle off the tag's surface normal) -- real fiducial pose
+# estimation isn't uniformly good everywhere inside the nominal
+# range/FOV envelope: a tag's projected pixel area shrinks with
+# distance (fewer pixels -> noisier corner localization -> noisier
+# pose), and shrinks again under foreshortening as the viewing angle
+# gets more oblique (a tag viewed edge-on has far less usable corner
+# geometry than one viewed head-on), both independent of whether the
+# tag is technically still "detected" at all. These are documented
+# engineering estimates (same status as every other constant in this
+# file), not measurements of a real detector's error curve -- ftc/
+# calibration.py has no odometry-camera-specific calibration input for
+# this yet, only for drift-per-cell.
+#
+# Correction factor at the ideal case (close range, dead-on viewing
+# angle) -- still not a full reset, since even a great detection has
+# residual vision-pipeline error.
+APRILTAG_CORRECTION_FACTOR_MAX = 0.90
+# Fraction of APRILTAG_CORRECTION_FACTOR_MAX lost going from 0 range to
+# APRILTAG_RANGE_CELLS (linear falloff).
+APRILTAG_RANGE_DEGRADATION = 0.5
+# Fraction of APRILTAG_CORRECTION_FACTOR_MAX lost going from dead-on
+# (0deg incidence) to the edge of the usable FOV (APRILTAG_FOV_DEG/2
+# incidence) -- steeper than the range falloff, since foreshortening
+# degrades corner localization faster than distance alone does.
+APRILTAG_ANGLE_DEGRADATION = 0.6
 
 # math.radians(APRILTAG_FOV_DEG) etc. computed on demand where needed;
 # nothing below this line is a tunable, just a derived convenience.

@@ -10,7 +10,7 @@ Overall success rate, variance_level >= 0.3 across all three deviation types (ex
 |---|---:|---:|
 | Full suite | $230 | 56% |
 | Odometry pods | $100 | 45% |
-| AprilTag | $40 | 39% |
+| AprilTag | $40 | 35% |
 | Distance sensors | $90 | 21% |
 | Dead reckoning | $0 | 19% |
 
@@ -25,14 +25,14 @@ For each suite, the deviation type with the lowest mean success rate at variance
 | Dead reckoning | Start drift (pose error) | 5% | 5% | 41% | 11% |
 | Odometry pods | Start drift (pose error) | 9% | 9% | 79% | 27% |
 | Distance sensors | Start drift (pose error) | 9% | 9% | 26% | 28% |
-| AprilTag | Unplanned blocker (opponent robot) | 27% | 31% | 50% | 27% |
-| Full suite | Start drift (pose error) | 25% | 25% | 73% | 63% |
+| AprilTag | Unplanned blocker (opponent robot) | 23% | 24% | 51% | 23% |
+| Full suite | Start drift (pose error) | 29% | 29% | 73% | 63% |
 
 With no sensing at all (DeadReckoningSuite, the baseline every FTC team already has for free), **Start drift (pose error)** is what actually breaks a run. FullSuite's worst deviation type is the *same* one (Start drift (pose error)) -- spending on every suite at once didn't change which failure mode dominates, only how often it happens.
 
 ## Do the expensive suites earn their cost?
 
-- **AprilTag** ($40): +19% success rate over the free baseline -- +0.5pp/$100.
+- **AprilTag** ($40): +16% success rate over the free baseline -- +0.4pp/$100.
 - **Odometry pods** ($100): +26% success rate over the free baseline -- +0.3pp/$100.
 - **Full suite** ($230): +37% success rate over the free baseline -- +0.2pp/$100.
 - **Distance sensors** ($90): +2% success rate over the free baseline -- +0.0pp/$100.

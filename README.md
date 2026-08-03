@@ -83,13 +83,19 @@ is still here -- but it's infrastructure the FTC study runs on top of,
 not the point. Every planner below is a backend `nav/algorithms.py`'s
 `find_path` can swap in; `ftc/`'s policies and sensor suites all use A*
 exclusively (see "Research question" above), because A* is the correct
-tool at this grid scale (25x25-ish) and RRT/RRT* are not -- `nav/
-scale_benchmark.py` already shows RRT running up to 620x slower than A*
-with worse completeness as grid size grows (see "Scale benchmark"
-below). RRT/RRT* stay in this repo as explicit baselines -- useful for
-seeing *why* a heuristic-guided grid search beats a sampling-based
-planner here -- not as something the FTC study, or a real autonomous
-routine built on this code, should actually reach for at this scale.
+tool at this grid scale (25x25-ish) and RRT/RRT* are not. It's not
+(only) a speed argument -- `nav/kdtree.py`'s spatial index means RRT is
+no longer even the slow one (see "Scale benchmark" below) -- it's a
+completeness-class argument: Dijkstra/A* are resolution-complete on a
+grid (guaranteed to find a path at the grid's resolution if one
+exists), RRT is only probabilistically complete (guaranteed as sample
+count -> infinity, not at any fixed budget), and `nav/scale_benchmark.py`
+shows that gap showing up as real, measured incompleteness (8/8 -> 5/8)
+as grid size grows even with a fast nearest-neighbor search. RRT/RRT*
+stay in this repo as explicit baselines -- useful for seeing *why* an
+exhaustive heuristic-guided search beats a sampling-based one here --
+not as something the FTC study, or a real autonomous routine built on
+this code, should actually reach for at this scale.
 
 - Click to draw obstacles on a 25x25 grid, place a start and goal, and run
   Dijkstra, A\*, or RRT to watch the search expand cell by cell (or, for
@@ -432,23 +438,30 @@ a bigger grid?" Full data in `benchmark_results/scale_results.csv`, plot
 in `benchmark_results/scale_comparison.png`, analysis in
 `benchmark_results/scale_writeup.md`.
 
-| Size | Cells | Dijkstra avg | A\* avg | RRT avg | RRT found path |
+| Size | Cells | Dijkstra avg | A\* avg | RRT avg (k-d tree) | RRT found path |
 |---:|---:|---:|---:|---:|---:|
-| 20x20 | 400 | 0.439ms | 0.211ms | 0.431ms | 8/8 |
-| 50x50 | 2,500 | 2.610ms | 0.838ms | 3.964ms | 8/8 |
-| 100x100 | 10,000 | 9.588ms | 1.225ms | 118.834ms | 7/8 |
-| 200x200 | 40,000 | 61.985ms | 10.332ms | 267.127ms | 5/8 |
+| 20x20 | 400 | 0.465ms | 0.227ms | 0.443ms | 8/8 |
+| 50x50 | 2,500 | 2.679ms | 0.762ms | 1.520ms | 8/8 |
+| 100x100 | 10,000 | 9.732ms | 1.156ms | 15.162ms | 7/8 |
+| 200x200 | 40,000 | 56.511ms | 9.968ms | 58.548ms | 5/8 |
 
-A 100x increase in cells grows Dijkstra's runtime 141x but A\*'s only
-49x -- A\*'s search effort actually shrinks as a *fraction* of the grid
+A 100x increase in cells grows Dijkstra's runtime ~120x but A\*'s only
+~44x -- A\*'s search effort actually shrinks as a *fraction* of the grid
 as it grows (15.4% of the grid at 20x20, 7.0% at 200x200), since a
 heuristic-guided search tracks start-to-goal distance far more than
-total grid area. RRT is the outlier: 620x slower over the same
-increase, and its completeness degrades with scale (8/8 -> 8/8 -> 7/8 ->
-5/8) even with its step size and iteration budget both scaled up for
-fairness, because its unindexed nearest-neighbor search over a growing
-tree list is the real bottleneck, not the tuning. Full breakdown in
-`benchmark_results/scale_writeup.md`.
+total grid area. RRT's *speed* used to be the outlier here (620x slower
+over the same increase with a linear-scan nearest-neighbor search) but
+`nav/kdtree.py`'s spatial index closed most of that gap -- RRT is now
+faster than Dijkstra at every size above. Its *completeness* is a
+separate story the k-d tree doesn't touch: 8/8 -> 8/8 -> 7/8 -> 5/8 even
+with step size and iteration budget both scaled up for fairness, because
+Dijkstra/A\* are **resolution-complete** (guaranteed to find a path at
+the grid's resolution if one exists) while RRT is only
+**probabilistically complete** (guaranteed only as sample count ->
+infinity) -- a fixed iteration budget against a growing space is exactly
+the situation that guarantee doesn't cover. Full breakdown, including
+the before/after k-d tree numbers, in `benchmark_results/
+scale_writeup.md`.
 
 ## FTC sensor-suite study: results
 
@@ -463,18 +476,27 @@ chart, in `benchmark_results/ftc_suite_writeup.md`,
 |---|---:|---:|
 | Full suite | $230 | 56% |
 | Odometry pods | $100 | 45% |
-| AprilTag | $40 | 39% |
+| AprilTag | $40 | 35% |
 | Distance sensors | $90 | 21% |
 | Dead reckoning (baseline) | $0 | 19% |
 
+(AprilTag's correction model accounts for range- and viewing-angle-
+dependent degradation, not a flat correction whenever a tag is merely
+in view -- see `ftc/sensors.py`'s `AprilTagSuite.tag_correction` and
+`ftc/config.py`'s `APRILTAG_RANGE_DEGRADATION`/`APRILTAG_ANGLE_
+DEGRADATION`. The headline finding below was re-checked against this
+more pessimistic model specifically to see if it would survive a less
+generous assumption about its own winner -- it did.)
+
 FullSuite wins on raw success rate, but **AprilTag is the best value**:
 its success-rate gain over the free dead-reckoning baseline, per $100
-spent, is more than double FullSuite's -- the suites FullSuite stacks on
-top of AprilTag run into diminishing returns rather than each adding
-their standalone value again. Which deviation type actually dominates
-depends on the suite: dead reckoning's worst failure mode is pose
-error (start drift), not obstacle error, which is exactly what
-AprilTag (a pose-only fix) targets.
+spent, is still more than double FullSuite's (0.40pp/$100 vs.
+0.16pp/$100) even under that more pessimistic correction model -- the
+suites FullSuite stacks on top of AprilTag run into diminishing returns
+rather than each adding their standalone value again. Which deviation
+type actually dominates depends on the suite: dead reckoning's worst
+failure mode is pose error (start drift), not obstacle error, which is
+exactly what AprilTag (a pose-only fix) targets.
 
 The most useful negative result: **DistanceSensorSuite collides in
 roughly half its trials even at zero field deviation.** A controlled

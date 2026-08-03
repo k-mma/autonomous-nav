@@ -72,6 +72,22 @@ space a fixed sampling/iteration budget can actually cover -- and a
 faster nearest-neighbor search doesn't change it, since the k-d tree
 returns the *same* answer as the linear scan did, just faster to compute.
 
+This isn't a tuning problem to be fixed with a bigger iteration budget --
+it's the two algorithms belonging to different completeness classes.
+Dijkstra/A* on a grid are **resolution-complete**: if a path exists at
+the grid's resolution, the search is guaranteed to find it, full stop,
+because it's an exhaustive (heuristically-ordered, but exhaustive)
+search of a finite graph. RRT is only **probabilistically complete**:
+the probability of finding an existing path approaches 1 as the sample
+count approaches infinity, which is a guarantee *in the limit*, not at
+any fixed budget. `MAX_ITERS`/`step_size` scaling up with grid size
+(what this benchmark already does, "to give it a fair shot") narrows the
+gap between a finite budget and that limit, but never closes it --
+which is exactly the 8/8 -> 8/8 -> 7/8 -> 5/8 trend above: not a bug,
+not an implementation gap the k-d tree could have fixed, but the
+predicted behavior of a probabilistically-complete planner run under a
+budget that stays fixed while the space it has to cover keeps growing.
+
 **The honest takeaway for scaling this to a 1000x1000 grid or a real
 outdoor environment:** A* is still the clear answer for a static,
 fully-known grid at any of these sizes -- its relative search effort
