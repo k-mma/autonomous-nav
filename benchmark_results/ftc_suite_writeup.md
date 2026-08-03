@@ -32,12 +32,12 @@ With no sensing at all (DeadReckoningSuite, the baseline every FTC team already 
 
 ## Do the expensive suites earn their cost?
 
-- **AprilTag** ($40): +16% success rate over the free baseline -- +0.4pp/$100.
-- **Odometry pods** ($100): +26% success rate over the free baseline -- +0.3pp/$100.
-- **Full suite** ($230): +37% success rate over the free baseline -- +0.2pp/$100.
-- **Distance sensors** ($90): +2% success rate over the free baseline -- +0.0pp/$100.
+- **AprilTag** ($40): +16% success rate over the free baseline -- +40.0pp/$100.
+- **Odometry pods** ($100): +26% success rate over the free baseline -- +26.2pp/$100.
+- **Full suite** ($230): +37% success rate over the free baseline -- +16.2pp/$100.
+- **Distance sensors** ($90): +2% success rate over the free baseline -- +2.4pp/$100.
 
-**AprilTag** is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+0.2pp/$100) is lower than AprilTag's: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
+**AprilTag** is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+16.2pp/$100) is lower than AprilTag's: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
 
 ## Honest findings
 

@@ -490,8 +490,8 @@ generous assumption about its own winner -- it did.)
 
 FullSuite wins on raw success rate, but **AprilTag is the best value**:
 its success-rate gain over the free dead-reckoning baseline, per $100
-spent, is still more than double FullSuite's (0.40pp/$100 vs.
-0.16pp/$100) even under that more pessimistic correction model -- the
+spent, is still more than double FullSuite's (40.0pp/$100 vs.
+16.2pp/$100) even under that more pessimistic correction model -- the
 suites FullSuite stacks on top of AprilTag run into diminishing returns
 rather than each adding their standalone value again. Which deviation
 type actually dominates depends on the suite: dead reckoning's worst

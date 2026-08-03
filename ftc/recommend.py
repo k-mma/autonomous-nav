@@ -158,13 +158,17 @@ def main():
     best_success = max(predictions.values(), key=lambda p: p.success_rate)
     baseline_rate = predictions["dead_reckoning"].success_rate
     def value_per_100(p):
-        return (p.success_rate - baseline_rate) / (p.cost_usd / 100) if p.cost_usd > 0 else float("-inf")
+        # success_rate is a fraction (e.g. 0.35); *100 converts
+        # "fraction of success rate per $100" into percentage POINTS
+        # per $100, matching the "pp/$100" unit actually printed below
+        # (see ftc/suite_benchmark.py's write_writeup for the same fix).
+        return (p.success_rate - baseline_rate) / (p.cost_usd / 100) * 100 if p.cost_usd > 0 else float("-inf")
     best_value = max((p for p in predictions.values() if p.suite != "dead_reckoning"), key=value_per_100)
 
     print(f"\n=== Recommendation ===")
     print(f"Best raw success rate: {SUITE_LABELS[best_success.suite]} ({best_success.success_rate:.0%})")
     print(f"Best value (success-rate gain per $100 over dead reckoning): "
-          f"{SUITE_LABELS[best_value.suite]} ({value_per_100(best_value):+.2f}pp/$100)")
+          f"{SUITE_LABELS[best_value.suite]} ({value_per_100(best_value):+.1f}pp/$100)")
 
     if args.suite:
         chosen = predictions[args.suite]

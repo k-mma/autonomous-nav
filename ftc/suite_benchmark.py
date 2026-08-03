@@ -203,13 +203,20 @@ def plot_comparison(stats, path):
 
 
 def plot_reliability_per_dollar(stats, path):
+    """Bar height is (rate - baseline), a success-rate FRACTION, divided
+    by (cost / 100) -- i.e. fraction-of-success-rate per $100 spent.
+    Multiplying by 100 turns that into percentage POINTS per $100 (e.g.
+    a suite that's 16 percentage points better at $40 reads as +40, the
+    number you'd actually want to read off the bar) -- leaving it
+    unscaled would silently be 100x smaller than what the axis label
+    and the write_writeup() text below both claim to be showing."""
     baseline = overall_success_rate(stats, "dead_reckoning")
     suites = [s for s in SUITE_ORDER if s != "dead_reckoning"]
     gains_per_100 = []
     for suite in suites:
         rate = overall_success_rate(stats, suite)
         cost = SUITES[suite].cost_usd
-        gains_per_100.append((rate - baseline) / (cost / 100))
+        gains_per_100.append((rate - baseline) / (cost / 100) * 100)
 
     fig, ax = plt.subplots(figsize=(8, 5))
     colors = [SUITE_COLORS[s] for s in suites]
@@ -312,7 +319,13 @@ def write_writeup(stats, rows, path):
             continue
         cost = SUITES[suite].cost_usd
         gain = overall[suite] - baseline
-        per_100 = gain / (cost / 100) if cost > 0 else float("inf")
+        # gain is a success-rate FRACTION (e.g. 0.16); *100 turns
+        # "fraction of success rate per $100" into the percentage
+        # POINTS per $100 the "pp/$100" label below actually claims --
+        # without it, every printed value here was 100x smaller than
+        # its own unit label said (a real bug caught reviewing the
+        # symposium poster, which uses the corrected number).
+        per_100 = (gain / (cost / 100)) * 100 if cost > 0 else float("inf")
         value_lines.append((suite, cost, gain, per_100))
 
     for suite, cost, gain, per_100 in sorted(value_lines, key=lambda x: -x[3]):
