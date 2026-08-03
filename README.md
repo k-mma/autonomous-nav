@@ -1,17 +1,95 @@
 # autonomous-nav
 
-A pygame grid-pathfinding visualizer comparing Dijkstra, A\*, RRT, RRT\*, and
-D\* Lite, with weighted terrain, a simulated lidar sensor, dynamic
-obstacles, automatic replanning, and a benchmark suite -- plus a PyBullet
-port that drives real 3D robots along the *same* A* planning code, with
-path smoothing, cost-map-aware routing, a raycast lidar sensor, two robots
-coordinating through a shared corridor via a priority policy, and N robots
-crossing an intersection at once coordinated by Conflict-Based Search.
-Built as the first three legs of a longer autonomous-navigation project
-that continues toward ROS 2 / Nav2 (see `WRITEUPS.md` for the full
-narrative and the algorithm/interview explanations behind the code).
+**Research question:** which sensing investment actually buys reliability
+in a 30-second FTC (*FIRST* Tech Challenge) autonomous period, and at
+what level of field/reality deviation does each one become necessary?
 
-## What it does
+![Sensor suite success rate vs. deviation, one row per deviation type, with 95% bootstrap CI bands](benchmark_results/ftc_suite_comparison.png)
+
+**The finding:** FullSuite (distance sensors + AprilTag + odometry, $230)
+has the highest raw success rate, but **AprilTag alone ($40) delivers
+more than double FullSuite's success-rate gain per dollar spent** over
+the free dead-reckoning baseline -- and the most useful result is
+negative: DistanceSensorSuite collides in roughly half its trials even
+at *zero* field deviation, because 3 narrow ToF cones cover only ~75° of
+the 360° around the robot, not because of anything the field did. Which
+deviation type actually dominates depends on what a suite fixes -- pose
+error vs. obstacle error are different failure modes with different
+fixes, not one generic "uncertainty" axis. Full numbers in "FTC
+sensor-suite study: results" below and `benchmark_results/
+ftc_suite_writeup.md`; `ftc/suite_benchmark.py` is the study that
+produced them.
+
+An FTC team gets roughly 10 matches a season -- one noisy, unrepeatable
+trial each, no ground truth to compare against, and no control over how
+much the real field/robot deviates from what the autonomous routine
+assumed. That's not enough data to answer the research question
+empirically, no matter how many matches a team plays. A testbed
+calibrated against real field/robot deviation lets them run the
+hundreds of controlled, repeatable trials the physical process could
+never supply. That's this project's actual thesis: **simulation here is
+the only viable instrument for this question, not a stand-in for
+hardware you'd use if only you had more of it.** See "Research
+question" below for the full framing.
+
+Everything else in this repo -- the pathfinding planners, the
+weighted-terrain cost map, the sensor/occupancy/belief-planning models,
+`nav/uncertainty_benchmark.py`'s open-loop-vs-reactive-vs-belief study
+-- exists because it's the belief-planning machinery the FTC study is
+built on top of. It grew as a tour of pathfinding algorithms first (see
+"Planners the testbed swaps between" below and `WRITEUPS.md` for that
+narrative, which continues toward ROS 2 / Nav2); `ftc/` is where that
+machinery gets pointed at one specific, answerable question.
+
+## Research question
+
+FTC autonomous is a 30-second dash: drive from a known start to a
+scoring position using a pre-programmed route, with no driver input.
+Every team already senses *something* -- at minimum, motor encoders --
+and can buy more: odometry pods, distance sensors, AprilTag-based
+vision, or all three together. Each option costs real money and real
+integration time a team could spend elsewhere. Nothing about which one
+is worth it is obvious from specs alone, because the answer depends on
+*which kind* of deviation actually shows up on a given field: a robot
+that starts a few inches off its mark needs pose correction, not
+obstacle sensing; a field with elements that don't quite match the
+CAD, or an opponent robot parked somewhere unplanned, needs the
+opposite. `ftc/suite_benchmark.py` sweeps 5 sensor suites
+(`ftc/sensors.py`) against 3 independently-scaled deviation types
+(`nav/field_variance.py`, Phase 2's ablation) at 11 deviation levels, on
+a real 30-second time budget (`ftc/match.py`) -- the study a real season
+can't run, because it would need hundreds of matches to get the same
+statistical power this testbed gets in about a minute.
+
+## nav/ vs ftc/: a deliberate boundary
+
+`nav/` stays domain-neutral on purpose: `nav/policies.py`,
+`nav/occupancy.py`, `nav/field_variance.py`, `nav/algorithms.py`,
+`nav/grid.py`, and everything else under `nav/` read as a general
+belief-planning library, with no FTC-specific identifiers anywhere in
+them. `ftc/` is a separate top-level package that holds the domain
+specialization -- FTC names are correct and expected there, because
+that's literally what the code models (an 18in robot, a 144in field, a
+30-second clock, AprilTags). Keeping the boundary at the package level
+rather than scattering FTC-specific `if` branches through `nav/` is
+what lets `nav/`'s machinery keep being reusable for a different robot,
+a different field, or a different competition entirely -- the FTC study
+is one specific consumer of it, not what it's *for*.
+
+## Planners the testbed swaps between
+
+This project started as a tour of pathfinding algorithms, and that tour
+is still here -- but it's infrastructure the FTC study runs on top of,
+not the point. Every planner below is a backend `nav/algorithms.py`'s
+`find_path` can swap in; `ftc/`'s policies and sensor suites all use A*
+exclusively (see "Research question" above), because A* is the correct
+tool at this grid scale (25x25-ish) and RRT/RRT* are not -- `nav/
+scale_benchmark.py` already shows RRT running up to 620x slower than A*
+with worse completeness as grid size grows (see "Scale benchmark"
+below). RRT/RRT* stay in this repo as explicit baselines -- useful for
+seeing *why* a heuristic-guided grid search beats a sampling-based
+planner here -- not as something the FTC study, or a real autonomous
+routine built on this code, should actually reach for at this scale.
 
 - Click to draw obstacles on a 25x25 grid, place a start and goal, and run
   Dijkstra, A\*, or RRT to watch the search expand cell by cell (or, for
@@ -47,7 +125,11 @@ narrative and the algorithm/interview explanations behind the code).
   `pygame_app/scenarios/scenario_maze.py`,
   `pygame_app/scenarios/scenario_costmap.py`) instead of needing manual
   clicks to reach it -- built on `pygame_app/scenario.py`'s
-  `ScenarioConfig`.
+  `ScenarioConfig`. `pygame_app/scenarios/scenario_uncertainty.py` is the
+  one exception (its own standalone pygame loop, not built on
+  `ScenarioConfig`): a live, watchable replay of nav/uncertainty_
+  benchmark.py's headline open-loop/reactive/belief comparison, ground
+  truth on the left and the policy's current belief on the right.
 - `nav/benchmark.py` runs all three original algorithms across 20 random
   grids and plots the comparison (see results below); `nav/scale_benchmark.py`
   reruns the comparison holding density fixed and scaling grid size instead
@@ -82,6 +164,10 @@ python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset
 python3 -m nav.benchmark                         # regenerate benchmark_results/
 python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
 python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
+python3 -m nav.uncertainty_benchmark             # regenerate the open-loop/reactive/belief uncertainty study
+python3 -m ftc.suite_benchmark                   # regenerate the FTC sensor-suite study -- the headline result
+python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
+python3 -m ftc.recommend                         # decision CLI: suite ranking + predicted success/time/cost
 python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
 python3 pybullet_app/pybullet_main.py --sensor    # ... with the raycast lidar instead of a perfect map
 python3 pybullet_app/pybullet_multi_robot_main.py # two robots, forced corridor conflict
@@ -140,7 +226,11 @@ keeping that step if it doesn't cross an obstacle, until a node lands near
 the goal. It finds *a* path fast in open space and isn't restricted to
 grid-aligned moves, but -- unlike Dijkstra/A\* here -- it gives up
 optimality and determinism: the same grid produces a different tree, and a
-different path, every run.
+different path, every run. **This is the wrong tool at this project's
+grid scale** (see "Scale benchmark" below and "Planners the testbed
+swaps between" above) -- kept as an explicit, measured baseline showing
+why, not a planner anything downstream (`ftc/`, the replanning policies)
+actually uses.
 
 Full mechanics, the admissibility argument, the replanning policy, the
 cost-map/sensor-model design, and the heuristic-breaking experiments are
@@ -360,6 +450,107 @@ fairness, because its unindexed nearest-neighbor search over a growing
 tree list is the real bottleneck, not the tuning. Full breakdown in
 `benchmark_results/scale_writeup.md`.
 
+## FTC sensor-suite study: results
+
+The answer to this project's research question, from `ftc/suite_benchmark.py`
+(25 trials x 5 suites x 3 independently-scaled deviation types x 11
+deviation levels, on the "cluttered" field layout). Full breakdown,
+including the per-deviation-type charts and the reliability-per-dollar
+chart, in `benchmark_results/ftc_suite_writeup.md`,
+`ftc_suite_comparison.png`, and `ftc_reliability_per_dollar.png`.
+
+| Suite | Cost | Overall success rate (variance_level >= 0.3) |
+|---|---:|---:|
+| Full suite | $230 | 56% |
+| Odometry pods | $100 | 45% |
+| AprilTag | $40 | 39% |
+| Distance sensors | $90 | 21% |
+| Dead reckoning (baseline) | $0 | 19% |
+
+FullSuite wins on raw success rate, but **AprilTag is the best value**:
+its success-rate gain over the free dead-reckoning baseline, per $100
+spent, is more than double FullSuite's -- the suites FullSuite stacks on
+top of AprilTag run into diminishing returns rather than each adding
+their standalone value again. Which deviation type actually dominates
+depends on the suite: dead reckoning's worst failure mode is pose
+error (start drift), not obstacle error, which is exactly what
+AprilTag (a pose-only fix) targets.
+
+The most useful negative result: **DistanceSensorSuite collides in
+roughly half its trials even at zero field deviation.** A controlled
+check (same trials, pose drift forced to zero) shows about two-thirds
+of those collisions persist regardless -- the dominant cause isn't pose
+drift, it's that 3 narrow ToF cones at ~12.5&deg; half-angle each cover
+only about 75&deg; of the 360&deg; around the robot. A sparse fixed-cone
+sensor suite has real, geometry-driven blind spots that this project's
+own `nav/sensor.py` LidarSensor (a full disc scan) doesn't have --
+buying distance sensors without covering enough of the robot's
+perimeter can be worse than not sensing at all.
+
+`nav/uncertainty_benchmark.py`'s own (domain-neutral) study still holds
+at the retrofit-statistical-rigor bar Phase 3 asked for: reactive
+replanning's success-rate CI separates from open-loop's by
+variance_level=0.2 and stays separated the rest of the way, and belief-
+based planning still collides in a handful of trials even at
+variance_level=0.0 (see `benchmark_results/uncertainty_writeup.md`) --
+the same class of finding as DistanceSensorSuite above, just for a
+different reason (stale occupancy belief crossing the hard-obstacle
+threshold too late, not an unseen blind spot).
+
+Turn a real field/robot's own measurements into where it actually sits
+on this study's deviation axis with `ftc/calibration.py`, and get a
+suite recommendation for it with `ftc/recommend.py` -- see "How to run"
+above. Both ship a clearly labeled synthetic placeholder dataset and
+print which one (real or placeholder) they're actually running on; see
+the next section for why that distinction matters as much as the
+numbers themselves.
+
+## Threats to validity / limitations
+
+Naming these plainly is what separates a research testbed from a demo
+-- none of them are secret, and none of them are fixed by this repo
+alone.
+
+- **Synthetic ground truth.** Every trial's "ground truth" grid
+  (`nav/field_variance.py`'s `generate_ground_truth`) is a
+  procedurally-perturbed copy of the assumed map, not a measurement of
+  a real field. The perturbation model (start drift, obstacle drift,
+  an unplanned blocker) is a hypothesis about what kinds of deviation
+  matter, not a validated model of what FTC fields actually do.
+- **Uncalibrated variance, until real measurements are supplied.**
+  `variance_level` and `ftc/sensors.py`'s drift-rate constants are
+  order-of-magnitude engineering estimates (see ftc/config.py's
+  per-constant source comments) until `ftc/calibration.py` is run
+  against real CSVs. Every number in `benchmark_results/
+  ftc_suite_writeup.md` is only as meaningful as that calibration is
+  accurate -- right now, none of it has been checked against a real
+  field or robot; the synthetic placeholder dataset exists to make the
+  pipeline runnable, not to make its output trustworthy.
+- **Simplified kinematics.** `ftc/match.py` charges drive time as
+  distance/MAX_DRIVE_SPEED_MPS plus a flat per-90-degree-turn cost --
+  no acceleration/deceleration, no wheel slip beyond the modeled pose
+  drift, no mecanum-specific strafing advantage despite `ftc/field.py`
+  defaulting to 8-directional movement on the assumption of a holonomic
+  drivetrain. A real robot's actual time-to-goal will differ from this
+  model's prediction by some amount this repo doesn't measure.
+- **No opponent modeling.** `unplanned_blocker` treats an opponent
+  robot as a single static obstacle dropped on the planned route with
+  some probability -- not a robot with its own goals, motion, or
+  reaction to your robot's presence. Real alliance/opponent interaction
+  in a match is much richer than this.
+- **One field layout for the headline study.** `ftc/suite_benchmark.py`
+  runs on the `'cluttered'` layout only; `ftc/field.py` ships `'sparse'`
+  and `'corridor'` too, but the headline numbers in this README and
+  `benchmark_results/ftc_suite_writeup.md` haven't been checked for how
+  much they'd shift on a different layout.
+- **Small, fast trials mean the 30-second budget rarely binds.** On
+  the grid scale and layouts this repo actually sweeps, most runs
+  finish in a few seconds -- `ftc_suite_writeup.md`'s own "Honest
+  findings" section notes no suite ran out of budget in the headline
+  sweep. A larger/more cluttered field or a tighter budget would be
+  needed to make AUTONOMOUS_PERIOD_S itself the binding constraint
+  rather than success/collision, which is currently untested.
+
 ## Repo layout
 
 Pygame-only and PyBullet-only code live in their own top-level
@@ -387,17 +578,34 @@ nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ i
   benchmark.py        20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
   scale_benchmark.py  20x20 - 200x200 grid-size scaling benchmark -> CSV + plot
   replan_benchmark.py D* Lite vs fresh A* on moving-obstacle/sensor-discovery replanning -> CSV + plot
+  occupancy.py        Log-odds occupancy grid + BeliefGrid -- plans against expected cost, not a binary known/unknown split
+  field_variance.py   Turns "how far reality deviates from the assumed map" into a sweepable knob, 3 independently-scalable deviation types
+  policies.py         OpenLoopPolicy / ReactivePolicy / BeliefPolicy behind one shared interface
+  uncertainty_benchmark.py  Open-loop vs reactive vs belief under swept map/reality deviation -> CSV + plot + statistical crossover
+  stats.py            Pure-stdlib bootstrap confidence intervals (no numpy/scipy in this venv)
   scratch/         Standalone throwaway scripts used to prove each piece
                     works before it was wired into the visualizer/pybullet_main
                     (framework-agnostic tests only -- pygame/PyBullet-specific
                     ones live under pygame_app/ and pybullet_app/ instead)
+
+ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
+                    in this repo where FTC-specific names/numbers belong.
+  config.py          Field/robot/match/sensor constants, each with its real-world source noted
+  field.py           Parameterized field layouts (not tied to one season's game) -> a real-footprint-inflated nav.grid.Grid
+  sensors.py         5 sensor suites (dead reckoning / odometry / distance sensors / AprilTag / full) -- which fix POSE error vs OBSTACLE error
+  match.py           30-second autonomous-period budget model: drive + turn + replan time, pose-error offset mechanic
+  suite_benchmark.py The headline study -- suite x deviation type x deviation level x trials -> CSV + 2 plots + writeup
+  calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
+  recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
+  scratch/         Same role as nav/scratch/, for the FTC-specific pieces
 
 pygame_app/        Everything that touches pygame
   main.py            Entry point: opens the interactive visualizer
   visualizer.py      The pygame app
   scenario.py        ScenarioConfig -- preset state for scenarios/*.py
   scenarios/         Standalone launchers that open the visualizer into a preset scene
-                      (maze, cost map, bottleneck, noisy sensor, step replay, ...)
+                      (maze, cost map, bottleneck, noisy sensor, step replay, uncertainty comparison, ...)
+  scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths
 
 pybullet_app/      Everything that touches PyBullet
   pybullet_main.py             Single-robot PyBullet demo (plan -> smooth -> drive, + --sensor/--terrain)

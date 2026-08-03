@@ -86,7 +86,8 @@ def _drift_start(grid, start, radius, rng):
     return rng.choice(candidates) if candidates else start
 
 
-def generate_ground_truth(assumed_grid, start, goal, variance_level, seed):
+def generate_ground_truth(assumed_grid, start, goal, variance_level, seed,
+                           start_drift_scale=1.0, obstacle_drift_scale=1.0, blocker_scale=1.0):
     """
     Build a "ground truth" Grid that models how far the real world can
     diverge from `assumed_grid` -- the map a policy plans against -- at a
@@ -99,21 +100,32 @@ def generate_ground_truth(assumed_grid, start, goal, variance_level, seed):
     (nav/config.py) at 1.0:
 
     - **Start drift**: the robot's real starting cell is displaced from
-      `start` by up to `round(variance_level * FIELD_VARIANCE_MAX_START_
-      DRIFT_RADIUS)` cells (Chebyshev radius).
+      `start` by up to `round(variance_level * start_drift_scale *
+      FIELD_VARIANCE_MAX_START_DRIFT_RADIUS)` cells (Chebyshev radius).
     - **Obstacle drift**: up to `round(variance_level *
-      FIELD_VARIANCE_MAX_OBSTACLE_DRIFT_COUNT)` free cells are flipped to
-      obstacles, and the same number of assumed-obstacle cells are freed.
-    - **Unplanned blocker**: with probability exactly `variance_level`,
-      one additional obstacle is placed on a random interior cell of the
-      assumed start->goal path (found via nav.algorithms.astar on
-      `assumed_grid`) -- never the start or goal cell itself, and skipped
-      entirely if the assumed map has no path.
+      obstacle_drift_scale * FIELD_VARIANCE_MAX_OBSTACLE_DRIFT_COUNT)`
+      free cells are flipped to obstacles, and the same number of
+      assumed-obstacle cells are freed.
+    - **Unplanned blocker**: with probability `min(variance_level *
+      blocker_scale, 1.0)`, one additional obstacle is placed on a
+      random interior cell of the assumed start->goal path (found via
+      nav.algorithms.astar on `assumed_grid`) -- never the start or goal
+      cell itself, and skipped entirely if the assumed map has no path.
 
-    At variance_level == 0.0 every deviation's magnitude/probability is
-    exactly 0, so `ground_truth` is cell-for-cell identical to
-    `assumed_grid` and `actual_start == start`. At variance_level == 1.0
-    every deviation is at its configured maximum.
+    `start_drift_scale`, `obstacle_drift_scale`, and `blocker_scale`
+    each independently multiply their deviation type's magnitude on top
+    of `variance_level`, all defaulting to 1.0 -- every existing caller
+    that doesn't pass them sees no change at all. They exist so a study
+    can hold two deviation types at scale 0 (fully off) while sweeping
+    `variance_level` to isolate the third's effect alone -- see
+    ftc/suite_benchmark.py's deviation-type sweep, the reason the
+    original bundled-into-one-knob version couldn't explain *why* a
+    given sensor suite wins or loses.
+
+    At variance_level == 0.0 (or any scale == 0.0) that deviation type's
+    magnitude/probability is exactly 0. At variance_level == 1.0 with
+    every scale at its default 1.0, every deviation is at its configured
+    maximum -- the original, unscaled behavior.
 
     Deterministic given `seed`: the same (assumed_grid, start, goal,
     variance_level, seed) always produces the exact same
@@ -127,11 +139,12 @@ def generate_ground_truth(assumed_grid, start, goal, variance_level, seed):
     rng = random.Random(seed)
     ground_truth = _clone_grid(assumed_grid)
 
-    obstacle_count = round(variance_level * FIELD_VARIANCE_MAX_OBSTACLE_DRIFT_COUNT)
+    obstacle_count = round(variance_level * obstacle_drift_scale * FIELD_VARIANCE_MAX_OBSTACLE_DRIFT_COUNT)
     _drift_obstacles(ground_truth, start, goal, obstacle_count, rng)
-    _place_unplanned_blocker(ground_truth, assumed_grid, start, goal, variance_level, rng)
+    blocker_probability = min(variance_level * blocker_scale, 1.0)
+    _place_unplanned_blocker(ground_truth, assumed_grid, start, goal, blocker_probability, rng)
 
-    start_radius = round(variance_level * FIELD_VARIANCE_MAX_START_DRIFT_RADIUS)
+    start_radius = round(variance_level * start_drift_scale * FIELD_VARIANCE_MAX_START_DRIFT_RADIUS)
     actual_start = _drift_start(ground_truth, start, start_radius, rng)
 
     return ground_truth, actual_start

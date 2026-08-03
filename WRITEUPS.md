@@ -1187,3 +1187,118 @@ the closest approach across the whole simulation was 0.46m, for both a
 footprints (radius ~0.17m each, per the two-robot demo's own numbers)
 would need to actually touch. Zero contact, confirmed by measurement,
 not inferred from the discrete plan being conflict-free on paper.
+
+## The FTC sensor-suite study: pose error vs. obstacle error
+
+Everything above is a domain-neutral belief-planning toolkit. `ftc/` is
+where it gets pointed at one specific, answerable question: *which
+sensing investment actually buys reliability in a 30-second FTC
+autonomous period, and at what level of field/reality deviation does
+each one become necessary?* See README.md's "Research question" and
+"nav/ vs ftc/" sections for the framing and the reason the FTC-specific
+code lives in its own package instead of leaking into `nav/`.
+
+**The central modeling distinction this study is built around: not all
+deviation is the same kind of deviation.** A robot can be wrong about
+where *it* is (pose error -- it started a little off its mark, or its
+wheels slipped over the course of the run) or wrong about what the
+*field* looks like (obstacle error -- a game element sits somewhere
+other than the CAD says, or an opponent robot parked somewhere
+unplanned). Nothing about a sensor suite's marketing tells you which
+one it fixes. `ftc/sensors.py`'s five suites split cleanly along that
+line: `OdometryPodSuite` and `AprilTagSuite` only ever touch pose error
+(`fixes_pose = True`, `senses_obstacles = False`); `DistanceSensorSuite`
+only ever touches obstacle error (the reverse); `FullSuite` is the only
+one that touches both; `DeadReckoningSuite` touches neither and is what
+every FTC team already has for free. `nav/field_variance.py`'s Phase 2
+ablation (`start_drift_scale` / `obstacle_drift_scale` / `blocker_scale`,
+added on top of the pre-existing bundled `variance_level` knob) exists
+specifically so a sweep can isolate one deviation type at a time instead
+of only ever seeing their combined effect -- without that split there'd
+be no way to explain *why* a given suite wins or loses, only that it
+does.
+
+**Pose error is modeled as a continuous drift, not a one-shot offset.**
+nav/'s own uncertainty study (`nav/uncertainty_benchmark.py`) only ever
+applies a single fixed start-position offset per trial, via
+`OpenLoopPolicy`'s `_offset` mechanic. A real robot's pose estimate
+keeps drifting for the whole match, and can be *corrected* mid-match by
+a suite that senses something absolute (an AprilTag). `ftc/match.py`
+generalizes the offset mechanic into a continuous vector `error` such
+that `true_position = believed_position + error`: every cell of real
+travel nudges `error` by a suite-specific `drift_per_cell` (Gaussian,
+matching the ftc/config.py-documented physical reasoning that
+wheel-encoder slip accumulates with distance traveled, not with the
+clock), and every successful AprilTag detection shrinks it back down by
+`APRILTAG_CORRECTION_FACTOR`. Planning and obstacle-sensing both happen
+entirely in the robot's own *believed* frame -- exactly what a real
+robot does, since it only ever has its own possibly-wrong idea of where
+it is -- and the resulting motion command gets translated into the true
+frame by the *current* `error` before being checked against ground
+truth. That's also why `ftc/scratch/match_test.py` has to reach for
+`PLANNING_OVERHEAD_S`-patching rather than a straight elapsed_s
+comparison across suites to prove replanning costs real time: two
+suites that replan a different number of times also, in general, drive
+different paths, so a naive "the one that replanned more took longer"
+comparison is confounded by route length and can point the wrong way.
+
+**The headline numbers** (25 trials x 5 suites x 3 deviation types x 11
+deviation levels, `ftc/suite_benchmark.py`, full methodology and tables
+in `benchmark_results/ftc_suite_writeup.md`): FullSuite has the highest
+raw success rate (56% at variance_level >= 0.3, averaged across all
+three deviation types), but AprilTag -- the cheapest suite that fixes
+anything at all -- has more than double FullSuite's success-rate gain
+per dollar spent over the free DeadReckoningSuite baseline. Which
+deviation type actually dominates a given suite's failures depends on
+what that suite fixes: DeadReckoningSuite's worst failure mode is pose
+error (start drift), the thing a $40 AprilTag setup targets directly,
+not obstacle error.
+
+**The most useful result is the negative one, and it very nearly got
+mis-attributed.** DistanceSensorSuite collides in roughly half its
+trials even at variance_level=0.0 -- ground truth cell-for-cell
+identical to the assumed map, every deviation type at exactly zero. The
+first-draft writeup blamed this on a SLAM-style consistency problem
+(sensed-obstacle positions recorded in the robot's believed frame going
+stale as pose error drifts between detection and use) -- a real,
+plausible-sounding mechanism, and one this project's own nav/ study
+already has a documented precedent for (BeliefPolicy's nonzero collision
+rate at variance_level=0.0, `benchmark_results/uncertainty_writeup.md`).
+It was wrong, or at least not the dominant cause: a controlled check
+(the same trials, `drift_per_cell` forced to 0 so pose error can't be a
+factor at all) showed roughly two-thirds of the collisions persisting
+anyway. The real, dominant cause is geometry -- `DISTANCE_SENSOR_COUNT`
+narrow ToF cones (`DISTANCE_SENSOR_HALF_ANGLE_DEG` half-angle each,
+mounted front/left/right) cover only about 75 of the 360 degrees around
+the robot; anything in the remaining ~285-degree gap, a very plausible
+place for an obstacle to sit relative to a robot mid-turn on a diagonal
+grid, is simply never seen until the next planned step walks straight
+into it. `ftc/scratch/sensors_test.py`'s `check_cone_sensor_stays_in_cone`
+exists specifically to keep this honest going forward -- it rings a
+sensor with obstacles at every cell in range and asserts every single
+reported detection actually falls inside a mount's cone, so this
+blind-spot finding can never quietly become an artifact of a sensor
+model that secretly sees more than it claims to. The corrected finding
+is blunter than the original SLAM-consistency story: a sparse fixed-cone
+suite has real, geometry-driven blind spots a full lidar-style disc scan
+(`nav/sensor.py`'s `LidarSensor`, which `ReactivePolicy` never collides
+with) doesn't have, and buying distance sensors without covering enough
+of the robot's perimeter can be worse than not sensing at all.
+
+**Calibration (`ftc/calibration.py`) and the decision tool
+(`ftc/recommend.py`)** are the other half of making `variance_level`
+mean something. Every chart above is indexed by an arbitrary [0, 1]
+number; `ftc/calibration.py` fits the corresponding real-world
+components from two kinds of measurement (nominal-vs-actual field-
+element positions, for obstacle_drift; measured dead-reckoning drift
+over a real 30-second run, for a pose-drift rate and, from that, a
+start_drift-equivalent level) rather than requiring you to guess where
+your own field/robot sits on that axis. It ships a clearly labeled
+synthetic placeholder dataset so `ftc/recommend.py` has something to run
+against immediately, and every single output -- from `Calibration.
+describe()`'s per-component `[REAL MEASURED DATA]` / `[SYNTHETIC
+PLACEHOLDER]` tags on up through `ftc/recommend.py`'s CLI banner --
+states plainly which one it's looking at. No number produced by either
+tool should be read as "the real answer" until real measurement CSVs
+have actually been dropped in; see both modules' docstrings for the
+exact CSV column contract.

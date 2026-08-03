@@ -30,20 +30,16 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from nav.algorithms import astar
-from nav.config import GRID_SIZE
+from nav.config import GRID_SIZE, LIDAR_RADIUS
 from nav.field_variance import generate_ground_truth
 from nav.grid import Grid
 from nav.policies import BeliefPolicy, OpenLoopPolicy, ReactivePolicy
+from nav.stats import bootstrap_ci
 
 DENSITY = 0.12
 MAX_ATTEMPTS_PER_TRIAL = 50
 VARIANCE_LEVELS = [round(i / 10, 1) for i in range(11)]  # 0.0, 0.1, ..., 1.0
 TRIALS_PER_COMBO = 20
-# Crossover is reported at the first variance_level where a closed-loop
-# policy's success rate beats OpenLoopPolicy's by at least this much --
-# a small margin so a couple of trials flipping by chance at the
-# boundary doesn't get reported as "the" crossover.
-CROSSOVER_MARGIN = 0.15
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
 
 POLICIES = {
@@ -79,15 +75,17 @@ def _random_grid(rng, size=GRID_SIZE, density=DENSITY):
     return grid, start, goal
 
 
-def _solvable_scenario(trial_seed):
+def _solvable_scenario(trial_seed, density=DENSITY):
     """One (assumed grid, start, goal, assumed_path) tuple, reused across
     every policy and every variance_level for this trial index -- only
     `generate_ground_truth`'s output differs by variance_level, so a
     policy's outcome differs only because of the policy and the
-    deviation, never because it got an easier or harder random grid."""
+    deviation, never because it got an easier or harder random grid.
+    `density` is only ever overridden by run_sensitivity's density
+    sweep; every other caller gets the module's fixed DENSITY."""
     rng = random.Random(trial_seed)
     for _ in range(MAX_ATTEMPTS_PER_TRIAL):
-        grid, start, goal = _random_grid(rng)
+        grid, start, goal = _random_grid(rng, density=density)
         if grid is None:
             continue
         path, _, _ = astar(grid, start, goal)
@@ -128,16 +126,23 @@ def execute_trial(policy, ground_truth, actual_start, goal, max_steps):
     return TrialOutcome(success=(current == goal), cost=cost, collisions=collisions, steps=steps)
 
 
-def run_variance_level(variance_level, num_trials, base_seed):
+def run_variance_level(variance_level, num_trials, base_seed, density=DENSITY, sensor_radius=LIDAR_RADIUS):
+    """`density` and `sensor_radius` default to this module's fixed
+    constants for the headline sweep; run_sensitivity overrides them to
+    ask whether the crossover finding moves when either changes."""
     rows = []
     for t in range(num_trials):
         trial_seed = base_seed + t
-        grid, start, goal, path = _solvable_scenario(trial_seed)
+        grid, start, goal, path = _solvable_scenario(trial_seed, density=density)
         ground_truth, actual_start = generate_ground_truth(grid, start, goal, variance_level, seed=trial_seed)
         max_steps = min(4 * len(path), len(path) + 60)
 
         for policy_name in POLICY_ORDER:
-            policy = POLICIES[policy_name](grid, start, goal, rng=random.Random(trial_seed))
+            if policy_name == "open_loop":
+                policy = POLICIES[policy_name](grid, start, goal, rng=random.Random(trial_seed))
+            else:
+                policy = POLICIES[policy_name](grid, start, goal, sensor_radius=sensor_radius,
+                                                rng=random.Random(trial_seed))
             outcome = execute_trial(policy, ground_truth, actual_start, goal, max_steps)
             rows.append({
                 "policy": policy_name,
@@ -161,18 +166,35 @@ def write_csv(rows, path):
         writer.writerows(rows)
 
 
+def _bootstrap_seed(policy, level):
+    """A plain int derived from (policy, level) rather than hashing the
+    tuple directly -- Python's hash randomization makes str hashes
+    (and therefore tuple hashes containing a str) differ run to run,
+    which would make bootstrap_ci's CI width jitter between two runs
+    over the *identical* trial data. POLICY_ORDER's index keeps this
+    deterministic across runs and processes."""
+    return 3_000_000 + POLICY_ORDER.index(policy) * 10_000 + round(level * 1000)
+
+
 def aggregate(rows):
-    """{(policy, variance_level): {success_rate, avg_cost, collision_rate,
-    avg_planning_ms, avg_replans}}, avg_cost averaged over successful
-    trials only (a partial, failed-trial cost isn't comparable to a full
-    start->goal traversal)."""
+    """{(policy, variance_level): {success_rate, ci_lo, ci_hi, avg_cost,
+    collision_rate, avg_planning_ms, avg_replans}}, avg_cost averaged
+    over successful trials only (a partial, failed-trial cost isn't
+    comparable to a full start->goal traversal). ci_lo/ci_hi is a 95%
+    bootstrap CI on success_rate (nav/stats.py) -- at TRIALS_PER_COMBO
+    == 20 points/policy/level, a bare percentage with no interval is the
+    weakest part of this benchmark; see find_crossover for what actually
+    reading these intervals changes about the crossover claim."""
     stats = {}
     for policy in POLICY_ORDER:
         for level in VARIANCE_LEVELS:
             matching = [r for r in rows if r["policy"] == policy and r["variance_level"] == level]
             successes = [r for r in matching if r["success"]]
+            ci_lo, ci_hi = bootstrap_ci(len(successes), len(matching), seed=_bootstrap_seed(policy, level))
             stats[(policy, level)] = {
                 "success_rate": len(successes) / len(matching) if matching else 0.0,
+                "ci_lo": ci_lo,
+                "ci_hi": ci_hi,
                 "avg_cost": (sum(r["path_cost"] for r in successes) / len(successes)) if successes else 0.0,
                 "collision_rate": sum(r["collisions"] for r in matching) / len(matching) if matching else 0.0,
                 "avg_planning_ms": sum(r["planning_time_ms"] for r in matching) / len(matching) if matching else 0.0,
@@ -183,18 +205,27 @@ def aggregate(rows):
 
 def find_crossover(stats):
     """First variance_level where a closed-loop policy's (reactive or
-    belief) success rate beats open_loop's by at least CROSSOVER_MARGIN,
-    and stays at or above that margin for every remaining level --
-    "stays" so a lone lucky open_loop run at one level, surrounded by
-    worse ones on both sides, doesn't get reported as if the gap closed
-    back up. Returns None if it never happens."""
+    belief) 95% bootstrap CI on success rate no longer overlaps open_
+    loop's -- i.e. the closed-loop policy's ci_lo is strictly above
+    open_loop's ci_hi -- and stays non-overlapping for every remaining
+    level, so a lone lucky open_loop run at one level surrounded by
+    worse ones on both sides doesn't get reported as if the gap closed
+    back up. This replaces the old fixed-margin version (a flat 15-point
+    gap regardless of how much sampling noise 20 trials/point actually
+    produces) with an honest statistical claim: "the intervals stop
+    overlapping here," not "someone picked a margin that looked right."
+
+    Returns None if the CIs never cleanly separate anywhere in the
+    swept range -- that's a real, reportable answer (see write_writeup),
+    not a failure of this function.
+    """
     for i, level in enumerate(VARIANCE_LEVELS):
         gap_holds = True
         for later_level in VARIANCE_LEVELS[i:]:
-            open_rate = stats[("open_loop", later_level)]["success_rate"]
-            best_closed = max(stats[("reactive", later_level)]["success_rate"],
-                               stats[("belief", later_level)]["success_rate"])
-            if best_closed - open_rate < CROSSOVER_MARGIN:
+            open_hi = stats[("open_loop", later_level)]["ci_hi"]
+            best_closed_lo = max(stats[("reactive", later_level)]["ci_lo"],
+                                  stats[("belief", later_level)]["ci_lo"])
+            if best_closed_lo <= open_hi:
                 gap_holds = False
                 break
         if gap_holds:
@@ -207,10 +238,14 @@ def plot_results(stats, path, crossover):
 
     for policy in POLICY_ORDER:
         success = [stats[(policy, level)]["success_rate"] for level in VARIANCE_LEVELS]
+        ci_lo = [stats[(policy, level)]["ci_lo"] for level in VARIANCE_LEVELS]
+        ci_hi = [stats[(policy, level)]["ci_hi"] for level in VARIANCE_LEVELS]
+        ax1.fill_between(VARIANCE_LEVELS, ci_lo, ci_hi, color=POLICY_COLORS[policy], alpha=0.15, linewidth=0)
         ax1.plot(VARIANCE_LEVELS, success, "o-", label=POLICY_LABELS[policy], color=POLICY_COLORS[policy])
     ax1.set_ylabel("Success rate")
     ax1.set_ylim(-0.05, 1.05)
-    ax1.set_title(f"Planning policy vs. map/reality deviation ({TRIALS_PER_COMBO} trials/point)")
+    ax1.set_title(f"Planning policy vs. map/reality deviation ({TRIALS_PER_COMBO} trials/point, "
+                   "shaded = 95% bootstrap CI)")
     if crossover is not None:
         ax1.axvline(crossover, color="black", linestyle="--", linewidth=1)
         ax1.annotate(f"crossover\nvariance_level={crossover}", xy=(crossover, 0.5),
@@ -232,7 +267,7 @@ def plot_results(stats, path, crossover):
     fig.savefig(path, dpi=150)
 
 
-def write_writeup(stats, crossover, path):
+def write_writeup(stats, crossover, path, sensitivity=None):
     lines = [
         "# Open-loop vs. reactive vs. belief-based planning under map/reality deviation",
         "",
@@ -248,19 +283,26 @@ def write_writeup(stats, crossover, path):
     ]
     if crossover is None:
         lines.append(
-            "No crossover found in [0.0, 1.0]: a closed-loop policy never beat OpenLoopPolicy's "
-            f"success rate by the {CROSSOVER_MARGIN:.0%} margin this analysis required, at every "
-            "level from that point to 1.0."
+            "No statistical crossover found in [0.0, 1.0]: at no level does a closed-loop policy's "
+            "95% bootstrap CI on success rate separate cleanly from OpenLoopPolicy's and *stay* "
+            "separated through variance_level=1.0. Saying so honestly here matters more than forcing "
+            "a number -- see `uncertainty_comparison.png`'s shaded CI bands for where the curves "
+            "actually sit relative to each other; they may still visually diverge without the "
+            "intervals ever cleanly separating at this trial count."
         )
     else:
         open_at = stats[("open_loop", crossover)]["success_rate"]
+        open_ci = stats[("open_loop", crossover)]["ci_hi"] - stats[("open_loop", crossover)]["ci_lo"]
         reactive_at = stats[("reactive", crossover)]["success_rate"]
         belief_at = stats[("belief", crossover)]["success_rate"]
         lines.append(
-            f"**variance_level = {crossover}** is the first level where a closed-loop policy's "
-            f"success rate is at least {CROSSOVER_MARGIN:.0%} ahead of open-loop's, and stays that "
-            "far ahead for every level above it. At that point: open-loop "
-            f"{open_at:.0%}, reactive {reactive_at:.0%}, belief {belief_at:.0%}."
+            f"**variance_level = {crossover}** is the first level where a closed-loop policy's 95% "
+            "bootstrap CI on success rate no longer overlaps OpenLoopPolicy's, and stays "
+            "non-overlapping for every level above it -- a statistical claim, not a fixed-margin one: "
+            f"at {TRIALS_PER_COMBO} trials/point OpenLoopPolicy's own CI here is about "
+            f"{open_ci:.0%} wide, so the gap has to clear real sampling noise, not just a percentage-"
+            f"point threshold someone picked. At that point: open-loop {open_at:.0%}, reactive "
+            f"{reactive_at:.0%}, belief {belief_at:.0%}."
         )
     lines += ["", "## Success rate by variance_level", "", "| variance_level | Open-loop | Reactive | Belief |",
               "|---:|---:|---:|---:|"]
@@ -329,8 +371,56 @@ def write_writeup(stats, crossover, path):
             "cell it isn't sure about yet, which is exactly what lets it degrade gracefully under real "
             "map deviation, but also what occasionally gets it hurt in a world that didn't deviate at all."
         )
+    if sensitivity:
+        lines += ["", "## Sensitivity: does the crossover move?", "",
+                   "Same statistical crossover definition as above (find_crossover), rerun at "
+                   f"{SENSITIVITY_TRIALS} trials/point instead of {TRIALS_PER_COMBO} -- fewer trials "
+                   "per point, so treat these crossovers as noisier than the headline one, useful for "
+                   "direction/magnitude rather than a precise value.", "",
+                   "| Sweep | Value | Crossover |", "|---|---:|---:|"]
+        for label, value, cross in sensitivity:
+            lines.append(f"| {label} | {value} | {cross if cross is not None else 'none found'} |")
+        lines.append("")
+        lines.append(
+            "If a row's crossover comes in noticeably earlier (a smaller variance_level) than the "
+            f"headline {crossover if crossover is not None else 'none found'}, that parameter makes "
+            "closing the loop start paying off sooner; later means the opposite -- sensing further or "
+            "planning against a sparser field buys more headroom before deviation forces the issue."
+        )
+
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
+
+
+SENSITIVITY_TRIALS = 8
+
+
+def run_sensitivity():
+    """Reruns the crossover analysis at a couple of alternate sensor
+    radii and obstacle densities (fewer trials/point than the headline
+    sweep, to keep this cheap) -- Phase 3's answer to "does the
+    crossover move with sensor radius / element density?" A crossover
+    that's stable across these variations is a much stronger claim than
+    one that was only ever checked at one arbitrary radius/density.
+
+    Returns a list of (label, value, crossover) tuples in a fixed,
+    readable order.
+    """
+    sweeps = [
+        ("sensor_radius", max(LIDAR_RADIUS // 2, 1), {"sensor_radius": max(LIDAR_RADIUS // 2, 1)}),
+        ("sensor_radius", LIDAR_RADIUS * 2, {"sensor_radius": LIDAR_RADIUS * 2}),
+        ("density", round(DENSITY / 2, 3), {"density": DENSITY / 2}),
+        ("density", round(DENSITY * 1.5, 3), {"density": DENSITY * 1.5}),
+    ]
+    results = []
+    for sweep_idx, (label, value, overrides) in enumerate(sweeps):
+        rows = []
+        for level in VARIANCE_LEVELS:
+            base_seed = 2_000_000 + sweep_idx * 100_000 + round(level * 100)
+            rows.extend(run_variance_level(level, SENSITIVITY_TRIALS, base_seed, **overrides))
+        stats = aggregate(rows)
+        results.append((label, value, find_crossover(stats)))
+    return results
 
 
 if __name__ == "__main__":
@@ -345,13 +435,18 @@ if __name__ == "__main__":
     write_csv(all_rows, OUTPUT_DIR / "uncertainty_results.csv")
     stats = aggregate(all_rows)
     crossover = find_crossover(stats)
+
+    print("\nrunning sensitivity sweep (sensor radius / density) ...")
+    sensitivity = run_sensitivity()
+
     plot_results(stats, OUTPUT_DIR / "uncertainty_comparison.png", crossover)
-    write_writeup(stats, crossover, OUTPUT_DIR / "uncertainty_writeup.md")
+    write_writeup(stats, crossover, OUTPUT_DIR / "uncertainty_writeup.md", sensitivity=sensitivity)
 
     print(f"\nWrote {len(all_rows)} trials to {OUTPUT_DIR / 'uncertainty_results.csv'}")
     print(f"Plot saved to {OUTPUT_DIR / 'uncertainty_comparison.png'}")
     print(f"Writeup saved to {OUTPUT_DIR / 'uncertainty_writeup.md'}")
     print(f"\nCrossover: {crossover}")
+    print(f"Sensitivity: {sensitivity}")
     for policy in POLICY_ORDER:
         print(f"\n{POLICY_LABELS[policy]}:")
         for level in VARIANCE_LEVELS:
