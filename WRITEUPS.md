@@ -1334,3 +1334,254 @@ states plainly which one it's looking at. No number produced by either
 tool should be read as "the real answer" until real measurement CSVs
 have actually been dropped in; see both modules' docstrings for the
 exact CSV column contract.
+
+### Does the headline finding depend on the field layout? (`ftc/layout_benchmark.py`)
+
+The headline sweep above runs on `ftc/field.py`'s `'cluttered'` layout
+only -- deliberately, per `ftc/suite_benchmark.py`'s own docstring, as
+"the richest test of both obstacle-sensing suites ... and the hard-
+footprint-inflation routing" this project's grids add over `nav/`'s
+point-robot ones. But "richest test" is also exactly the kind of
+layout choice that could be doing unacknowledged work in a result:
+would AprilTag still be the best-value suite on a field with almost
+nothing to route around, or one with a single forced bottleneck instead
+of a scatter of obstacles?
+
+`ftc/layout_benchmark.py` answers that by rerunning the *identical*
+full-rigor sweep -- all 11 `variance_level` steps, all 3 deviation
+types, all 25 trials/point, nothing reduced -- on `'sparse'` and
+`'corridor'` as well, reusing `ftc/suite_benchmark.py`'s own
+`run_combo`/`aggregate`/`overall_success_rate` rather than
+reimplementing the sweep logic a second time. It deliberately does not
+touch `ftc/suite_benchmark.py` or anything it writes; the headline
+numbers this README and the conference poster cite come from a module
+this one only ever imports from, never modifies.
+
+**The result: AprilTag is the best-value suite on all three layouts.**
+Its per-$100 margin over the runner-up is actually *wider* on sparse
+and corridor (+96.2 and +94.6pp/$100) than on cluttered (+40.0pp/$100)
+-- with fewer or more concentrated obstacles to route around, obstacle-
+sensing suites like DistanceSensorSuite and the obstacle-sensing half of
+FullSuite have less to buy, while AprilTag's pose-only fix keeps paying
+off regardless of what the obstacles look like. Full per-layout tables
+and the reliability-per-dollar chart are in `benchmark_results/
+ftc_layout_writeup.md` and `ftc_layout_comparison.png`.
+
+**What this does and doesn't prove.** This closes the "one field layout"
+question for the three layouts `ftc/field.py` actually ships -- it does
+not prove the finding survives an arbitrary future layout (a real
+season's surveyed field, dropped in as its own `FieldLayout`, per that
+module's docstring), only that it isn't an artifact of the specific
+"cluttered" choice this repo happened to headline with. A built-in
+consistency check (`ftc/layout_benchmark.py`'s `'cluttered'` pass reuses
+`ftc/suite_benchmark.py`'s exact seed formula) confirms the two modules
+agree trial-for-trial on what "cluttered" means, which
+`ftc/scratch/layout_benchmark_test.py` asserts directly rather than
+leaving as an unverified claim in a docstring.
+
+### How wrong would the estimated constants have to be? (`ftc/robustness.py`)
+
+The headline recommendation (AprilTag as the best-value suite) rests on
+`ftc/config.py`'s own documented "ballpark engineering estimates," not
+measurements -- drift rates, AprilTag's correction-quality falloff, and
+every suite's cost. `ftc/robustness.py` sweeps each one independently
+from 0.25x to 4x its estimated value (a reduced sweep -- 15 trials/point
+at 4 variance levels instead of the headline's 25/11 -- since a
+tipping-point search needs "did the ranking flip," not a publication-
+grade curve at every multiplier) and asks whether the best-value suite
+actually changes.
+
+The gotcha this module's own docstring leads with: `SensorSuite.
+drift_per_cell` and `.cost_usd` are CLASS attributes, evaluated once at
+import time from `ftc.config`'s values -- patching `ftc.config.
+DEAD_RECKONING_DRIFT_PER_CELL` after `ftc.sensors` has already been
+imported does *nothing* to a freshly-constructed suite (verified
+directly in `ftc/scratch/robustness_test.py`'s
+`check_config_patch_does_nothing`, which confirms the broken approach
+really is broken rather than just documenting a scare story). The fix
+is an INSTANCE-attribute override on each constructed suite object,
+which Python's normal instance-shadows-class lookup honors without
+touching `ftc.config` at all. `AprilTagSuite.tag_correction` has the
+same trap one level deeper: it reads `APRILTAG_CORRECTION_FACTOR_MAX`
+etc. as `ftc.sensors` MODULE globals (bound there by `ftc/sensors.py`'s
+own `from ftc.config import ...`), so varying those requires patching
+the attribute directly on the `ftc.sensors` module object, not
+`ftc.config`. A sweep built on the naive monkeypatch would run cleanly,
+print plausible numbers, and measure nothing at all -- exactly the
+failure mode a passing test suite can hide.
+
+**The result: the recommendation is not universally robust, but it's
+resistant to being merely a little bit wrong.** Dead-reckoning drift
+rate is the least forgiving parameter -- it tips the best-value suite
+(to Odometry pods) at 2.0x its estimated value, a real (CI-clean) flip.
+AprilTag's own correction-quality parameters (max correction, range/
+angle degradation) are similarly sensitive, tipping between 0.25x and
+2.0x. Odometry-pod drift rate and DistanceSensorSuite's cost never tip
+the ranking anywhere in [0.25x, 4x]. Two apparent cost-driven flips
+(odometry pods cost at 0.25x, AprilTag cost at 2.0x) did not survive a
+bootstrap-CI overlap check against `nav/stats.py` and are reported as
+"maybe, not confirmed" rather than real tips -- the same "a flip inside
+overlapping confidence intervals isn't a real flip" standard this
+project's other tipping-point sweeps (`ftc/budget_benchmark.py` below)
+also hold themselves to. Full table and plain-language summary in
+`benchmark_results/ftc_robustness_writeup.md`, chart in
+`ftc_robustness.png`.
+
+**What this does and doesn't prove.** A tipping point bounds how wrong
+an estimate can be before the conclusion changes -- it says nothing
+about whether the *real* value is inside or outside that bound. This
+BOUNDS the "uncalibrated variance" limitation (README.md's "Threats to
+validity"); it does not CLOSE it. Only `ftc/calibration.py` run against
+real measured field/robot data closes it.
+
+### Does the 30-second budget ever actually bind? (`ftc/budget_benchmark.py`)
+
+`ftc_suite_writeup.md`'s own "Honest findings" section flagged this as
+open: no suite ran out of `AUTONOMOUS_PERIOD_S` anywhere in the headline
+sweep, which made the budget model arguably decorative -- `ftc/
+match.py` charges elapsed time carefully (drive, turn, per-replan
+overhead) for a constraint nothing had ever actually hit.
+`ftc/budget_benchmark.py` sweeps the budget downward (30s to 1.5s,
+patching `ftc.match.AUTONOMOUS_PERIOD_S` -- a plain module global
+`run_match` looks up fresh on every call, following the exact pattern
+`ftc/scratch/match_test.py` already established, unlike `ftc/sensors.py`'s
+class-attribute trap) and reruns the full-rigor sweep at every point.
+
+The finding depends on which of this project's own priorities has run
+first: under the *original* naive drive-time model (distance /
+`MAX_DRIVE_SPEED_MPS`, instantaneous acceleration), the budget barely
+bound anywhere in the prompt's own example range (30s down to 7s) --
+median match time under 2 seconds even at high field deviation. Once
+`ftc/match.py` gained a trapezoidal acceleration profile (see below),
+every step got charged more realistically and the same sweep now finds
+the budget starts binding around 15-20s, with a real (not
+noise-explainable) ranking change at very tight budgets: DistanceSensorSuite
+overtakes FullSuite as the #1 suite by raw success rate at 2s, since
+FullSuite's extra replanning (see the next paragraph) stops being
+affordable before DistanceSensorSuite's lighter replan load does.
+
+A "which suites replan more, and therefore feel a tight budget first"
+hypothesis is checked against measured `avg_replans`/trial data rather
+than assumed from suite category -- the first draft of this module
+assumed the replan-heavy suites were the obstacle-sensing ones
+(DistanceSensorSuite, FullSuite, since they replan on every newly-sensed
+obstacle). That assumption was incomplete: AprilTag also replans on
+every successful pose correction (`ftc/match.py`'s `replan_needed = not
+planned_once or tag_corrected`), and empirically out-replans
+DistanceSensorSuite (1.80 vs. 0.63 replans/trial) despite never sensing
+obstacles at all. At the tightest budget tested, AprilTag does indeed
+have the highest over-budget rate -- confirming the *general*
+replan-heavy-suites-degrade-first hypothesis, just not via the specific
+suite the obstacle-sensing framing predicted. Full table, replan-count
+data, and the ranking-change CI check in `benchmark_results/
+ftc_budget_writeup.md`, chart in `ftc_budget_comparison.png`.
+
+This CLOSES the "budget rarely binds" limitation for the range actually
+swept -- it's no longer an untested claim that the budget model is
+decorative, it's a measured curve showing exactly where it stops being
+decorative and what changes when it does.
+
+### A real (moving) opponent, not a fixed point (`ftc/opponent_benchmark.py`)
+
+`unplanned_blocker` (the existing deviation type) drops one STATIC
+obstacle on the planned route, once, before the match starts, and
+leaves it there -- an opponent with no motion and no reaction to this
+robot's presence. `nav/obstacles.py` already has `MovingObstacle` (a
+seeded random walk used by `pygame_app`'s interactive visualizer);
+`ftc/opponent_benchmark.py` reuses it completely unmodified rather than
+writing a second one, and adds a `moving_blocker` deviation type
+alongside the existing static one rather than replacing it, so the two
+can be compared directly.
+
+The integration detail that had to be solved carefully: `MovingObstacle.
+tick(grid, now_ms, blocked)` is driven by millisecond WALL-CLOCK timing,
+while `ftc/match.py` accrues SIMULATED `elapsed_s` that has no fixed
+relationship to real time. `run_match` gained an optional
+`moving_obstacles` parameter (default `()`, so every existing caller --
+every priority before this one -- is completely unaffected) that ticks
+each obstacle once per loop iteration with `now_ms = elapsed_s *
+1000.0`: simulated match time, not wall-clock time, so a given seed
+always reproduces the exact same sequence of obstacle moves regardless
+of how fast the process executes. `ftc/scratch/opponent_benchmark_test.py`
+checks this with a spy object that records every `now_ms` it's ticked
+with, rather than depending on a real `MovingObstacle` happening to have
+a free neighbor and the match happening to run long enough for a real
+move to occur (an earlier version of the test relied on that scenario
+luck and flaked when a match ended in collision before the obstacle's
+first scheduled tick).
+
+Both the static and moving paths use the identical probability gate
+(`min(variance_level, 1.0)`) and identical candidate-cell selection (an
+interior cell of the assumed start->goal path, via the same
+`nav.algorithms.astar` call `nav/field_variance.py`'s own
+`_place_unplanned_blocker` uses) -- verified directly in
+`ftc/scratch/opponent_benchmark_test.py` by seeding both functions
+identically and confirming they choose the same cell, not just assumed
+from reading the code.
+
+**The result: a moving opponent changes which suite is the best value.**
+FullSuite is best against a static blocker; Odometry pods is best
+against a moving one (a margin close enough over the runner-up,
+AprilTag, that this module checks it with a bootstrap-CI overlap test
+before reporting it as a clean flip -- the same standard `ftc/
+robustness.py` and `ftc/budget_benchmark.py` hold their own tipping
+points to). More surprising: suites that never sense obstacles at all
+(dead reckoning, odometry, AprilTag) also do substantially better
+against a moving opponent than a static one, purely from timing luck --
+a parked obstacle sits on a blind suite's fixed route for the entire
+match, so a plan that ever crosses that cell collides deterministically;
+a wandering obstacle often isn't there anymore by the time that same
+fixed plan actually reaches the cell. A moving opponent is harder to
+*reason about*, but this specific deviation type makes it easier to
+*physically avoid* for a suite that isn't reasoning about it at all.
+Full tables (including collision/replan counts, which show the
+obstacle-sensing suites' *active* version of the same underlying
+advantage) in `benchmark_results/ftc_opponent_writeup.md`, chart in
+`ftc_opponent_comparison.png`.
+
+This BOUNDS the "no opponent modeling" limitation -- a random walk with
+no goals and no reaction to this robot's presence is still a long way
+from a real opponent, but it's a measured step up from a fixed point,
+and the finding that it changes the recommendation is itself the
+important result: the static-blocker deviation type was, in this
+specific respect, silently favoring whichever suite handles a
+*permanently parked* obstacle best, not whichever suite handles a
+genuinely unpredictable one best.
+
+### Trapezoidal drive-time kinematics (`ftc/match.py`'s `_trapezoidal_drive_time_s`)
+
+`ftc/match.py` charged drive time as `distance / MAX_DRIVE_SPEED_MPS`
+plus a flat per-90-degree turn cost -- implicitly assuming the robot
+reaches top speed instantaneously. `_trapezoidal_drive_time_s` replaces
+that with a proper accelerate/cruise/decelerate profile bounded by a new
+documented constant, `MAX_ACCEL_MPS2` (`ftc/config.py`, sized the same
+ballpark way `TURN_TIME_PER_90DEG_S` already is: 0-to-top-speed in
+roughly half a second). Each step is still charged independently,
+starting and ending at rest -- the same assumption the existing flat
+turn cost already makes at every direction change -- rather than
+carrying velocity across consecutive collinear steps, which would need
+restructuring how `elapsed_s` accrues across the whole match loop, a
+larger change than this deliberately-scoped addition.
+
+The practical consequence: at this project's actual constants (1.5 m/s
+top speed, 3.0 m/s^2 acceleration), the distance needed to reach cruise
+speed is 0.375m -- well over a single 6in grid cell (0.1524m) or even a
+diagonal step (0.2155m). So almost every step in this project's grids
+falls in the triangular (never-reaches-cruise) branch of the profile,
+not the trapezoidal one, and drive time per step comes out roughly
+4-5x the old naive figure. `ftc/scratch/kinematics_test.py` checks both
+branches against an independently-derived closed-form kinematics answer
+(not just a re-run of the same formula), confirms a real grid step never
+reaches cruise speed at this project's constants, and confirms the new
+time is always >= the old naive one, never less.
+
+**The headline success-rate numbers (56%/45%/35%/21%/19%, 40.0 vs.
+16.2pp/$100) did not change** -- despite drive time per step roughly
+quadrupling (median total match time went from ~1.5-2.5s to ~5.3s,
+max from single digits to ~21s), no trial in the 4,125-match headline
+sweep crossed the 30-second budget, so every success/collision outcome
+(governed by pose drift and sensor geometry, not elapsed time) came out
+identical. The effect instead shows up entirely in `ftc/
+budget_benchmark.py`'s sweep (see above): the *interaction* with a
+tighter budget is where realistic kinematics actually changes a
+conclusion, exactly as anticipated going into this addition.

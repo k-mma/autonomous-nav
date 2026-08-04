@@ -172,6 +172,10 @@ python3 -m nav.scale_benchmark                   # regenerate the grid-size scal
 python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
 python3 -m nav.uncertainty_benchmark             # regenerate the open-loop/reactive/belief uncertainty study
 python3 -m ftc.suite_benchmark                   # regenerate the FTC sensor-suite study -- the headline result
+python3 -m ftc.robustness                        # tipping-point sweep on the headline study's estimated constants
+python3 -m ftc.layout_benchmark                  # does the best-value suite change on a different field layout?
+python3 -m ftc.budget_benchmark                  # sweep AUTONOMOUS_PERIOD_S -- when does the budget start to bind?
+python3 -m ftc.opponent_benchmark                # static vs. moving opponent -- does it change which suite wins?
 python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
 python3 -m ftc.recommend                         # decision CLI: suite ranking + predicted success/time/cost
 python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
@@ -498,6 +502,12 @@ type actually dominates depends on the suite: dead reckoning's worst
 failure mode is pose error (start drift), not obstacle error, which is
 exactly what AprilTag (a pose-only fix) targets.
 
+This result was measured on the `'cluttered'` layout only; `ftc/
+layout_benchmark.py` reruns the identical sweep on `ftc/field.py`'s
+other two layouts (sparse, corridor) and finds AprilTag stays the
+best-value suite on both -- see `benchmark_results/
+ftc_layout_writeup.md` and "Threats to validity" below.
+
 The most useful negative result: **DistanceSensorSuite collides in
 roughly half its trials even at zero field deviation.** A controlled
 check (same trials, pose drift forced to zero) shows about two-thirds
@@ -539,39 +549,74 @@ alone.
   a real field. The perturbation model (start drift, obstacle drift,
   an unplanned blocker) is a hypothesis about what kinds of deviation
   matter, not a validated model of what FTC fields actually do.
-- **Uncalibrated variance, until real measurements are supplied.**
-  `variance_level` and `ftc/sensors.py`'s drift-rate constants are
-  order-of-magnitude engineering estimates (see ftc/config.py's
-  per-constant source comments) until `ftc/calibration.py` is run
-  against real CSVs. Every number in `benchmark_results/
-  ftc_suite_writeup.md` is only as meaningful as that calibration is
-  accurate -- right now, none of it has been checked against a real
-  field or robot; the synthetic placeholder dataset exists to make the
-  pipeline runnable, not to make its output trustworthy.
-- **Simplified kinematics.** `ftc/match.py` charges drive time as
-  distance/MAX_DRIVE_SPEED_MPS plus a flat per-90-degree-turn cost --
-  no acceleration/deceleration, no wheel slip beyond the modeled pose
-  drift, no mecanum-specific strafing advantage despite `ftc/field.py`
+- **Uncalibrated variance -- BOUNDED, not closed, until real
+  measurements are supplied.** `variance_level` and `ftc/sensors.py`'s
+  drift-rate constants are order-of-magnitude engineering estimates
+  (see ftc/config.py's per-constant source comments) until `ftc/
+  calibration.py` is run against real CSVs. `ftc/robustness.py` sweeps
+  every estimated constant from 0.25x-4x its documented value and
+  checks whether the best-value recommendation (AprilTag) survives
+  being wrong by that much -- see `benchmark_results/
+  ftc_robustness_writeup.md` for exactly which parameters tip the
+  ranking and at what multiplier, and which never do across the swept
+  range. A tipping point bounds how wrong an estimate can be before the
+  conclusion changes; it does not tell you whether the *real* value is
+  inside or outside that bound. Only `ftc/calibration.py` run against
+  real measurements closes this -- right now, none of it has been
+  checked against a real field or robot; the synthetic placeholder
+  dataset exists to make the pipeline runnable, not to make its output
+  trustworthy.
+- **Simplified kinematics -- BOUNDED.** `ftc/match.py` now charges
+  drive time via a trapezoidal (accelerate/cruise/decelerate) velocity
+  profile bounded by `MAX_ACCEL_MPS2` (`ftc/match.py`'s
+  `_trapezoidal_drive_time_s`) rather than assuming instantaneous
+  acceleration to `MAX_DRIVE_SPEED_MPS` -- a real, if still simplified,
+  improvement (a single 6in cell step is almost always too short to
+  reach cruise speed at all, so drive time per step is now ~4-5x the
+  old naive distance/speed figure). What's still not modeled: velocity
+  isn't carried across consecutive collinear steps (each step starts
+  and ends at rest, the same assumption the existing per-90-degree turn
+  cost already makes), no wheel slip beyond the modeled pose drift, and
+  no mecanum-specific strafing advantage despite `ftc/field.py`
   defaulting to 8-directional movement on the assumption of a holonomic
-  drivetrain. A real robot's actual time-to-goal will differ from this
-  model's prediction by some amount this repo doesn't measure.
-- **No opponent modeling.** `unplanned_blocker` treats an opponent
-  robot as a single static obstacle dropped on the planned route with
-  some probability -- not a robot with its own goals, motion, or
-  reaction to your robot's presence. Real alliance/opponent interaction
-  in a match is much richer than this.
-- **One field layout for the headline study.** `ftc/suite_benchmark.py`
-  runs on the `'cluttered'` layout only; `ftc/field.py` ships `'sparse'`
-  and `'corridor'` too, but the headline numbers in this README and
-  `benchmark_results/ftc_suite_writeup.md` haven't been checked for how
-  much they'd shift on a different layout.
-- **Small, fast trials mean the 30-second budget rarely binds.** On
-  the grid scale and layouts this repo actually sweeps, most runs
-  finish in a few seconds -- `ftc_suite_writeup.md`'s own "Honest
-  findings" section notes no suite ran out of budget in the headline
-  sweep. A larger/more cluttered field or a tighter budget would be
-  needed to make AUTONOMOUS_PERIOD_S itself the binding constraint
-  rather than success/collision, which is currently untested.
+  drivetrain. A real robot's actual time-to-goal will still differ from
+  this model's prediction by some amount this repo doesn't measure.
+- **No opponent modeling -- BOUNDED.** The existing `unplanned_blocker`
+  deviation type (one static obstacle, dropped once and left in place)
+  is now joined by a `moving_blocker` variant in `ftc/
+  opponent_benchmark.py`, which reuses `nav/obstacles.py`'s
+  `MovingObstacle` (a seeded random walk, ticked on simulated match
+  time) for a genuinely moving opponent, added alongside the static
+  version rather than replacing it. The finding: **a moving opponent
+  changes which suite is the best value** (Odometry pods beats AprilTag
+  and FullSuite against a moving opponent; FullSuite is best against a
+  static one -- see `benchmark_results/ftc_opponent_writeup.md`), and
+  suites that never sense obstacles at all still do substantially
+  better against a moving opponent than a static one, purely from
+  timing luck (a parked obstacle blocks a fixed plan deterministically;
+  a wandering one often isn't there anymore by the time a blind suite's
+  plan reaches that cell). Still not modeled: the opponent has no goals
+  of its own and doesn't react to this robot's presence -- a random
+  walk is a step up from a fixed point, not a full multi-agent model.
+- **One field layout for the headline study -- CLOSED.** `ftc/
+  suite_benchmark.py` still runs on the `'cluttered'` layout only, but
+  `ftc/layout_benchmark.py` reruns the identical full-rigor sweep on
+  all three layouts `ftc/field.py` ships (sparse, cluttered, corridor)
+  and checks whether the best-value suite changes: it doesn't --
+  AprilTag is the best-value suite on every layout tested (see
+  `benchmark_results/ftc_layout_writeup.md`). This closes the "would it
+  shift on a different layout" question for the three layouts this repo
+  actually ships; a season-specific surveyed layout dropped in later
+  (see `ftc/field.py`'s module docstring) is still unchecked.
+- **Small, fast trials mean the 30-second budget rarely binds --
+  CLOSED.** `ftc/budget_benchmark.py` sweeps `AUTONOMOUS_PERIOD_S`
+  downward (30s to 1.5s) and finds it now binds starting around 15-20s
+  under the trapezoidal kinematics model above (it barely bound at all
+  under the old naive drive-time formula) -- see `benchmark_results/
+  ftc_budget_writeup.md`. Tightening the budget far enough does change
+  which suite wins by raw success rate (DistanceSensorSuite overtakes
+  FullSuite at 2s), though the headline 30s budget itself still never
+  binds in the actual headline sweep.
 
 ## Repo layout
 
@@ -617,6 +662,10 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
   sensors.py         5 sensor suites (dead reckoning / odometry / distance sensors / AprilTag / full) -- which fix POSE error vs OBSTACLE error
   match.py           30-second autonomous-period budget model: drive + turn + replan time, pose-error offset mechanic
   suite_benchmark.py The headline study -- suite x deviation type x deviation level x trials -> CSV + 2 plots + writeup
+  robustness.py      Tipping-point sweep on suite_benchmark.py's own estimated constants -- does the best-value suite change if they're wrong? -> CSV + plot + writeup
+  layout_benchmark.py Reruns the headline sweep on all 3 field layouts -- does the best-value suite change with the layout? -> CSV + plot + writeup
+  budget_benchmark.py Sweeps AUTONOMOUS_PERIOD_S downward -- when does the budget start to bind, and does it change the ranking? -> CSV + plot + writeup
+  opponent_benchmark.py Static vs. moving (nav/obstacles.py MovingObstacle) opponent -- does a real-ish opponent change which suite wins? -> CSV + plot + writeup
   calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
   recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
   scratch/         Same role as nav/scratch/, for the FTC-specific pieces

@@ -52,6 +52,17 @@ MAX_DRIVE_SPEED_MPS = 1.5
 # in roughly 0.36-0.45s. Used as a flat per-90-degree-turn cost rather
 # than modeling acceleration.
 TURN_TIME_PER_90DEG_S = 0.4
+# Straight-line acceleration -- no FTC-official spec exists (this varies
+# by gearing, wheel choice, and robot mass), so this is a ballpark
+# engineering estimate sized the same way TURN_TIME_PER_90DEG_S already
+# is: 0-to-MAX_DRIVE_SPEED_MPS in roughly half a second (1.5 / 3.0) for
+# a geared 4-motor mecanum/traction drivetrain, the same rough
+# acceleration-time-scale as this project's turn-rate estimate rather
+# than a separately-justified number. Used for a per-step trapezoidal
+# (or, when a step is too short to reach cruise speed, triangular)
+# velocity profile in ftc/match.py instead of assuming a robot reaches
+# MAX_DRIVE_SPEED_MPS instantaneously.
+MAX_ACCEL_MPS2 = 3.0
 # Per-replan control-loop overhead on FTC-legal onboard compute (a REV
 # Control Hub): sensor read + odometry fusion + the search itself, not
 # just the raw grid search (which is sub-millisecond in Python and would
@@ -128,6 +139,17 @@ APRILTAG_RANGE_DEGRADATION = 0.5
 # incidence) -- steeper than the range falloff, since foreshortening
 # degrades corner localization faster than distance alone does.
 APRILTAG_ANGLE_DEGRADATION = 0.6
+
+# Opponent-robot repositioning cadence for the "moving_blocker" deviation
+# type (ftc/opponent_benchmark.py's nav/obstacles.py MovingObstacle
+# integration) -- how often, in simulated match milliseconds, an
+# unpredictable opponent/alliance robot's field position meaningfully
+# changes. No FTC-specific spec exists for this (it's a property of the
+# *other* team's driving, not this robot), so it reuses nav/obstacles.py's
+# own MovingObstacle default (already tuned, in the pygame visualizer, for
+# a cadence that reads as "visibly moving" without being chaotic) rather
+# than inventing a separate, equally-unjustified number.
+OPPONENT_REPOSITION_PERIOD_MS = 700
 
 # math.radians(APRILTAG_FOV_DEG) etc. computed on demand where needed;
 # nothing below this line is a tunable, just a derived convenience.
