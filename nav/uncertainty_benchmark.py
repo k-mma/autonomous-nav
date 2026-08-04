@@ -296,7 +296,7 @@ def write_writeup(stats, crossover, path, sensitivity=None):
         reactive_at = stats[("reactive", crossover)]["success_rate"]
         belief_at = stats[("belief", crossover)]["success_rate"]
         lines.append(
-            f"**variance_level = {crossover}** is the first level where a closed-loop policy's 95% "
+            f"variance_level = {crossover} is the first level where a closed-loop policy's 95% "
             "bootstrap CI on success rate no longer overlaps OpenLoopPolicy's, and stays "
             "non-overlapping for every level above it -- a statistical claim, not a fixed-margin one: "
             f"at {TRIALS_PER_COMBO} trials/point OpenLoopPolicy's own CI here is about "

@@ -16,7 +16,7 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 27%
 | Distance sensors | $90 | 30% | +3.0 |
 | Dead reckoning | $0 | 27% | n/a (free) |
 
-Best value on this layout: **AprilTag**.
+Best value on this layout: AprilTag.
 
 ### Cluttered (headline layout)
 
@@ -30,7 +30,7 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 19%
 | Distance sensors | $90 | 21% | +2.4 |
 | Dead reckoning | $0 | 19% | n/a (free) |
 
-Best value on this layout: **AprilTag**.
+Best value on this layout: AprilTag.
 
 ### Corridor (single narrow gap)
 
@@ -44,11 +44,11 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 22%
 | Distance sensors | $90 | 24% | +1.5 |
 | Dead reckoning | $0 | 22% | n/a (free) |
 
-Best value on this layout: **AprilTag**.
+Best value on this layout: AprilTag.
 
 ## Does the conclusion hold?
 
-**AprilTag is the best-value suite on all three layouts** -- sparse, cluttered, and corridor. The headline recommendation is not an artifact of testing on the one layout with the most obstacles to sense; it holds on a near-open field and a single-forced-corridor field too.
+AprilTag is the best-value suite on all three layouts -- sparse, cluttered, and corridor. The headline recommendation is not an artifact of testing on the one layout with the most obstacles to sense; it holds on a near-open field and a single-forced-corridor field too.
 
 ## Consistency check
 

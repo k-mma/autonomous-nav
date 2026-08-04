@@ -242,19 +242,19 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
         first_example_bind = max(example_binding)  # BUDGET_LEVELS descending -> largest binding budget first
         worst_rate = max(all_summaries[first_example_bind][0][s]["over_budget_rate"] for s in SUITE_ORDER)
         lines.append(
-            f"**The example budgets in the original ask ({', '.join(f'{b:g}s' for b in example_budgets)}) "
-            f"do bind**, starting at {first_example_bind:g}s (worst-suite over-budget rate "
+            f"The example budgets in the original ask ({', '.join(f'{b:g}s' for b in example_budgets)}) "
+            f"do bind, starting at {first_example_bind:g}s (worst-suite over-budget rate "
             f"{worst_rate:.2%} there -- small enough to round to 0% in the per-budget table below, but "
             "genuinely nonzero) -- ftc/match.py's trapezoidal drive-time model (added in this same "
             "sweep of priorities, see ftc/config.py's MAX_ACCEL_MPS2) makes every step take noticeably "
             "longer than the old naive distance/speed formula assumed, which erodes the margin this "
-            "budget used to have. This sweep continues down to 1.5s so the *full* shape of the bind, not "
+            "budget used to have. This sweep continues down to 1.5s so the full shape of the bind, not "
             "just where it starts, is visible."
         )
     else:
         lines.append(
-            f"**The example budgets in the original ask ({', '.join(f'{b:g}s' for b in example_budgets)}) "
-            "never bind** -- every suite has a 0% over-budget rate across all of them. This sweep "
+            f"The example budgets in the original ask ({', '.join(f'{b:g}s' for b in example_budgets)}) "
+            "never bind -- every suite has a 0% over-budget rate across all of them. This sweep "
             "continues down to 1.5s so the question gets a real answer instead of one truncated at the "
             "edge of detectability."
         )
@@ -299,7 +299,7 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
     lines += ["", "## Where it starts to bind", ""]
     if binding_budget is None:
         lines.append(
-            f"**The budget never binds anywhere in [{BUDGET_LEVELS[-1]:g}s, {BUDGET_LEVELS[0]:g}s]** -- "
+            f"The budget never binds anywhere in [{BUDGET_LEVELS[-1]:g}s, {BUDGET_LEVELS[0]:g}s] -- "
             "every suite reaches 100% of its non-over-budget outcomes even at the tightest budget "
             "tested. AUTONOMOUS_PERIOD_S would have to be tightened well below what's swept here "
             "before it stopped being decorative."
@@ -309,9 +309,9 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
         results_at_tightest, _ = all_summaries[tightest]
         worst_suite = max(SUITE_ORDER, key=lambda s: results_at_tightest[s]["over_budget_rate"])
         lines.append(
-            f"**The budget starts binding at {binding_budget:g}s** -- the tightest budget at which "
+            f"The budget starts binding at {binding_budget:g}s -- the tightest budget at which "
             f"every suite still has a 0% over-budget rate is the next one up in this sweep. At the "
-            f"tightest budget tested ({tightest:g}s), **{SUITE_LABELS[worst_suite]}** has the "
+            f"tightest budget tested ({tightest:g}s), {SUITE_LABELS[worst_suite]} has the "
             f"highest over-budget rate ({results_at_tightest[worst_suite]['over_budget_rate']:.0%})."
         )
         if worst_suite in replan_heavy:
@@ -320,12 +320,12 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
                 f"replans {replans_by_suite[worst_suite]:.2f} times/trial on average (above the "
                 f"{median_replans:.2f}/trial median across all 5 suites, see the table above), each replan "
                 "charged PLANNING_OVERHEAD_S on top of drive time -- exactly the kind of suite expected to "
-                "feel a tight budget first, even though the *specific* suite (AprilTag, corrections-driven) "
+                "feel a tight budget first, even though the specific suite (AprilTag, corrections-driven) "
                 "isn't the one the original obstacle-sensing-suites hypothesis named."
             )
         else:
             lines.append(
-                f"\nThis does **not** match the replan-heavy-suites-degrade-first hypothesis -- "
+                f"\nThis does not match the replan-heavy-suites-degrade-first hypothesis -- "
                 f"{SUITE_LABELS[worst_suite]} replans only {replans_by_suite[worst_suite]:.2f} times/trial on "
                 f"average, at or below the {median_replans:.2f}/trial median. PLANNING_OVERHEAD_S isn't the "
                 "dominant cost near the budget edge for this suite; total elapsed_s (drive + turn time over "
@@ -337,8 +337,8 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
     tip_budget, old_best, new_best, overlap = ranking_change
     if tip_budget is None:
         lines.append(
-            f"**No -- {SUITE_LABELS[old_best]} stays the #1 suite by raw success rate across the entire "
-            f"sweep**, {BUDGET_LEVELS[0]:g}s down to {BUDGET_LEVELS[-1]:g}s. Even where the budget does "
+            f"No -- {SUITE_LABELS[old_best]} stays the #1 suite by raw success rate across the entire "
+            f"sweep, {BUDGET_LEVELS[0]:g}s down to {BUDGET_LEVELS[-1]:g}s. Even where the budget does "
             "bind (see above), it doesn't bind hard enough, or unevenly enough across suites, to change "
             "which one has the best raw success rate."
         )
@@ -346,8 +346,8 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
         clean = "a statistically clean change (CIs don't overlap)" if not overlap else \
             "not statistically clean -- the two suites' success-rate CIs still overlap at this trial count"
         lines.append(
-            f"**Yes -- at {tip_budget:g}s, {SUITE_LABELS[new_best]} overtakes {SUITE_LABELS[old_best]} "
-            f"as the #1 suite by raw success rate.** This is {clean}, so it "
+            f"Yes -- at {tip_budget:g}s, {SUITE_LABELS[new_best]} overtakes {SUITE_LABELS[old_best]} "
+            f"as the #1 suite by raw success rate. This is {clean}, so it "
             + ("should be treated as sampling noise rather than a confirmed ranking change until rechecked "
                "with more trials." if overlap else
                "is a genuine effect of the tighter budget, not noise.")

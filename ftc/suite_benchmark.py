@@ -272,7 +272,7 @@ def write_writeup(stats, rows, path):
     best_suite = max(SUITE_ORDER, key=lambda s: overall[s])
     lines += [
         "",
-        f"**{SUITE_LABELS[best_suite]}** has the highest overall success rate "
+        f"{SUITE_LABELS[best_suite]} has the highest overall success rate "
         f"({overall[best_suite]:.0%}) at ${SUITES[best_suite].cost_usd:.0f}. See "
         "`ftc_reliability_per_dollar.png` and the value section below for whether that's actually "
         "the best *spend*, not just the best raw number.",
@@ -297,7 +297,7 @@ def write_writeup(stats, rows, path):
     lines += [
         "",
         f"With no sensing at all (DeadReckoningSuite, the baseline every FTC team already has for free), "
-        f"**{DEVIATION_TYPE_LABELS[dr_worst]}** is what actually breaks a run. "
+        f"{DEVIATION_TYPE_LABELS[dr_worst]} is what actually breaks a run. "
         + (
             f"FullSuite's worst deviation type is different ({DEVIATION_TYPE_LABELS[full_worst]}) -- "
             "which sensing investment matters depends on which kind of deviation the field/robot actually "
@@ -330,13 +330,13 @@ def write_writeup(stats, rows, path):
 
     for suite, cost, gain, per_100 in sorted(value_lines, key=lambda x: -x[3]):
         per_100_str = f"{per_100:+.1f}pp/$100" if per_100 != float("inf") else "infinite (free)"
-        lines.append(f"- **{SUITE_LABELS[suite]}** (${cost:.0f}): {gain:+.0%} success rate over the free "
+        lines.append(f"- {SUITE_LABELS[suite]} (${cost:.0f}): {gain:+.0%} success rate over the free "
                        f"baseline -- {per_100_str}.")
 
     best_value = max(value_lines, key=lambda x: x[3])
     full_suite_value = next(v for v in value_lines if v[0] == "full_suite")
     lines += ["", (
-        f"**{SUITE_LABELS[best_value[0]]}** is the best value by success-rate-gained-per-dollar. "
+        f"{SUITE_LABELS[best_value[0]]} is the best value by success-rate-gained-per-dollar. "
         + (
             "FullSuite -- the most expensive option -- is also the best raw performer, but its "
             f"per-dollar return ({full_suite_value[3]:+.1f}pp/$100) is lower than "
@@ -369,9 +369,9 @@ def write_writeup(stats, rows, path):
             "compounding factor on top of that (the same check found collisions drop by roughly a third "
             "once drift is disabled, since a correctly-remembered obstacle position still isn't the same "
             "as never having missed one), but the primary lesson is blunter than a SLAM-consistency "
-            "story: **a sparse fixed-cone sensor suite has real, geometry-driven blind spots that a full "
+            "story: a sparse fixed-cone sensor suite has real, geometry-driven blind spots that a full "
             "lidar-style disc scan (like nav/sensor.py's LidarSensor, which nav/uncertainty_benchmark.py's "
-            "ReactivePolicy uses and never collides with) doesn't have**, and this project's own headline "
+            "ReactivePolicy uses and never collides with) doesn't have, and this project's own headline "
             "nav/ result (reactive beats belief) doesn't transfer to a suite whose sensing coverage is "
             "this incomplete. Buying distance sensors without covering enough of the robot's perimeter "
             "can be worse than not sensing at all, purely from what the hardware physically cannot see."

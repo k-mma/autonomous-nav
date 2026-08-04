@@ -45,17 +45,17 @@ distance, and one move never costs less than 1.
 Four things the raw search loop doesn't check for and would otherwise
 either crash or silently do the wrong thing:
 
-- **start == goal**: trivially return a length-0 path without searching.
-- **start on an obstacle**: the raw algorithms don't check this -- since
+- start == goal: trivially return a length-0 path without searching.
+- start on an obstacle: the raw algorithms don't check this -- since
   neither `dijkstra` nor `astar` ever tests whether the *start* cell itself
   is passable (only whether cells you move *into* are), a start planted on
   an obstacle would silently search as if it weren't blocked. Caught and
   reported explicitly as `"start_blocked"`.
-- **goal on an obstacle**: `get_neighbors` never returns an obstacle cell
+- goal on an obstacle: `get_neighbors` never returns an obstacle cell
   as a neighbor, so a goal sitting on one is simply unreachable -- the
   search would exhaust itself and report `"no_path"`, which is technically
   true but a worse message than `"goal_blocked"`.
-- **no path exists**: the priority queue empties without ever popping the
+- no path exists: the priority queue empties without ever popping the
   goal. Both algorithms already handle this correctly (return `None`); the
   wrapper just labels it.
 
@@ -120,7 +120,7 @@ survives too: Manhattan/octile estimate the *minimum possible* cost
 only ever raises the true cost above that baseline, never below it, so
 the heuristic still never overestimates.
 
-**Observed effect on RRT: none.** This RRT implementation has no notion
+Observed effect on RRT: none. This RRT implementation has no notion
 of edge cost at all -- it only asks "does this line cross an obstacle,"
 never "how expensive is this line" -- so a cost map that leaves every
 free cell passable (just pricier) doesn't change which edges RRT is
@@ -178,12 +178,12 @@ out to be wrong the moment the robot gets close enough to see further.
 
 `nav/sensor.py` models this with two pieces:
 
-- **`LidarSensor`**: `sense(grid, position)` reveals every real obstacle
+- `LidarSensor`: `sense(grid, position)` reveals every real obstacle
   within `radius` cells of `position` (Euclidean, not Chebyshev -- a
   circle, not a square) and adds it to `known_obstacles`, a set that only
   ever grows. It returns just the *newly* seen obstacles, which is what
   the caller needs to decide whether to replan.
-- **`KnownGrid`**: a `Grid` subclass built entirely from
+- `KnownGrid`: a `Grid` subclass built entirely from
   `known_obstacles` -- every cell the sensor hasn't seen is assumed free.
   That's the only assumption a robot without a perfect map can honestly
   make; it also means a route can plan straight through a cell that's
@@ -202,7 +202,7 @@ exactly the obstacles that were actually in its path -- confirmed by
 diffing `sensor.known_obstacles` against the hardcoded ground truth at
 the end of the run.
 
-**Known simplification:** `known_obstacles` only grows -- a cell once
+Known simplification: `known_obstacles` only grows -- a cell once
 seen as an obstacle is never un-sensed, even if (in the visualizer, with
 moving obstacles + sensor mode both on) it later moves away. A real
 sensor would see it's gone; this one remembers stale information
@@ -225,14 +225,14 @@ same three parameters, same behavior, one per 2D radius-cell and one per
 3D raycast) replaces it with three independent failure modes, each
 governed by its own rate in `nav/config.py`:
 
-- **False negative** (`NOISE_MISS_RATE`, default 0.15): a real obstacle
+- False negative (`NOISE_MISS_RATE`, default 0.15): a real obstacle
   in range isn't detected this scan.
-- **Position noise** (`NOISE_POSITION_RATE`, default 0.15): a detected
+- Position noise (`NOISE_POSITION_RATE`, default 0.15): a detected
   obstacle is reported at a random *adjacent* cell (2D: one of its 8
   neighbors; 3D: the raycast hit point nudged by up to
   `POSITION_JITTER_METERS` before being converted to a cell) instead of
   its true one.
-- **False positive** (`NOISE_FALSE_POSITIVE_RATE`, default 0.02): a free
+- False positive (`NOISE_FALSE_POSITIVE_RATE`, default 0.02): a free
   cell (2D) or a ray that hit nothing (3D, which hallucinates a phantom
   hit at a random point along that ray instead) gets "detected" as an
   obstacle that isn't there.
@@ -241,8 +241,8 @@ Both default to `noisy=False`, so every existing caller, test, and demo
 keeps its exact current deterministic behavior unless it explicitly asks
 for noise -- nothing above needed to change to stay true.
 
-**Why a single noisy reading can't just be trusted the way a perfect
-one was.** `known_obstacles` still means exactly what it always did --
+Why a single noisy reading can't just be trusted the way a perfect
+one was. `known_obstacles` still means exactly what it always did --
 every cell ever *reported*, right or wrong -- because noise can plant a
 wrong cell just as permanently as a correct one (nothing here un-senses
 anything, same simplification as before, now compounded by the fact
@@ -260,7 +260,7 @@ noise is an independent roll, so the chance of the identical false
 reading landing twice is roughly the single-scan rate *squared*, not
 the same rate again.
 
-**Does this actually matter, concretely, or is it a theoretical nicety?**
+Does this actually matter, concretely, or is it a theoretical nicety?
 Measured, not asserted (`nav/scratch/lidar_noise_test.py`,
 `pybullet_app/scratch/pybullet_lidar_noise_test.py` -- both scanning a hidden
 obstacle repeatedly from a fixed position, then replanning against
@@ -269,7 +269,7 @@ resulting path cost to the true optimum):
 
 | min_detections | 2D corridor test | 3D wall test |
 |---:|---|---|
-| 1 (= raw `known_obstacles`) | **FAILED outright** (`start_blocked`) | cost 34.00 (+13% vs optimal) |
+| 1 (= raw `known_obstacles`) | FAILED outright (`start_blocked`) | cost 34.00 (+13% vs optimal) |
 | 2 (`CONFIRMATION_THRESHOLD` default) | cost 29.00 (+16% vs optimal) | cost 30.00 (= optimal) |
 | 3 | cost 25.00 (= optimal) | cost 30.00 (= optimal) |
 | 4+ | cost 25.00 (= optimal) | cost 30.00 (= optimal) |
@@ -295,8 +295,8 @@ tuned optimum, and callers that want a different point on that tradeoff
 --noisy-sensor`) can pass a different `min_detections` to
 `confirmed_obstacles` directly.
 
-**A confirmation threshold does not turn noisy sensing back into perfect
-sensing, and it's worth being precise about exactly how it falls short**
+A confirmation threshold does not turn noisy sensing back into perfect
+sensing, and it's worth being precise about exactly how it falls short
 (found by actually inspecting *which* cells survived a low threshold,
 not assumed): in the 3D wall test, most of the "confirmed" cells that
 weren't real turned out to be position-jittered *neighbors* of a real
@@ -317,7 +317,7 @@ possibly work, chosen deliberately over that added complexity the same
 way the "known_obstacles only grows" simplification was, and both
 tradeoffs are recorded here rather than hidden.
 
-**Wiring**: both `pygame_app/visualizer.py` (`N` key, alongside `S` for the
+Wiring: both `pygame_app/visualizer.py` (`N` key, alongside `S` for the
 sensor itself) and `pybullet_app/pybullet_main.py --sensor --noisy-sensor` gained a
 noise toggle that's off by default, and both switched their replanning
 trigger from "any newly reported cell" to "any newly *confirmed* cell"
@@ -335,9 +335,9 @@ decided to trust.
 ### Inadmissible heuristics: does 1.5x actually break anything?
 
 The experiment was to multiply Manhattan by 1.5 and see what actually
-breaks in practice. First finding, which took a wrong turn to get to: **a "perfect"
+breaks in practice. First finding, which took a wrong turn to get to: a "perfect"
 maze (recursive backtracking, no loops) has exactly one route between any
-two cells.** There's nothing for a bad heuristic to get wrong when there's
+two cells. There's nothing for a bad heuristic to get wrong when there's
 only one possible path -- `nav/scratch/heuristic_experiment.py` originally
 ran on maze grids and found 0/8 suboptimal results across every heuristic,
 including the inflated one, simply because there was no alternate route to
@@ -346,10 +346,10 @@ lengths, which only shows up with scattered obstacles (loops, open areas),
 not a spanning-tree maze. Switching the test bed to random 35%-density
 obstacle grids was necessary before the experiment meant anything.
 
-Second finding: even on grids with real alternate routes, **1.5x almost
-never broke optimality** in 25 trials (0/25). It did roughly halve the
+Second finding: even on grids with real alternate routes, 1.5x almost
+never broke optimality in 25 trials (0/25). It did roughly halve the
 number of cells explored, though -- a real speed win for zero cost in these
-cases. Cranking the inflation to **3x** did break it, in 2/25 trials, e.g.:
+cases. Cranking the inflation to 3x did break it, in 2/25 trials, e.g.:
 
 ```
 seed 0: optimal cost 39  ->  1.5x found 39 (optimal, explored 87 cells)
@@ -386,11 +386,11 @@ worth calling out since it's a genuine correctness bug in naive
 
 Manhattan distance is `dr + dc` -- it assumes you can only ever move one
 axis at a time, which is exactly untrue once diagonal moves are allowed.
-The correct heuristic for a `sqrt(2)`-cost diagonal is **octile distance**:
+The correct heuristic for a `sqrt(2)`-cost diagonal is octile distance:
 `max(dr, dc) + (sqrt(2) - 1) * min(dr, dc)`. Since `sqrt(2) - 1 < 1`,
 octile distance is always <= Manhattan distance (equal only when `dr` or
-`dc` is 0), meaning **Manhattan systematically overestimates the true cost
-whenever a diagonal shortcut exists** -- it's inadmissible the moment
+`dc` is 0), meaning Manhattan systematically overestimates the true cost
+whenever a diagonal shortcut exists -- it's inadmissible the moment
 diagonal movement is on, for the same reason as the inflated heuristic
 above, just for a structural reason instead of an arbitrary multiplier.
 
@@ -470,14 +470,14 @@ waypoint behind it, which no real wheeled base can do.
 
 Three functions, used in sequence:
 
-1. **`simplify_collinear`** -- A* on a 4-directional grid emits one
+1. `simplify_collinear` -- A* on a 4-directional grid emits one
    waypoint *per cell*, so a straight 10-cell run is 10 collinear points.
    Collapsing runs like that to their two endpoints (cross-product test:
    `(p1-p0) x (p2-p0) == 0` means collinear) gives the smoothers below a
    handful of real corners to work with instead of dozens of redundant
    knots along every straight stretch. Not smoothing by itself -- pure
    cleanup before smoothing.
-2. **`chaikin_smooth`** -- simple corner-cutting, done first because it's
+2. `chaikin_smooth` -- simple corner-cutting, done first because it's
    the cheapest thing that could possibly work. Each pass replaces every
    corner with two points 1/4 and 3/4 of the way along its adjacent
    edges; repeated a few times this rounds every corner into a curve.
@@ -486,7 +486,7 @@ Three functions, used in sequence:
    (unlike the textbook version of Chaikin, which cuts those too) so the
    robot still starts and ends in the actual start/goal cell instead of
    near it.
-3. **`catmull_rom_spline`** -- the follow-up upgrade once corner-cutting
+3. `catmull_rom_spline` -- the follow-up upgrade once corner-cutting
    proved the concept. Unlike Chaikin, a Catmull-Rom spline passes
    *exactly* through every control point, not just the endpoints, while
    still arriving at each one smoothly instead of on a sharp corner.
@@ -604,15 +604,15 @@ just a reimplementation in a new coordinate space.
 Two things had to be right for this to work at all, both found by
 actually running it, not by reasoning about the API in the abstract:
 
-- **Rays can't originate at the robot's own center.** A ray that starts
+- Rays can't originate at the robot's own center. A ray that starts
   literally inside (or on the surface of) the sensing robot's own
   collision shape hits *itself* first, every time, regardless of
   `ignore_body_id` -- rayTestBatch reports the first hit along the ray,
   and the robot's own hull is that hit. Fixed by starting each ray
   `ORIGIN_OFFSET = 0.35` m out from center, in the ray's own direction,
   rather than at the exact center point.
-- **A hit lands exactly on a cell boundary, and rounding that is
-  ambiguous.** An obstacle box's near face sits at, e.g., `x = 8.5` for
+- A hit lands exactly on a cell boundary, and rounding that is
+  ambiguous. An obstacle box's near face sits at, e.g., `x = 8.5` for
   a 1.0m cell size -- precisely the boundary between free cell 8 and
   obstacle cell 9. `pybullet_app/scratch/pybullet_lidar_test.py`'s standalone scan
   didn't surface this because its one hardcoded scan never happened to
@@ -653,10 +653,10 @@ moment. This replaced an earlier layout (a single corridor with
 goal(A) == start(B), a "swap sides" scenario) specifically because that
 coincidence turned out to cause its own class of bugs -- see below.
 
-**Coordination policy (current version -- see the bug list below for two
-earlier versions that didn't hold up):**
+Coordination policy (current version -- see the bug list below for two
+earlier versions that didn't hold up):
 
-- **Both robots replan, symmetrically.** Every `REPLAN_PERIOD_S = 0.05` s,
+- Both robots replan, symmetrically. Every `REPLAN_PERIOD_S = 0.05` s,
   each one runs A* against the real grid *plus* a block placed around the
   *other's* current cell (`cell_block`, a 1-cell buffer) -- the exact
   same technique the pygame `MovingObstacle` replanning logic used
@@ -666,18 +666,18 @@ earlier versions that didn't hold up):**
   last attempt found nothing (`agent.waiting or current != last`) --
   replanning unconditionally every tick was an earlier bug (see below),
   and the fix generalizes cleanly to both robots being symmetric now.
-- **If a route genuinely isn't there, the blocked robot holds position**
+- If a route genuinely isn't there, the blocked robot holds position
   (`waiting = True`) and retries on the next replan tick, rather than
   crashing on `None` or driving into a wall.
-- **Neither robot gets a local steering nudge anymore.** An earlier
+- Neither robot gets a local steering nudge anymore. An earlier
   version had one robot (B) steer its aim point sideways every physics
   step when the other got close, faster-reacting than the 0.05s replan
   cadence. It's gone now -- see the bug entry below for why steering
   turned out to be the wrong mechanism entirely, not just something that
   needed better tuning.
 
-**Why symmetric replanning doesn't deadlock here, unlike the old
-corridor layout.** A *symmetric* "both treat the other as an obstacle"
+Why symmetric replanning doesn't deadlock here, unlike the old
+corridor layout. A *symmetric* "both treat the other as an obstacle"
 policy is exactly what could deadlock face to face in a single
 one-cell-wide corridor: each one sees the other blocking the only route
 and waits forever, since neither ever decides to go first, which is why
@@ -691,8 +691,8 @@ fallback for the rare moment neither lane is free, but it's a transient
 state on the way to a route reopening, not a standoff between two
 robots that refuse to yield.
 
-**A hard safety-distance stop is layered on top, deliberately not relied
-on as the primary mechanism:** replanning runs every `REPLAN_PERIOD_S`,
+A hard safety-distance stop is layered on top, deliberately not relied
+on as the primary mechanism: replanning runs every `REPLAN_PERIOD_S`,
 not every physics tick, so a fast robot could in principle close
 real-world distance in the gap between replans. If the two robots'
 actual distance ever drops below `SAFETY_STOP_RADIUS`, both are forced to
@@ -703,7 +703,7 @@ distance unconditionally, every step, with no exceptions (see the
 collision bug below for what happened when it briefly wasn't
 unconditional).
 
-**One scenario-design bug worth recording:** the first version of this
+One scenario-design bug worth recording: the first version of this
 demo had robot A permanently parked exactly on top of robot B's goal
 cell after "arriving," because goal(A) == start(B) by construction (a
 swap-sides scenario makes that coincidence unavoidable) and a robot that
@@ -714,8 +714,8 @@ finished. Fixed by nudging an arrived robot 1.5m off to the side
 cell set entirely -- once a robot is done, it stops being an obstacle for
 anyone.
 
-**A second bug, found by watching a live run rather than just the
-end-of-run pass/fail:** even after that fix, B looked stuck for several
+A second bug, found by watching a live run rather than just the
+end-of-run pass/fail: even after that fix, B looked stuck for several
 seconds right after A cleared the corridor, when the plan should already
 have been open. The cause was replanning B *unconditionally* every
 `REPLAN_PERIOD_S`, even when nothing had changed. Every fresh `plan()`
@@ -737,8 +737,8 @@ fired every single tick for the entire drive to the staging point, not
 just when something changed. Same symptom, same fix -- drop that extra
 condition and rely purely on "waiting, or the blocked set changed.")
 
-**A third bug: the safety stop had a loophole that caused a real
-collision.** The distance check was originally `(not agent_a.arrived)
+A third bug: the safety stop had a loophole that caused a real
+collision. The distance check was originally `(not agent_a.arrived)
 and distance < SAFETY_STOP_RADIUS` -- deliberately skipped once A had
 "arrived," on the reasoning that a stationary, parked A poses no risk.
 In practice: B spends most of a fast run either blocked or held back by
@@ -752,8 +752,8 @@ condition entirely -- the check now runs unconditionally, every step,
 regardless of A's state. A parked far away simply never trips it; nothing
 is lost by leaving it on.
 
-**A fourth bug, from the version of this demo that gave the priority
-robot (A) its own avoidance steering too:** the first version of the
+A fourth bug, from the version of this demo that gave the priority
+robot (A) its own avoidance steering too: the first version of the
 local avoidance layer applied to *both* robots,
 and used raw proximity ("is the other robot within AVOID_RADIUS") rather
 than checking whether it was actually in the way. Two failure modes came
@@ -783,7 +783,7 @@ out of that, found by watching, not by reading the code:
   and the hard distance stop), which turns out to be enough: nothing
   needs A's cooperation to stay clear of it.
 
-**Why the layout changed from a corridor to an intersection.** All four
+Why the layout changed from a corridor to an intersection. All four
 bugs above were found and fixed against the original "single corridor,
 goal(A) == start(B)" layout, and the fixes made that layout genuinely
 collision-free. But the coincidence itself kept generating new edge
@@ -800,8 +800,8 @@ each other is the crossing in the middle. The coordination policy above
 to move to this layout -- it was already layout-agnostic -- which is
 itself a decent sign it was the right level to fix things at.
 
-**A fifth bug, found only after that move: a slow turn-in-place
-controller.** The corridor layout never exposed this, because A happened
+A fifth bug, found only after that move: a slow turn-in-place
+controller. The corridor layout never exposed this, because A happened
 to spawn already facing the direction it needed to drive (straight down
 the one row that mattered). The intersection layout doesn't: A spawns
 facing its URDF's default heading and has to turn 90 degrees before it
@@ -825,8 +825,8 @@ overshoot. After the fix, A starts translating within about 0.15s instead
 of 0.5+, and the two robots' closest approach at the crossing drops from
 7.8m (never really interacting) to under 2m.
 
-**A sixth issue, once that gap was mostly closed: a leftover, smaller
-timing asymmetry.** Fixing the turn controller closed most of the gap,
+A sixth issue, once that gap was mostly closed: a leftover, smaller
+timing asymmetry. Fixing the turn controller closed most of the gap,
 but not all of it -- min approach distance was still around 1.9m,
 suspiciously identical whether or not the local avoidance layer was even
 active, which was the tell that avoidance wasn't the thing determining
@@ -853,8 +853,8 @@ confirmed consistent across five repeated runs in each smoothing mode
 (this simulation has no randomness anywhere, so identical inputs
 reliably reproduce the same near-miss, not just "usually").
 
-**A seventh issue: steering narrowed the crossing distance but didn't
-reliably prevent contact, so it was replaced with replanning entirely.**
+A seventh issue: steering narrowed the crossing distance but didn't
+reliably prevent contact, so it was replaced with replanning entirely.
 The 0.5m result above still relied on `SAFETY_STOP_RADIUS` actually
 catching every case -- a single hard distance check, unconditional but
 still just one layer, with no margin for physics-step timing variance
@@ -938,13 +938,13 @@ the maintenance a general-purpose incremental k-d tree would need.
 Verified against a brute-force linear scan over 2,000 random points: 500
 nearest-neighbor queries and 100 radius queries, zero mismatches.
 
-**The before/after, rerunning `nav/scale_benchmark.py` on the identical
-code otherwise:**
+The before/after, rerunning `nav/scale_benchmark.py` on the identical
+code otherwise:
 
 | Size | RRT (linear scan, before) | RRT (k-d tree, after) | Speedup | Completeness (same, either way) |
 |---:|---:|---:|---:|---:|
-| 100x100 | 116.716ms | 15.162ms | **7.7x** | 7/8 |
-| 200x200 | 258.820ms | 58.548ms | **4.4x** | 5/8 |
+| 100x100 | 116.716ms | 15.162ms | 7.7x | 7/8 |
+| 200x200 | 258.820ms | 58.548ms | 4.4x | 5/8 |
 
 Completeness is identical in both columns -- the k-d tree changes
 nothing about *what* RRT finds, only how fast it finds it, exactly as
@@ -960,12 +960,12 @@ measured the cost of that at 9.1% average path-length overhead versus
 the optimal grid-search path. RRT* (Karaman & Frazzoli) fixes this with
 two changes, both implemented in `nav/rrt_star.py`:
 
-1. **Cheapest parent, not nearest parent.** When adding a new node, look
+1. Cheapest parent, not nearest parent. When adding a new node, look
    at every existing node within `neighbor_radius` (a k-d tree
    `within_radius` query) and connect to whichever gives the lowest
    total cost-to-come, not whichever happens to be geometrically
    closest -- as long as the straight edge is collision-free.
-2. **Rewire nearby nodes through the new one.** After adding it, check
+2. Rewire nearby nodes through the new one. After adding it, check
    those same nearby nodes again: if routing through the just-added node
    is now cheaper than a node's current parent, switch its parent. This
    is the step plain RRT has no equivalent of, and it's what lets
@@ -976,8 +976,7 @@ Unlike `rrt()`, `rrt_star()` never stops early at the first node that
 reaches the goal radius -- it keeps iterating for the entire budget,
 since later rewiring can still improve a path found early. `neighbor_radius`
 is a fixed multiple of `step_size` (`RRT_STAR_NEIGHBOR_FACTOR = 2.0`)
-rather than the textbook shrinking-ball formula (`gamma * (log n / n) **
-(1/d)`) -- a common practical simplification, traded for simplicity at
+rather than the textbook shrinking-ball formula (`gamma * (log n / n) ** (1/d)`) -- a common practical simplification, traded for simplicity at
 the cost of not being the asymptotically tightest possible radius.
 Rewiring also does *not* cascade a cost improvement to a rewired node's
 own descendants (a full implementation would) -- a rewired node's own
@@ -1001,20 +1000,20 @@ level render (same technique the moving-obstacle integration used): a
 real RRT* run drawn to an off-screen pygame surface, confirmed non-white
 pixels actually appear where the tree and path should be.
 
-**Benchmarked head-to-head against plain RRT on the identical 20 grids
+Benchmarked head-to-head against plain RRT on the identical 20 grids
 `benchmark_results/writeup.md` already used, with both algorithms fed the
-*identical* random-sample sequence per trial** (same seed,
+*identical* random-sample sequence per trial (same seed,
 `random.Random(trial_num * 1000 + attempt)`, so any difference in the
 result is attributable to the algorithm, not to random variance between
 separate runs):
 
-- **RRT* produced a shorter path in 20/20 trials -- never longer, never
-  tied -- averaging 25.2% shorter**, ranging from 0.9% (a trial where
+- RRT* produced a shorter path in 20/20 trials -- never longer, never
+  tied -- averaging 25.2% shorter, ranging from 0.9% (a trial where
   RRT's own tree already grew a fairly direct route) to 69.5% (the trial
   `benchmark_results/writeup.md` already flagged as RRT's worst case,
   where its path was literally double the cardinal-optimal length --
   RRT*, given the identical samples, closes almost all of that gap).
-- **The cost is runtime, and it's a real, structural one:** RRT*
+- The cost is runtime, and it's a real, structural one: RRT*
   averaged 67.1ms per trial against RRT's 0.97ms -- almost 70x slower on
   the identical 3,000-iteration budget. Most of that isn't extra work
   per sample (parent selection/rewiring over a handful of nearby nodes,
@@ -1038,7 +1037,7 @@ discovery-triggered replanning, and both pybullet multi-robot/sensor
 demos. D* Lite (Koenig & Likhachev, 2002) instead keeps one persistent
 search around and repairs it incrementally when the grid changes.
 
-**The mechanism.** The search runs backward, from `goal` outward, and
+The mechanism. The search runs backward, from `goal` outward, and
 tracks two costs per cell: `g(s)` (best known cost-to-goal) and `rhs(s)`
 (a one-step lookahead, `min` over neighbors of `edge_cost + g(neighbor)`).
 A cell is "consistent" when `g == rhs`; only inconsistent cells ever sit
@@ -1057,7 +1056,7 @@ both the successor set (for computing `rhs`) and the predecessor set
 (for deciding what to re-examine after a change), with no separate
 "reverse graph" needed.
 
-**Correctness**, checked exhaustively rather than just on a couple of
+Correctness, checked exhaustively rather than just on a couple of
 hand-picked cases (`nav/scratch/dstar_lite_test.py`): 40/40 random grids
 match `astar`'s path cost exactly on a fresh, one-shot plan, and across
 15 trials of 15 steps each (robot advances, a random cell's obstacle
@@ -1066,8 +1065,8 @@ match a completely fresh `astar` recomputation from the robot's exact
 current position on the exact current grid. Every single step, not just
 the final result.
 
-**Does it actually replan faster? Benchmarked on both named scenarios
-specifically** (`nav/replan_benchmark.py`, recreating `nav/obstacles.py`'s
+Does it actually replan faster? Benchmarked on both named scenarios
+specifically (`nav/replan_benchmark.py`, recreating `nav/obstacles.py`'s
 bouncing `MovingObstacle` and `nav/sensor.py`'s `LidarSensor`/`KnownGrid`
 discovery, including pygame_app/visualizer.py's exact replan-trigger condition
 for the sensor case), swept across grid size the same way
@@ -1077,17 +1076,17 @@ scale:
 
 | Size | Moving obstacle speedup | Sensor discovery speedup |
 |---:|---:|---:|
-| 25x25 | **2.42x** | **0.49x** (slower) |
-| 50x50 | **2.90x** | **0.63x** (slower) |
-| 100x100 | **8.49x** | **1.31x** |
-| 200x200 | **16.34x** | **1.97x** |
+| 25x25 | 2.42x | 0.49x (slower) |
+| 50x50 | 2.90x | 0.63x (slower) |
+| 100x100 | 8.49x | 1.31x |
+| 200x200 | 16.34x | 1.97x |
 
-**Moving obstacle: D* Lite wins at every size, growing fast** -- a single
+Moving obstacle: D* Lite wins at every size, growing fast -- a single
 bouncing obstacle only ever invalidates a small, localized neighborhood
 each time it moves, exactly the case incremental repair is built for.
 
-**Sensor discovery is the more honest result: D* Lite is *slower* at
-this project's actual 25x25 scale**, only becoming a net win at 100x100
+Sensor discovery is the more honest result: D* Lite is *slower* at
+this project's actual 25x25 scale, only becoming a net win at 100x100
 and above. Two real reasons, not artifacts: sensor discovery can reveal
 several newly-blocked cells in one event (unlike one bouncing obstacle),
 so each replan touches more vertices; and D* Lite's own per-vertex
@@ -1097,9 +1096,9 @@ factor overhead that a small grid's already-cheap `astar` search doesn't
 have enough cost to amortize away. That overhead matters less as the
 grid grows, because a from-scratch search's cost keeps climbing with
 grid size while the number of vertices a single sensor update actually
-touches doesn't. **This is the same "wrong tool at this project's actual
+touches doesn't. This is the same "wrong tool at this project's actual
 scale, right tool at a bigger one" shape of conclusion
-`benchmark_results/writeup.md` already reached for plain RRT** -- arrived
+`benchmark_results/writeup.md` already reached for plain RRT -- arrived
 at independently, for a structurally different reason (constant-factor
 overhead here, an `O(n)` search there). Full discussion in
 `benchmark_results/replan_writeup.md`.
@@ -1125,7 +1124,7 @@ or three agents on this project's 625-cell grid -- CBS (Sharon, Stern,
 Felner & Sturtevant, 2012) avoids that by searching a tree of
 *constraints* instead, only ever running single-agent searches.
 
-**The mechanism**, fully described in `nav/cbs.py`'s module docstring:
+The mechanism, fully described in `nav/cbs.py`'s module docstring:
 plan every agent independently first (no constraints); find the first
 conflict between any two agents' paths (`first_conflict` -- either a
 *vertex* conflict, both at the same cell at the same time, or an *edge*
@@ -1140,7 +1139,7 @@ constraint like "can't be here at time 7" is meaningless without a time
 axis, and an explicit wait-in-place action is what lets one agent yield
 to another instead of being forced into head-on contact.
 
-**Correctness**, verified independently of CBS's own termination
+Correctness, verified independently of CBS's own termination
 condition (`nav/scratch/cbs_test.py`): 2, 3, and 4-agent crossings on the
 same 4-way intersection layout, each solution re-checked from scratch
 against `first_conflict` (the same function CBS uses internally, so a
@@ -1149,8 +1148,8 @@ trustworthy) plus per-agent assertions that every path starts at its
 start, ends at its goal, only takes legal single-cell steps, and never
 crosses an obstacle. All conflict-free.
 
-**Scales past two agents in practice, with the expected caveat about
-worst-case complexity.** On the intersection grid, cycling robots through
+Scales past two agents in practice, with the expected caveat about
+worst-case complexity. On the intersection grid, cycling robots through
 its four compass arms and (past four) its three street lanes: 4 agents
 solve in 42ms, 5 in 42ms, 6 in 388ms, all genuinely conflict-free. A
 deliberately adversarial stress case -- 8 agents, all four arms, two
@@ -1162,7 +1161,7 @@ exponentially when conflicts keep cascading into new conflicts, the same
 way a joint search would, just deferred to a smaller subset of hard
 cases instead of showing up on every instance.
 
-**pybullet_app/pybullet_cbs_main.py drives N robots through the CBS plan in lockstep**
+pybullet_app/pybullet_cbs_main.py drives N robots through the CBS plan in lockstep
 -- the one real complication continuous 3D simulation adds that the
 discrete algorithm doesn't have to consider. CBS's guarantee ("no two
 agents at the same cell at the same *timestep*") is a claim about a
@@ -1179,8 +1178,8 @@ raw, with no corner-cutting/spline smoothing (unlike
 would shift where along the path a robot actually is at a given moment
 -- exactly the synchronization lockstep driving exists to preserve.
 
-**Does the discrete guarantee actually survive translating into
-continuous physics?** Measured directly, not assumed: tracking every
+Does the discrete guarantee actually survive translating into
+continuous physics? Measured directly, not assumed: tracking every
 pair of robots' real Euclidean distance throughout a full lockstep run,
 the closest approach across the whole simulation was 0.46m, for both a
 4-robot and a 6-robot run -- comfortably above the ~0.34m two r2d2
@@ -1200,12 +1199,12 @@ code lives in its own package instead of leaking into `nav/`.
 
 Formally, `nav/occupancy.py` + `BeliefPolicy`'s "plan against an
 expected-cost map instead of an assumed-true one" is a tractable
-approximation of **belief-space planning**: instead of planning a
+approximation of belief-space planning: instead of planning a
 single path through the one grid the robot assumes is real, plan
 through the space of *distributions over grids* the robot's sensor
 history is consistent with. The fully general version of that problem
 -- acting optimally under both state uncertainty and future observation
-uncertainty -- is a **POMDP** (partially observable Markov decision
+uncertainty -- is a POMDP (partially observable Markov decision
 process), which is famous for being intractable to solve exactly at any
 real-world scale. `OccupancyGrid`'s log-odds update sidesteps that
 intractability by not actually solving the POMDP: it collapses the full
@@ -1220,8 +1219,8 @@ discussion below for two separate, concrete ways a per-cell-independent
 belief can still get a robot into trouble a jointly-reasoned one
 wouldn't.
 
-**The central modeling distinction this study is built around: not all
-deviation is the same kind of deviation.** A robot can be wrong about
+The central modeling distinction this study is built around: not all
+deviation is the same kind of deviation. A robot can be wrong about
 where *it* is (pose error -- it started a little off its mark, or its
 wheels slipped over the course of the run) or wrong about what the
 *field* looks like (obstacle error -- a game element sits somewhere
@@ -1240,7 +1239,7 @@ of only ever seeing their combined effect -- without that split there'd
 be no way to explain *why* a given suite wins or loses, only that it
 does.
 
-**Pose error is modeled as a continuous drift, not a one-shot offset.**
+Pose error is modeled as a continuous drift, not a one-shot offset.
 nav/'s own uncertainty study (`nav/uncertainty_benchmark.py`) only ever
 applies a single fixed start-position offset per trial, via
 `OpenLoopPolicy`'s `_offset` mechanic. A real robot's pose estimate
@@ -1274,7 +1273,7 @@ suites that replan a different number of times also, in general, drive
 different paths, so a naive "the one that replanned more took longer"
 comparison is confounded by route length and can point the wrong way.
 
-**The headline numbers** (25 trials x 5 suites x 3 deviation types x 11
+The headline numbers (25 trials x 5 suites x 3 deviation types x 11
 deviation levels, `ftc/suite_benchmark.py`, full methodology and tables
 in `benchmark_results/ftc_suite_writeup.md`): FullSuite has the highest
 raw success rate (56% at variance_level >= 0.3, averaged across all
@@ -1286,8 +1285,8 @@ what that suite fixes: DeadReckoningSuite's worst failure mode is pose
 error (start drift), the thing a $40 AprilTag setup targets directly,
 not obstacle error.
 
-**The most useful result is the negative one, and it very nearly got
-mis-attributed.** DistanceSensorSuite collides in roughly half its
+The most useful result is the negative one, and it very nearly got
+mis-attributed. DistanceSensorSuite collides in roughly half its
 trials even at variance_level=0.0 -- ground truth cell-for-cell
 identical to the assumed map, every deviation type at exactly zero. The
 first-draft writeup blamed this on a SLAM-style consistency problem
@@ -1317,8 +1316,8 @@ suite has real, geometry-driven blind spots a full lidar-style disc scan
 with) doesn't have, and buying distance sensors without covering enough
 of the robot's perimeter can be worse than not sensing at all.
 
-**Calibration (`ftc/calibration.py`) and the decision tool
-(`ftc/recommend.py`)** are the other half of making `variance_level`
+Calibration (`ftc/calibration.py`) and the decision tool
+(`ftc/recommend.py`) are the other half of making `variance_level`
 mean something. Every chart above is indexed by an arbitrary [0, 1]
 number; `ftc/calibration.py` fits the corresponding real-world
 components from two kinds of measurement (nominal-vs-actual field-
@@ -1357,7 +1356,7 @@ touch `ftc/suite_benchmark.py` or anything it writes; the headline
 numbers this README and the conference poster cite come from a module
 this one only ever imports from, never modifies.
 
-**The result: AprilTag is the best-value suite on all three layouts.**
+The result: AprilTag is the best-value suite on all three layouts.
 Its per-$100 margin over the runner-up is actually *wider* on sparse
 and corridor (+96.2 and +94.6pp/$100) than on cluttered (+40.0pp/$100)
 -- with fewer or more concentrated obstacles to route around, obstacle-
@@ -1367,7 +1366,7 @@ off regardless of what the obstacles look like. Full per-layout tables
 and the reliability-per-dollar chart are in `benchmark_results/
 ftc_layout_writeup.md` and `ftc_layout_comparison.png`.
 
-**What this does and doesn't prove.** This closes the "one field layout"
+What this does and doesn't prove. This closes the "one field layout"
 question for the three layouts `ftc/field.py` actually ships -- it does
 not prove the finding survives an arbitrary future layout (a real
 season's surveyed field, dropped in as its own `FieldLayout`, per that
@@ -1410,8 +1409,8 @@ the attribute directly on the `ftc.sensors` module object, not
 print plausible numbers, and measure nothing at all -- exactly the
 failure mode a passing test suite can hide.
 
-**The result: the recommendation is not universally robust, but it's
-resistant to being merely a little bit wrong.** Dead-reckoning drift
+The result: the recommendation is not universally robust, but it's
+resistant to being merely a little bit wrong. Dead-reckoning drift
 rate is the least forgiving parameter -- it tips the best-value suite
 (to Odometry pods) at 2.0x its estimated value, a real (CI-clean) flip.
 AprilTag's own correction-quality parameters (max correction, range/
@@ -1427,7 +1426,7 @@ also hold themselves to. Full table and plain-language summary in
 `benchmark_results/ftc_robustness_writeup.md`, chart in
 `ftc_robustness.png`.
 
-**What this does and doesn't prove.** A tipping point bounds how wrong
+What this does and doesn't prove. A tipping point bounds how wrong
 an estimate can be before the conclusion changes -- it says nothing
 about whether the *real* value is inside or outside that bound. This
 BOUNDS the "uncalibrated variance" limitation (README.md's "Threats to
@@ -1519,7 +1518,7 @@ interior cell of the assumed start->goal path, via the same
 identically and confirming they choose the same cell, not just assumed
 from reading the code.
 
-**The result: a moving opponent changes which suite is the best value.**
+The result: a moving opponent changes which suite is the best value.
 FullSuite is best against a static blocker; Odometry pods is best
 against a moving one (a margin close enough over the runner-up,
 AprilTag, that this module checks it with a bootstrap-CI overlap test
@@ -1575,8 +1574,8 @@ branches against an independently-derived closed-form kinematics answer
 reaches cruise speed at this project's constants, and confirms the new
 time is always >= the old naive one, never less.
 
-**The headline success-rate numbers (56%/45%/35%/21%/19%, 40.0 vs.
-16.2pp/$100) did not change** -- despite drive time per step roughly
+The headline success-rate numbers (56%/45%/35%/21%/19%, 40.0 vs.
+16.2pp/$100) did not change -- despite drive time per step roughly
 quadrupling (median total match time went from ~1.5-2.5s to ~5.3s,
 max from single digits to ~21s), no trial in the 4,125-match headline
 sweep crossed the 30-second budget, so every success/collision outcome

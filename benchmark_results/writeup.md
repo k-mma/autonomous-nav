@@ -31,7 +31,7 @@ of variance for grids of similar difficulty, because tree growth depends
 entirely on where random samples happen to land. Dijkstra and A* never
 vary like this on a fixed grid; RRT does, every single run.
 
-**RRT loses on path quality most of the time.** Averaged over all 20
+RRT loses on path quality most of the time. Averaged over all 20
 trials it produced a path 9.1% longer than the optimal Dijkstra/A* route.
 On individual trials the overhead spiked as high as 100.7% (trial 9,
 29.8% density -- literally double the optimal length) and 97.0% (trial
@@ -39,7 +39,7 @@ On individual trials the overhead spiked as high as 100.7% (trial 9,
 after finding one; it keeps whatever zig-zagging route the tree happened
 to grow.
 
-**RRT sometimes "wins" on raw path length, which is not a contradiction.**
+RRT sometimes "wins" on raw path length, which is not a contradiction.
 12 of the 20 trials show RRT *shorter* than the "optimal" grid path -- as
 much as -27.7% (trial 16) and -24.0% (trial 20). This benchmark runs
 Dijkstra/A* with diagonal movement off, so their optimal path is
@@ -50,7 +50,7 @@ is allowed to. Its "path length" is optimal relative to a *different,
 less constrained* movement model, not proof it beat A* at the same
 problem.
 
-**Runtime** is RRT's clearest loss: 0.02-6.37ms per trial with no
+Runtime is RRT's clearest loss: 0.02-6.37ms per trial with no
 correlation to obstacle density at all -- it tracks tree size instead.
 Trial 9 (179 nodes) took 6.37ms and trial 7 (4 nodes, the smallest tree
 of the run) took 0.02ms, a >300x spread that has nothing to do with how
@@ -60,7 +60,7 @@ the tree happened to grow -- a property of RRT's own randomness, not of
 the problem. A*/Dijkstra's runtime is boringly proportional to cells
 explored, every time, on the same grid.
 
-**The honest takeaway:** on this domain -- a small, fully-known, static
+The honest takeaway: on this domain -- a small, fully-known, static
 grid -- RRT is strictly worse than A*: slower, less predictable, and
 producing longer paths. It exists here to demonstrate the algorithm and
 its tradeoffs, not because it's the right tool for this problem. RRT
@@ -78,9 +78,9 @@ what they do with it. That's a deliberately paired comparison: any
 difference in the resulting path is attributable to RRT*'s parent
 selection and rewiring, not to random variance between separate runs.
 
-**RRT* wins on path length, decisively and consistently.** Head to head,
+RRT* wins on path length, decisively and consistently. Head to head,
 RRT* produced a *shorter* path than plain RRT in all 20/20 trials -- never
-longer, never tied -- averaging **25.2% shorter**, ranging from a modest
+longer, never tied -- averaging 25.2% shorter, ranging from a modest
 0.9% (trial 16, where RRT's own tree already happened to grow a fairly
 direct route) up to 69.5% (trial 9, the same trial plain RRT's own
 benchmark write-up above flagged as its worst case -- RRT's path there was
@@ -105,13 +105,13 @@ solved a *less constrained* version of it -- but it is a fair claim
 against plain RRT, which faces the exact same lack of constraint and
 still loses to RRT* by 25.2% anyway.
 
-**The cost is runtime, and it's a real, structural cost, not just
-overhead from doing more per iteration.** RRT* averaged 67.1ms per trial
+The cost is runtime, and it's a real, structural cost, not just
+overhead from doing more per iteration. RRT* averaged 67.1ms per trial
 against plain RRT's 0.97ms -- almost 70x slower on the same 3,000-
 iteration budget. Most of that isn't the extra per-iteration work
 (parent selection and rewiring over a handful of nearby nodes each,
-cheap even with the k-d tree radius query); it's that **RRT* never stops
-early.** Plain RRT returns the instant some new node lands within
+cheap even with the k-d tree radius query); it's that RRT* never stops
+early. Plain RRT returns the instant some new node lands within
 `goal_radius` of the goal, so on an easy trial it might use a few dozen
 iterations out of its 3,000-iteration budget and quit. RRT* keeps
 iterating for the *entire* budget every time, because rewiring after
@@ -123,7 +123,7 @@ That's an intentional tradeoff (quality now costs a fixed, predictable
 amount of extra time instead of an unpredictable amount of extra path
 length), not an unexamined regression.
 
-**The honest takeaway:** if the 9.1% average path-length overhead plain
+The honest takeaway: if the 9.1% average path-length overhead plain
 RRT already had against optimal was worth fixing, RRT* fixes most of it
 (and then some, since it's being compared against RRT's own, equally
 unconstrained baseline) for a fixed, bounded extra cost in runtime, not

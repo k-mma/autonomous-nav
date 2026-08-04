@@ -4,7 +4,7 @@
 
 ## Crossover
 
-**variance_level = 0.2** is the first level where a closed-loop policy's 95% bootstrap CI on success rate no longer overlaps OpenLoopPolicy's, and stays non-overlapping for every level above it -- a statistical claim, not a fixed-margin one: at 20 trials/point OpenLoopPolicy's own CI here is about 30% wide, so the gap has to clear real sampling noise, not just a percentage-point threshold someone picked. At that point: open-loop 15%, reactive 100%, belief 100%.
+variance_level = 0.2 is the first level where a closed-loop policy's 95% bootstrap CI on success rate no longer overlaps OpenLoopPolicy's, and stays non-overlapping for every level above it -- a statistical claim, not a fixed-margin one: at 20 trials/point OpenLoopPolicy's own CI here is about 30% wide, so the gap has to clear real sampling noise, not just a percentage-point threshold someone picked. At that point: open-loop 15%, reactive 100%, belief 100%.
 
 ## Success rate by variance_level
 
@@ -24,7 +24,7 @@
 
 ## Reactive vs. belief: is the extra complexity worth it?
 
-Averaged across every variance_level, ReactivePolicy plans 1.28 times per trial past its bootstrap plan (0.482ms total planning time/trial); BeliefPolicy plans 15.20 times (9.943ms/trial) -- it replans every single step by construction (its expected-cost map changes with every sensor sweep, not just when a cell crosses the hard-obstacle threshold), so this gap is structural, not incidental. At variance_level >= 0.5, mean success rate is 100% for reactive vs. 93% for belief.
+Averaged across every variance_level, ReactivePolicy plans 1.28 times per trial past its bootstrap plan (0.472ms total planning time/trial); BeliefPolicy plans 15.20 times (9.728ms/trial) -- it replans every single step by construction (its expected-cost map changes with every sensor sweep, not just when a cell crosses the hard-obstacle threshold), so this gap is structural, not incidental. At variance_level >= 0.5, mean success rate is 100% for reactive vs. 93% for belief.
 
 ReactivePolicy actually matches or beats BeliefPolicy's success rate (100% vs. 93%) at high deviation while planning far less -- expected-cost planning's extra complexity isn't paying for itself in this range.
 

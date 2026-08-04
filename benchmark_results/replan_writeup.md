@@ -14,16 +14,16 @@ match A*'s path cost exactly.
 
 | Size | Moving obstacle: astar | D* Lite | speedup | Sensor discovery: astar | D* Lite | speedup |
 |---:|---:|---:|---:|---:|---:|---:|
-| 25x25 | 2.054ms | 0.848ms | **2.42x** | 1.312ms | 2.695ms | **0.49x** |
-| 50x50 | 7.181ms | 2.480ms | **2.90x** | 3.310ms | 5.268ms | **0.63x** |
-| 100x100 | 64.940ms | 7.647ms | **8.49x** | 30.399ms | 23.153ms | **1.31x** |
-| 200x200 | 329.304ms | 20.159ms | **16.34x** | 222.716ms | 112.853ms | **1.97x** |
+| 25x25 | 2.054ms | 0.848ms | 2.42x | 1.312ms | 2.695ms | 0.49x |
+| 50x50 | 7.181ms | 2.480ms | 2.90x | 3.310ms | 5.268ms | 0.63x |
+| 100x100 | 64.940ms | 7.647ms | 8.49x | 30.399ms | 23.153ms | 1.31x |
+| 200x200 | 329.304ms | 20.159ms | 16.34x | 222.716ms | 112.853ms | 1.97x |
 
 (Both totals are summed over every replan in the trial, not per-replan --
 "speedup" is total astar time / total D* Lite time for the whole trial.)
 
-**Moving obstacle: D* Lite wins at every size tested, and the margin
-grows fast.** 2.4x faster even at the small 25x25 grid this project
+Moving obstacle: D* Lite wins at every size tested, and the margin
+grows fast. 2.4x faster even at the small 25x25 grid this project
 actually runs interactively at, climbing to 16.3x by 200x200. This is
 the scenario where the mechanism plays out cleanly: an obstacle bouncing
 between two fixed cells only ever invalidates a small, localized
@@ -35,15 +35,15 @@ robot's current cell outward every single time, and that cost grows with
 distance-to-goal (hence with grid size), while D* Lite's repair cost
 stays close to flat.
 
-**Sensor discovery tells a more honest, two-part story: D* Lite is
+Sensor discovery tells a more honest, two-part story: D* Lite is
 *slower* at this project's actual scale, and only becomes faster once
-the grid is considerably bigger than anything this project runs.** At
+the grid is considerably bigger than anything this project runs. At
 25x25 and 50x50, D* Lite loses (0.49x and 0.63x -- roughly 2x and 1.6x
 *slower* than just calling astar fresh). It crosses over to a genuine
 win only at 100x100 (1.31x) and 200x200 (1.97x). Two things are going on
 here, both real, not artifacts:
 
-1. **Sensor discovery only ever adds obstacles, never removes them**
+1. Sensor discovery only ever adds obstacles, never removes them
    (`known_obstacles` is monotonically growing -- see WRITEUPS.md's
    sensor-model section), so each replan event tends to touch more newly
    -blocked cells at once than the single bouncing obstacle in the other
@@ -71,10 +71,10 @@ here) is a real property of this specific scenario, not noise.
 
 ## The honest takeaway
 
-**Neither scenario supports a flat "D* Lite is just faster" claim -- the
+Neither scenario supports a flat "D* Lite is just faster" claim -- the
 real, useful finding is that its advantage is asymptotic, and where the
 crossover sits genuinely depends on how localized a single replan event
-is.** The moving-obstacle scenario (one bouncing obstacle, a strictly
+is. The moving-obstacle scenario (one bouncing obstacle, a strictly
 local change every time) wins for D* Lite even at this project's actual
 25x25 scale. The sensor-discovery scenario (potentially several newly-
 sensed cells at once, plus real overhead in D* Lite's own bookkeeping)

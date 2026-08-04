@@ -1,14 +1,14 @@
 # autonomous-nav
 
-**Research question:** which sensing investment actually buys reliability
+Research question: which sensing investment actually buys reliability
 in a 30-second FTC (*FIRST* Tech Challenge) autonomous period, and at
 what level of field/reality deviation does each one become necessary?
 
 ![Sensor suite success rate vs. deviation, one row per deviation type, with 95% bootstrap CI bands](benchmark_results/ftc_suite_comparison.png)
 
-**The finding:** FullSuite (distance sensors + AprilTag + odometry, $230)
-has the highest raw success rate, but **AprilTag alone ($40) delivers
-more than double FullSuite's success-rate gain per dollar spent** over
+The finding: FullSuite (distance sensors + AprilTag + odometry, $230)
+has the highest raw success rate, but AprilTag alone ($40) delivers
+more than double FullSuite's success-rate gain per dollar spent over
 the free dead-reckoning baseline -- and the most useful result is
 negative: DistanceSensorSuite collides in roughly half its trials even
 at *zero* field deviation, because 3 narrow ToF cones cover only ~75° of
@@ -27,9 +27,9 @@ assumed. That's not enough data to answer the research question
 empirically, no matter how many matches a team plays. A testbed
 calibrated against real field/robot deviation lets them run the
 hundreds of controlled, repeatable trials the physical process could
-never supply. That's this project's actual thesis: **simulation here is
+never supply. That's this project's actual thesis: simulation here is
 the only viable instrument for this question, not a stand-in for
-hardware you'd use if only you had more of it.** See "Research
+hardware you'd use if only you had more of it. See "Research
 question" below for the full framing.
 
 Everything else in this repo -- the pathfinding planners, the
@@ -217,27 +217,27 @@ not an issue with this repo's code.
 
 ## The algorithms, briefly
 
-**Dijkstra** always expands the cheapest-so-far cell. It's guaranteed
+Dijkstra always expands the cheapest-so-far cell. It's guaranteed
 optimal and doesn't need any notion of "closer to the goal" -- it just
 explores outward in cost order, which is why it explores in ripples that
 don't obviously point at the goal.
 
-**A\*** expands the cell with the lowest `f = g + h`, where `g` is cost so
+A\* expands the cell with the lowest `f = g + h`, where `g` is cost so
 far (same as Dijkstra) and `h` is a heuristic estimate of the remaining
 cost. As long as `h` never overestimates the true remaining cost
 ("admissible"), A\* is still guaranteed optimal, but explores dramatically
 fewer cells because the heuristic steers it toward the goal instead of
 outward in every direction.
 
-**RRT** (Rapidly-exploring Random Tree) doesn't search a fixed neighbor
+RRT (Rapidly-exploring Random Tree) doesn't search a fixed neighbor
 graph at all: it grows a tree from the start by repeatedly sampling a
 random free point, stepping toward it from the tree's nearest node, and
 keeping that step if it doesn't cross an obstacle, until a node lands near
 the goal. It finds *a* path fast in open space and isn't restricted to
 grid-aligned moves, but -- unlike Dijkstra/A\* here -- it gives up
 optimality and determinism: the same grid produces a different tree, and a
-different path, every run. **This is the wrong tool at this project's
-grid scale** (see "Scale benchmark" below and "Planners the testbed
+different path, every run. This is the wrong tool at this project's
+grid scale (see "Scale benchmark" below and "Planners the testbed
 swaps between" above) -- kept as an explicit, measured baseline showing
 why, not a planner anything downstream (`ftc/`, the replanning policies)
 actually uses.
@@ -296,14 +296,14 @@ detour around it -- projects it into a 3D PyBullet world (one static box
 per obstacle cell, 1 grid cell = 1 meter), and plans across it with
 `nav.algorithms.find_path`, completely unmodified from the pygame version. It then:
 
-1. Plans the route **twice**: once with the cost map off (binary
+1. Plans the route twice: once with the cost map off (binary
    obstacles) and once with it on, and draws both as debug lines in the
    GUI (red vs blue) so you can see the clearance routing directly.
 2. Smooths the chosen route -- corner-cutting first, then a Catmull-Rom
    spline (`pybullet_app/sim3d/smoothing.py`) -- since A*'s sharp
    90-degree grid waypoints aren't something a robot base can track
    without stopping to pivot at every one.
-3. Drives a Husky robot along the result using **velocity control**
+3. Drives a Husky robot along the result using velocity control
    (`pybullet.resetBaseVelocity`, not teleportation) -- the same
    turn-then-drive controller for every smoothing mode; the visible
    smoothness difference comes entirely from how closely spaced the
@@ -370,7 +370,7 @@ cells are marked (a disc for start, a diamond for goal, colored and
 labeled per robot) so it's clear at a glance where each is headed. The
 coordination policy:
 
-- **Both robots replan, symmetrically.** Every `REPLAN_PERIOD_S = 0.05` s,
+- Both robots replan, symmetrically. Every `REPLAN_PERIOD_S = 0.05` s,
   each one runs A* against the real grid *plus* a block placed around the
   *other's* current cell (`cell_block`) -- the same technique the pygame
   `MovingObstacle` replanning logic used, just with a robot standing in
@@ -381,11 +381,11 @@ coordination policy:
   issued when the blocked cells changed or the last attempt found nothing,
   to avoid interrupting a perfectly good drive already in progress every
   single tick.
-- **If a route genuinely isn't there, the blocked robot holds position**
+- If a route genuinely isn't there, the blocked robot holds position
   (`waiting = True`) and retries on the next replan tick, rather than
   crashing on `None` or driving into a wall.
-- **A hard safety-distance stop is layered on top as an absolute last
-  resort, not the primary mechanism**: if the two robots' actual distance
+- A hard safety-distance stop is layered on top as an absolute last
+  resort, not the primary mechanism: if the two robots' actual distance
   ever closes below 0.55m (r2d2's own footprint radius is about 0.17m, so
   contact needs centers within roughly 0.34m), both are forced to stop
   that frame regardless of what their plans say -- checked
@@ -459,9 +459,9 @@ over the same increase with a linear-scan nearest-neighbor search) but
 faster than Dijkstra at every size above. Its *completeness* is a
 separate story the k-d tree doesn't touch: 8/8 -> 8/8 -> 7/8 -> 5/8 even
 with step size and iteration budget both scaled up for fairness, because
-Dijkstra/A\* are **resolution-complete** (guaranteed to find a path at
+Dijkstra/A\* are resolution-complete (guaranteed to find a path at
 the grid's resolution if one exists) while RRT is only
-**probabilistically complete** (guaranteed only as sample count ->
+probabilistically complete (guaranteed only as sample count ->
 infinity) -- a fixed iteration budget against a growing space is exactly
 the situation that guarantee doesn't cover. Full breakdown, including
 the before/after k-d tree numbers, in `benchmark_results/
@@ -492,7 +492,7 @@ DEGRADATION`. The headline finding below was re-checked against this
 more pessimistic model specifically to see if it would survive a less
 generous assumption about its own winner -- it did.)
 
-FullSuite wins on raw success rate, but **AprilTag is the best value**:
+FullSuite wins on raw success rate, but AprilTag is the best value:
 its success-rate gain over the free dead-reckoning baseline, per $100
 spent, is still more than double FullSuite's (40.0pp/$100 vs.
 16.2pp/$100) even under that more pessimistic correction model -- the
@@ -508,8 +508,8 @@ other two layouts (sparse, corridor) and finds AprilTag stays the
 best-value suite on both -- see `benchmark_results/
 ftc_layout_writeup.md` and "Threats to validity" below.
 
-The most useful negative result: **DistanceSensorSuite collides in
-roughly half its trials even at zero field deviation.** A controlled
+The most useful negative result: DistanceSensorSuite collides in
+roughly half its trials even at zero field deviation. A controlled
 check (same trials, pose drift forced to zero) shows about two-thirds
 of those collisions persist regardless -- the dominant cause isn't pose
 drift, it's that 3 narrow ToF cones at ~12.5&deg; half-angle each cover
@@ -543,14 +543,14 @@ Naming these plainly is what separates a research testbed from a demo
 -- none of them are secret, and none of them are fixed by this repo
 alone.
 
-- **Synthetic ground truth.** Every trial's "ground truth" grid
+- Synthetic ground truth. Every trial's "ground truth" grid
   (`nav/field_variance.py`'s `generate_ground_truth`) is a
   procedurally-perturbed copy of the assumed map, not a measurement of
   a real field. The perturbation model (start drift, obstacle drift,
   an unplanned blocker) is a hypothesis about what kinds of deviation
   matter, not a validated model of what FTC fields actually do.
-- **Uncalibrated variance -- BOUNDED, not closed, until real
-  measurements are supplied.** `variance_level` and `ftc/sensors.py`'s
+- Uncalibrated variance -- BOUNDED, not closed, until real
+  measurements are supplied. `variance_level` and `ftc/sensors.py`'s
   drift-rate constants are order-of-magnitude engineering estimates
   (see ftc/config.py's per-constant source comments) until `ftc/
   calibration.py` is run against real CSVs. `ftc/robustness.py` sweeps
@@ -566,7 +566,7 @@ alone.
   checked against a real field or robot; the synthetic placeholder
   dataset exists to make the pipeline runnable, not to make its output
   trustworthy.
-- **Simplified kinematics -- BOUNDED.** `ftc/match.py` now charges
+- Simplified kinematics -- BOUNDED. `ftc/match.py` now charges
   drive time via a trapezoidal (accelerate/cruise/decelerate) velocity
   profile bounded by `MAX_ACCEL_MPS2` (`ftc/match.py`'s
   `_trapezoidal_drive_time_s`) rather than assuming instantaneous
@@ -581,14 +581,14 @@ alone.
   defaulting to 8-directional movement on the assumption of a holonomic
   drivetrain. A real robot's actual time-to-goal will still differ from
   this model's prediction by some amount this repo doesn't measure.
-- **No opponent modeling -- BOUNDED.** The existing `unplanned_blocker`
+- No opponent modeling -- BOUNDED. The existing `unplanned_blocker`
   deviation type (one static obstacle, dropped once and left in place)
   is now joined by a `moving_blocker` variant in `ftc/
   opponent_benchmark.py`, which reuses `nav/obstacles.py`'s
   `MovingObstacle` (a seeded random walk, ticked on simulated match
   time) for a genuinely moving opponent, added alongside the static
-  version rather than replacing it. The finding: **a moving opponent
-  changes which suite is the best value** (Odometry pods beats AprilTag
+  version rather than replacing it. The finding: a moving opponent
+  changes which suite is the best value (Odometry pods beats AprilTag
   and FullSuite against a moving opponent; FullSuite is best against a
   static one -- see `benchmark_results/ftc_opponent_writeup.md`), and
   suites that never sense obstacles at all still do substantially
@@ -598,7 +598,7 @@ alone.
   plan reaches that cell). Still not modeled: the opponent has no goals
   of its own and doesn't react to this robot's presence -- a random
   walk is a step up from a fixed point, not a full multi-agent model.
-- **One field layout for the headline study -- CLOSED.** `ftc/
+- One field layout for the headline study -- CLOSED. `ftc/
   suite_benchmark.py` still runs on the `'cluttered'` layout only, but
   `ftc/layout_benchmark.py` reruns the identical full-rigor sweep on
   all three layouts `ftc/field.py` ships (sparse, cluttered, corridor)
@@ -608,8 +608,8 @@ alone.
   shift on a different layout" question for the three layouts this repo
   actually ships; a season-specific surveyed layout dropped in later
   (see `ftc/field.py`'s module docstring) is still unchecked.
-- **Small, fast trials mean the 30-second budget rarely binds --
-  CLOSED.** `ftc/budget_benchmark.py` sweeps `AUTONOMOUS_PERIOD_S`
+- Small, fast trials mean the 30-second budget rarely binds --
+  CLOSED. `ftc/budget_benchmark.py` sweeps `AUTONOMOUS_PERIOD_S`
   downward (30s to 1.5s) and finds it now binds starting around 15-20s
   under the trapezoidal kinematics model above (it barely bound at all
   under the old naive drive-time formula) -- see `benchmark_results/

@@ -24,7 +24,7 @@ at all.
 
 Separately, `AprilTagSuite.tag_correction` reads APRILTAG_CORRECTION_
 FACTOR_MAX / APRILTAG_RANGE_DEGRADATION / APRILTAG_ANGLE_DEGRADATION as
-**ftc.sensors module globals** (bound there by `from ftc.config import
+ftc.sensors module globals (bound there by `from ftc.config import
 ...` at the top of ftc/sensors.py, evaluated once at import). Varying
 those requires patching the attribute directly on the `ftc.sensors`
 module object -- patching ftc.config does nothing here either, for the
@@ -376,14 +376,14 @@ def write_writeup(all_points, tipping_points, path):
         "value sensor suite by success-rate-gained-per-dollar, more than double FullSuite's "
         "($230) return. That rests on estimated constants in ftc/config.py -- documented "
         "ballpark engineering figures, not measurements. This sweeps each one from 0.25x to "
-        "4x its estimated value and asks one question: **does the best-value suite actually "
-        f"change?** {ROBUSTNESS_TRIALS} trials/point at levels {ROBUSTNESS_LEVELS} (reduced "
+        "4x its estimated value and asks one question: does the best-value suite actually "
+        f"change? {ROBUSTNESS_TRIALS} trials/point at levels {ROBUSTNESS_LEVELS} (reduced "
         "from the headline sweep's 25 trials/11 levels -- a tipping-point search needs "
         "\"did the ranking flip,\" not a publication-grade curve at every multiplier), same "
         f"'{LAYOUT}' layout and identical scenario sequence across every point compared. Raw "
         "data in `ftc_robustness.csv`, chart in `ftc_robustness.png`.",
         "",
-        "**What this does and does not prove:** a tipping point bounds the estimate error "
+        "What this does and does not prove: a tipping point bounds the estimate error "
         "the conclusion can tolerate. It does not tell you whether the *real* value is "
         "inside or outside that bound -- only measured field/robot data through ftc/"
         "calibration.py can do that. A parameter that never tips across 0.25x-4x means the "
@@ -416,8 +416,8 @@ def write_writeup(all_points, tipping_points, path):
     lines += ["", "## What this means in plain language", ""]
     if not tipped:
         lines.append(
-            "**AprilTag stayed the best-value suite across every parameter, at every "
-            "multiplier tested (0.25x to 4x).** None of the estimated constants this sweep "
+            "AprilTag stayed the best-value suite across every parameter, at every "
+            "multiplier tested (0.25x to 4x). None of the estimated constants this sweep "
             "touched -- drift rates, AprilTag's correction quality, or any suite's price -- "
             "would have to be *exactly right* for the recommendation to hold; they'd all "
             "have to be off by more than 4x, in the specific direction that hurts AprilTag, "
@@ -429,7 +429,7 @@ def write_writeup(all_points, tipping_points, path):
         if clean_flips:
             worst = min(clean_flips, key=lambda t: max(t[1], 1 / t[1]))
             lines.append(
-                f"The recommendation is not universally robust: **{worst[0]}** tips the "
+                f"The recommendation is not universally robust: {worst[0]} tips the "
                 f"best-value suite at only {worst[1]}x its estimated value -- the least "
                 "forgiving parameter this sweep found. See the table above for the rest; "
                 "any row with a real (non-noise) tip is a specific, named number a reviewer "
@@ -440,7 +440,7 @@ def write_writeup(all_points, tipping_points, path):
                 lines.append("")
             lines.append(
                 "Some apparent flips did not survive a statistical check: "
-                + "; ".join(f"**{t[0]}** at {t[1]}x" for t in noisy_flips)
+                + "; ".join(f"{t[0]} at {t[1]}x" for t in noisy_flips)
                 + " -- the new \"winner\"'s success-rate confidence interval still overlaps the old "
                   "one's at that multiplier, so this could be sampling noise from only "
                   f"{ROBUSTNESS_TRIALS} trials/point rather than a genuine ranking change. Treat these "

@@ -179,7 +179,7 @@ def write_writeup(per_layout, stats_by_layout, path):
             cost = SUITES[suite].cost_usd
             per_100_str = "n/a (free)" if suite == "dead_reckoning" else f"{results[suite]['per_100']:+.1f}"
             lines.append(f"| {SUITE_LABELS[suite]} | ${cost:.0f} | {overall[suite]:.0%} | {per_100_str} |")
-        lines += ["", f"Best value on this layout: **{SUITE_LABELS[best]}**.", ""]
+        lines += ["", f"Best value on this layout: {SUITE_LABELS[best]}.", ""]
 
     winners = {layout: per_layout[layout][2] for layout in LAYOUT_ORDER}
     unanimous = len(set(winners.values())) == 1
@@ -187,14 +187,14 @@ def write_writeup(per_layout, stats_by_layout, path):
     if unanimous:
         winner = winners[LAYOUT_ORDER[0]]
         lines.append(
-            f"**{SUITE_LABELS[winner]} is the best-value suite on all three layouts** -- sparse, "
+            f"{SUITE_LABELS[winner]} is the best-value suite on all three layouts -- sparse, "
             "cluttered, and corridor. The headline recommendation is not an artifact of testing on "
             "the one layout with the most obstacles to sense; it holds on a near-open field and a "
             "single-forced-corridor field too."
         )
     else:
         lines.append(
-            "**The best-value suite is layout-dependent.** " + "; ".join(
+            "The best-value suite is layout-dependent. " + "; ".join(
                 f"{LAYOUT_LABELS[layout]} -> {SUITE_LABELS[w]}" for layout, w in winners.items()
             ) + ". This is a real finding, not a failure of the sweep: which sensing investment "
             "pays off depends on the field, not just the deviation type. Treat "

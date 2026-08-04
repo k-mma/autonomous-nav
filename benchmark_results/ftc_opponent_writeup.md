@@ -14,9 +14,9 @@
 
 ## Best value by blocker type
 
-Static: **Full suite** (+27.6pp/$100, baseline 8%). Moving: **Odometry pods** (+44.0pp/$100, baseline 30%).
+Static: Full suite (+27.6pp/$100, baseline 8%). Moving: Odometry pods (+44.0pp/$100, baseline 30%).
 
-**A moving opponent changes which suite wins**: Full suite is best against a static blocker, but Odometry pods is best against a moving one. This is a real finding, not a failure of the sweep -- the existing static-blocker deviation type was, in this specific respect, silently favoring whichever suite handles a fixed obstacle best, not whichever suite handles a genuinely unpredictable opponent best.
+A moving opponent changes which suite wins: Full suite is best against a static blocker, but Odometry pods is best against a moving one. This is a real finding, not a failure of the sweep -- the existing static-blocker deviation type was, in this specific respect, silently favoring whichever suite handles a fixed obstacle best, not whichever suite handles a genuinely unpredictable opponent best.
 
 ## Why do suites that never sense the blocker at all also do better against a moving one?
 

@@ -273,15 +273,15 @@ def write_writeup(stats, rows, path):
         "",
         "## Best value by blocker type",
         "",
-        f"Static: **{SUITE_LABELS[static_best]}** ({static_results[static_best]['per_100']:+.1f}pp/$100, "
-        f"baseline {static_baseline:.0%}). Moving: **{SUITE_LABELS[moving_best]}** "
+        f"Static: {SUITE_LABELS[static_best]} ({static_results[static_best]['per_100']:+.1f}pp/$100, "
+        f"baseline {static_baseline:.0%}). Moving: {SUITE_LABELS[moving_best]} "
         f"({moving_results[moving_best]['per_100']:+.1f}pp/$100, baseline {moving_baseline:.0%}).",
         "",
     ]
 
     if static_best == moving_best:
         lines.append(
-            f"**A moving opponent doesn't change which suite wins** -- {SUITE_LABELS[static_best]} is "
+            f"A moving opponent doesn't change which suite wins -- {SUITE_LABELS[static_best]} is "
             "the best-value suite against both a static and a moving obstacle. Modeling the opponent "
             "as a random walk instead of a fixed point changes the raw numbers (see the table above) "
             "but not the recommendation."
@@ -290,7 +290,7 @@ def write_writeup(stats, rows, path):
         moving_runner_up, moving_overlap = _runner_up_overlap(rows, "moving", moving_results, moving_best)
         if moving_overlap:
             lines.append(
-                f"**A moving opponent appears to change which suite wins, but not cleanly**: "
+                f"A moving opponent appears to change which suite wins, but not cleanly: "
                 f"{SUITE_LABELS[static_best]} is best against a static blocker, and {SUITE_LABELS[moving_best]} "
                 f"edges out {SUITE_LABELS[moving_runner_up]} for best value against a moving one -- but "
                 f"{moving_results[moving_best]['per_100']:.1f}pp/$100 vs. "
@@ -298,12 +298,12 @@ def write_writeup(stats, rows, path):
                 "suites' success-rate confidence intervals still overlap at this trial count. Treat "
                 f"\"{SUITE_LABELS[moving_best]} beats {SUITE_LABELS[moving_runner_up]} against a moving "
                 "opponent\" as plausible, not confirmed -- but the headline claim that follows doesn't "
-                "depend on that particular margin: **neither of them is Full suite**, and that gap "
+                "depend on that particular margin: neither of them is Full suite, and that gap "
                 f"({SUITE_LABELS[static_best]}'s static win) is not close."
             )
         else:
             lines.append(
-                f"**A moving opponent changes which suite wins**: {SUITE_LABELS[static_best]} is best "
+                f"A moving opponent changes which suite wins: {SUITE_LABELS[static_best]} is best "
                 f"against a static blocker, but {SUITE_LABELS[moving_best]} is best against a moving one. "
                 "This is a real finding, not a failure of the sweep -- the existing static-blocker "
                 "deviation type was, in this specific respect, silently favoring whichever suite handles "
