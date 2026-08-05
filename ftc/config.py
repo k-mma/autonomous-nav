@@ -119,6 +119,39 @@ MAX_ACCEL_MPS2 = 3.0
 # understate what a real re-plan actually costs mid-match).
 PLANNING_OVERHEAD_S = 0.05
 
+# === Collision recovery (optional -- ftc/match.py's on_collision="replan") ==
+# The default collision behavior everywhere in this project (ftc/match.py's
+# on_collision="halt", every existing benchmark's own call) treats a
+# collision as the end of the match -- which is what every published
+# number in this repo already measures, and stays unchanged. "replan" is
+# an opt-in alternative, used by the pygame_app/ftc_viz/ visualizer by
+# default (a real FTC autonomous program commonly has stall-detection/
+# retry logic of exactly this shape -- encoders stop advancing, back off,
+# replan, try again -- rather than a robot that simply powers through a
+# wall or gives up entirely on first contact): a bump is treated as a
+# generic stall (detectable via motor encoder feedback, which every FTC
+# robot has, independent of which sensor suite it's running), the
+# attempted cell is marked blocked in the robot's own belief, and it
+# replans around it and keeps going -- up to MAX_STALL_RETRIES consecutive
+# failed attempts before genuinely giving up (the same terminal outcome
+# "halt" always produces, just reached after trying rather than
+# immediately). See ftc/scratch/collision_recovery_test.py.
+#
+# Recovery time charged per stall -- back off, re-read encoders/sensors,
+# replan (PLANNING_OVERHEAD_S is charged separately, on top of this, by
+# the replan itself) -- no FTC-official spec, ballpark engineering
+# estimate sized the same rough way TURN_TIME_PER_90DEG_S is.
+COLLISION_RECOVERY_S = 0.3
+# How many consecutive failed attempts at a stall before giving up --
+# ballpark: enough that a suite with a real way to route around the
+# obstacle (one that senses obstacles, or gets a pose correction that
+# shifts its plan) almost always succeeds on its very next attempt, but
+# not so many that a suite with no way to perceive anything new (it
+# would replan the identical failing path every time, deterministically)
+# burns a large, unrealistic amount of simulated match time repeating
+# the same failed move.
+MAX_STALL_RETRIES = 3
+
 # Sensor suite costs -- VERIFIED against current vendor listings
 # (REV Robotics, goBILDA, Logitech retail), not ballpark estimates.
 # Each is a real listed price for a real part a team would actually

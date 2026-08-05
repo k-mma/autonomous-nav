@@ -72,17 +72,19 @@ threshold), so nearly every step in practice uses the triangular
 drive time is strictly >= the old naive distance/speed figure, never
 less.
 """
+import copy
 import math
 import time
 from dataclasses import dataclass
 
 from nav.algorithms import astar
+from nav.grid import Grid
 from nav.sensor import KnownGrid, blocks_remaining_path
 
 import ftc.config as config_module
 from ftc.config import (
-    AUTONOMOUS_PERIOD_S, CELL_SIZE_IN, INCHES_PER_METER, MAX_ACCEL_MPS2, MAX_DRIVE_SPEED_MPS,
-    PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
+    AUTONOMOUS_PERIOD_S, CELL_SIZE_IN, COLLISION_RECOVERY_S, INCHES_PER_METER, MAX_ACCEL_MPS2,
+    MAX_DRIVE_SPEED_MPS, MAX_STALL_RETRIES, PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
 )
 from ftc.field import in_to_cell
 from ftc.sensors import angular_diff, heading_deg
@@ -143,7 +145,8 @@ class MatchResult:
 
 
 def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_sites, rng,
-              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None, on_tick=None):
+              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None, on_tick=None,
+              on_collision="halt"):
     """Drive `suite` from `actual_start` (ground truth) to `goal`,
     planning against `assumed_grid`'s layout (the suite's only source of
     obstacle knowledge unless it senses otherwise) until it succeeds,
@@ -184,7 +187,23 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     add without touching the byte-for-byte optimistic-tier regression
     guarantee ftc/scratch/fidelity_test.py enforces: on_tick=None (every
     caller before this addition, and every existing test) skips every
-    call site outright."""
+    call site outright.
+
+    `on_collision` ("halt", the default -- every existing caller/
+    benchmark, unaffected) ends the match the instant a move would
+    collide, exactly as this function has always behaved. "replan" (ftc/
+    config.py's COLLISION_RECOVERY_S/MAX_STALL_RETRIES; used by pygame_
+    app/ftc_viz/'s visualizer) instead treats it as a generic stall --
+    detectable via motor encoder feedback, which every FTC robot has,
+    independent of sensor suite -- marks the attempted cell blocked in
+    the robot's own belief, charges COLLISION_RECOVERY_S, and forces a
+    replan around it rather than ending the match outright. It keeps
+    trying (this is what actually gives a sensing or pose-correcting
+    suite a real chance to route around what it just bumped) until
+    MAX_STALL_RETRIES consecutive attempts fail, at which point it gives
+    up -- the same terminal outcome "halt" always produces, just reached
+    after trying rather than immediately. See ftc/scratch/
+    collision_recovery_test.py."""
     fidelity = fidelity or config_module.MODEL_FIDELITY
     tier = config_module.FIDELITY_TIERS[fidelity]
     gearing_config = config_module.GEARING_OPTIONS[gearing or "stock"]
@@ -224,6 +243,24 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     path = None
     idx = 0
     planned_once = False
+    stalled = False
+    # Consecutive collisions since the last SUCCESSFUL step (any
+    # collision counts, not just a repeat of the identical target cell
+    # -- a robot that tries several different nearby cells in a row,
+    # each blocked, is exactly as stuck as one retrying the same cell,
+    # and capping only same-target repeats let a stuck episode rack up
+    # many real attempts, each against a different target, before ever
+    # tripping this cap). Reset to 0 on every successful step, so this
+    # bounds each STUCK EPISODE independently, not the whole match.
+    stall_streak = 0
+    # A copy of assumed_grid, mutated in place to add stall-blocked
+    # cells on top of it -- built lazily (only if on_collision="replan"
+    # ever actually stalls) since deep-copying a Grid is real, if small,
+    # work. Only used for suites that DON'T sense obstacles: a sensing
+    # suite already plans against a KnownGrid built from
+    # known_obstacles_believed below, so a stall-blocked cell is added
+    # there instead, in the same believed-frame set it already uses.
+    stalled_grid = None
 
     tick_counter = 0
 
@@ -243,6 +280,16 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             error=error, heading_error_deg=heading_error,
             path=list(path) if path else None,
             collisions=collisions, replans=replans,
+            # (position, heading_deg_or_None) per moving obstacle --
+            # heading is None for a plain nav.obstacles.MovingObstacle
+            # (no orientation concept at all), and a real value for
+            # anything that has one (e.g. pygame_app/scenarios/
+            # scenario_ftc_suites.py's own OpponentRobot, which drives a
+            # real path and therefore has a facing direction worth
+            # drawing). getattr with a default keeps this working for
+            # ANY object satisfying the existing tick()/.position
+            # contract, orientation or not.
+            moving_obstacle_positions=[(o.position, getattr(o, "heading_deg", None)) for o in moving_obstacles],
         )
         snapshot.update(extra)
         on_tick(snapshot)
@@ -290,7 +337,8 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             if hfrac:
                 heading_error *= (1 - hfrac)
 
-        replan_needed = not planned_once or tag_corrected
+        replan_needed = not planned_once or tag_corrected or stalled
+        stalled = False
         if suite.senses_obstacles and not replan_needed:
             current_believed = (round(true_position[0] - error[0]), round(true_position[1] - error[1]))
             remaining = path[idx:] if path is not None else []
@@ -301,7 +349,7 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             current_believed = (round(true_position[0] - error[0]), round(true_position[1] - error[1]))
             source_grid = (
                 KnownGrid(known_obstacles_believed, diagonal=assumed_grid.diagonal, size=assumed_grid.size)
-                if suite.senses_obstacles else assumed_grid
+                if suite.senses_obstacles else (stalled_grid if stalled_grid is not None else assumed_grid)
             )
             t0 = time.perf_counter()
             new_path, _, _ = astar(source_grid, current_believed, goal)
@@ -339,7 +387,46 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         if not ground_truth.is_valid(*next_true) or ground_truth.is_obstacle(*next_true):
             collisions += 1
             _emit("collision", attempted_position=next_true, newly_seen_believed=set(newly_seen_believed))
-            break
+            if on_collision != "replan":
+                break
+
+            # Stall recovery (see run_match's own docstring). Caps this
+            # STUCK EPISODE at MAX_STALL_RETRIES total failed attempts,
+            # not just repeats of the identical target -- a robot that
+            # tries several different nearby cells in a row, each
+            # blocked, is exactly as stuck as one retrying the same
+            # cell.
+            stall_streak += 1
+            if stall_streak >= MAX_STALL_RETRIES:
+                break
+
+            # A stall is detectable via motor encoder feedback alone --
+            # a generic capability every FTC robot has, independent of
+            # sensor suite -- so the blocked cell is learned regardless
+            # of suite.senses_obstacles, unlike newly_seen_believed
+            # above (which only ever updates for suites with a real
+            # obstacle sensor). Same believed-frame approximation
+            # nav/sensor.py's KnownGrid and this project's own
+            # WRITEUPS.md already document for sensed obstacles: computed
+            # from the CURRENT error at the moment of the stall, which
+            # can go stale if pose error drifts a lot afterward -- an
+            # existing, accepted limitation, not a new one.
+            believed_blocked = (round(next_true[0] - error[0]), round(next_true[1] - error[1]))
+            if suite.senses_obstacles:
+                if assumed_grid.is_valid(*believed_blocked):
+                    known_obstacles_believed.add(believed_blocked)
+            else:
+                if stalled_grid is None:
+                    stalled_grid = copy.deepcopy(assumed_grid)
+                if stalled_grid.is_valid(*believed_blocked):
+                    stalled_grid.cells[believed_blocked[0]][believed_blocked[1]] = Grid.OBSTACLE
+
+            elapsed_s += COLLISION_RECOVERY_S
+            if elapsed_s > AUTONOMOUS_PERIOD_S:
+                over_budget = True
+                break
+            stalled = True
+            continue
 
         step_dist = math.hypot(next_true[0] - true_position[0], next_true[1] - true_position[1])
         speed_factor, drift_mult = 1.0, 1.0
@@ -378,6 +465,7 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             break
 
         true_position = next_true
+        stall_streak = 0
         if step_dist > 1e-9:
             # Wheel slip: a faster/harder-geared drivetrain drifts more
             # per cell of real travel, not just arrives sooner --

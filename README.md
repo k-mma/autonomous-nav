@@ -168,10 +168,11 @@ pip install -r requirements.txt
 
 python3 pygame_app/main.py                       # the pygame visualizer
 python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
-python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner-style), all 5 headline suites side by side
+python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner/MeepMeep-style), real-time playback, all 5 headline suites side by side
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag                     # one suite, one big panel
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite         # an arbitrary side-by-side comparison
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suites all --fidelity pessimistic  # every suite ftc/sensors.py defines, at the pessimistic tier
+python3 pygame_app/scenarios/scenario_ftc_suites.py --opponent moving                    # a second, wandering robot on the field
 python3 -m nav.benchmark                         # regenerate benchmark_results/
 python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
 python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
@@ -791,7 +792,10 @@ pygame_app/        Everything that touches pygame
   scenario.py        ScenarioConfig -- preset state for scenarios/*.py
   scenarios/         Standalone launchers that open the visualizer into a preset scene
                       (maze, cost map, bottleneck, noisy sensor, step replay, uncertainty comparison,
-                      scenario_ftc_suites.py's RoadRunner-style FTC suite-comparison replay, ...)
+                      scenario_ftc_suites.py's RoadRunner/MeepMeep-style FTC suite-comparison replay --
+                      robots drawn at true 18in scale, real-time (not tick-stepped) playback via
+                      field_view.interp_snapshot, an opponent-robot option, and on_collision="replan"
+                      stuck/recovery behavior local to this visualizer only (see ftc/match.py), ...)
   ftc_viz/           Drawing primitives for scenario_ftc_suites.py's animated field panels (field_view.py) --
                       pure functions of an ftc/trace.py MatchTrace + tick index, no simulation of its own
   scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths

@@ -43,8 +43,9 @@ REROLL_FRAME = 15
 CYCLE_DEVIATION_FRAME = 30
 RAISE_LEVEL_FRAME = 45
 CYCLE_FIDELITY_FRAME = 60
-STEP_BACK_FRAME = 75
-QUIT_AFTER_FRAME = 90
+CYCLE_OPPONENT_FRAME = 75
+STEP_BACK_FRAME = 90
+QUIT_AFTER_FRAME = 105
 
 
 def run_headless(argv):
@@ -63,6 +64,8 @@ def run_headless(argv):
             pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHTBRACKET))
         elif n == CYCLE_FIDELITY_FRAME:
             pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_f))
+        elif n == CYCLE_OPPONENT_FRAME:
+            pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_o))
         elif n == STEP_BACK_FRAME:
             pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))  # pause
             pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_LEFT))
@@ -79,7 +82,7 @@ def run_headless(argv):
 
 def check_headless_run_completes_all_suites():
     try:
-        run_headless(["--suites", "all", "--fps", "8"])
+        run_headless(["--suites", "all", "--speed", "4"])
         ok = True
     except Exception as e:
         ok = False
@@ -91,7 +94,7 @@ def check_headless_run_completes_all_suites():
 
 def check_headless_run_completes_single_suite():
     try:
-        run_headless(["--suite", "apriltag", "--fps", "8"])
+        run_headless(["--suite", "apriltag", "--speed", "4"])
         ok = True
     except Exception as e:
         ok = False
