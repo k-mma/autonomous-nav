@@ -587,6 +587,49 @@ GEARING_OPTIONS = {
 GEARING_ORDER = ["stock", "fast", "faster"]
 GEARING_LABELS = {"stock": "Stock gearing", "fast": "Fast gearing", "faster": "Faster gearing"}
 
+# === Hardware parts (bundle costing) ====================================
+# Every suite in ftc/sensors.py prices itself with a flat cost_usd class
+# attribute, which is exactly right for comparing five fixed suites but
+# WRONG the moment suites get combined (ftc/bundle.py): AprilTagSuite
+# ($25, one webcam) plus AprilTagImuSuite ($25, the same one webcam and
+# a free IMU) is not a $50 robot -- it's a $25 robot, because the two
+# suites share a camera. Summing cost_usd would double-count every
+# shared part.
+#
+# So a bundle is costed over the UNION of its components' parts, priced
+# here. No new numbers are invented: every entry is one of the already-
+# sourced constants above, so the part model reproduces each existing
+# suite's published cost_usd exactly (ftc/bundle.py's
+# part_cost_mismatches() checks that, and ftc/scratch/bundle_test.py
+# fails if it ever stops being true).
+PART_COSTS_USD = {
+    "odometry_pods": ODOMETRY_POD_COST_USD,
+    # Priced per camera, so DualCameraAprilTagSuite's two mounts come
+    # out at DUAL_CAMERA_APRILTAG_COST_USD (= APRILTAG_COST_USD * 2)
+    # without that constant being restated here.
+    "camera_front": APRILTAG_COST_USD,
+    "camera_rear": APRILTAG_COST_USD,
+    "imu": IMU_COST_USD,
+    "lidar": LIDAR_COST_USD,
+    # One part per ToF-sensor COUNT rather than a single per-sensor
+    # part: the mount-heading layout is chosen per count (DISTANCE_
+    # SENSOR_MOUNT_HEADINGS_BY_COUNT above), so "3 sensors" and "6
+    # sensors" are genuinely different hardware configurations of the
+    # same perimeter, not 3 vs. 6 units of an interchangeable part --
+    # and a bundle containing both would be a robot with two competing
+    # ToF layouts, which ftc/bundle.py rejects rather than silently
+    # prices.
+    **{f"distance_sensors_{n}": DISTANCE_SENSOR_COST_USD * n
+       for n in sorted({DISTANCE_SENSOR_COUNT, *DISTANCE_SENSOR_COUNTS_SWEPT})},
+}
+# Parts that physically conflict with each other on one robot -- each
+# entry is a set of mutually exclusive parts (see ftc/bundle.py's
+# conflicting_parts). Two different ToF layouts is the only real case
+# today: you mount 3 sensors or 6, not both.
+CONFLICTING_PART_GROUPS = [
+    {f"distance_sensors_{n}" for n in sorted({DISTANCE_SENSOR_COUNT, *DISTANCE_SENSOR_COUNTS_SWEPT})},
+]
+
 # math.radians(APRILTAG_FOV_DEG) etc. computed on demand where needed;
 # nothing below this line is a tunable, just a derived convenience.
 INCHES_PER_METER = 1.0 / 0.0254

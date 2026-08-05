@@ -187,8 +187,13 @@ python3 -m ftc.drivetrain_benchmark              # tank vs. mecanum -- does hold
 python3 -m ftc.coverage_benchmark                # distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot?
 python3 -m ftc.newsuites_benchmark               # IMU / AprilTag+IMU / dual-camera AprilTag
 python3 -m ftc.gearing_benchmark                 # faster motor gearing vs. wheel slip, crossed with the budget
+python3 -m ftc.optimizer_benchmark               # bundle study: every combination of suites, Pareto frontier + synergy significance
 python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
 python3 -m ftc.recommend                         # decision CLI: suite ranking + predicted success/time/cost
+python3 -m ftc.optimizer                         # bundle optimizer CLI: which COMBINATION of sensors to buy
+python3 -m ftc.optimizer --budget 150            # ... best robot for $150
+python3 -m ftc.optimizer --objective worst_case  # ... most robust across scenarios, not best on average
+python3 -m ftc.optimizer --search greedy --require-significant   # ... marginal value of each sensor added, stopping when it stops paying
 python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
 python3 pybullet_app/pybullet_main.py --sensor    # ... with the raycast lidar instead of a perfect map
 python3 pybullet_app/pybullet_multi_robot_main.py # two robots, forced corridor conflict
@@ -578,6 +583,64 @@ print which one (real or placeholder) they're actually running on; see
 the next section for why that distinction matters as much as the
 numbers themselves.
 
+## Sensor bundle optimizer: which COMBINATION to buy
+
+The suite study above compares five fixed suites. A team's real question
+is a shopping question -- given everything on the shelf, which
+*combination* should we buy, is combining actually better than buying
+the single best sensor, and what's the best robot for the money we
+have? `ftc/bundle.py` composes any 2+ suites into one working suite,
+and `ftc/optimizer.py` searches that space; `ftc/optimizer_benchmark.py`
+runs the study (43 distinct robots x 5 scenario profiles x 25 trials,
+full writeup in `benchmark_results/ftc_optimizer_writeup.md`).
+
+![Every buildable robot: cost vs. success with the Pareto frontier, and the winning robot per scenario](benchmark_results/ftc_optimizer_frontier.png)
+
+Bundles are costed over the **union of their parts**, not the sum of
+their prices: AprilTag ($25, one webcam) + AprilTag-with-IMU ($25, the
+same webcam and a free IMU) is a $25 robot with one camera, and the two
+descriptions collapse to the same candidate before anything is
+simulated. That's what makes 92 raw combinations reduce to 43 genuinely
+distinct robots.
+
+Because every candidate runs the *identical* seeded scenarios, "is this
+bundle better?" is answered with a **paired** bootstrap
+(`nav/stats.py`'s `bootstrap_paired_diff_ci`) rather than by checking
+whether two independent CIs overlap. That distinction is not cosmetic:
+in `ftc/scratch/optimizer_test.py`'s constructed case, two candidates
+whose independent CIs overlap heavily (20-50% vs. 35-65%) have a paired
+difference of [+5.0%, +27.5%], p=0.004. Scenario difficulty is the
+dominant source of variance here, and pairing removes it.
+
+| Question | Answer from the sweep |
+|---|---:|
+| Best average across scenarios | odometry pods + IMU + 2 cameras + lidar ($430, 66%) |
+| Best worst-case (minimax) | odometry pods + IMU + 2 cameras ($330) -- same 32% worst case, $100 less |
+| Best robot under $300 | front + rear camera ($50, 43%) |
+| Cheapest *significant* upgrade over one sensor | + odometry pods over dual-camera AprilTag (+17.6%, 95% CI [+10.4%, +24.8%]) |
+
+Three findings worth stating plainly:
+
+- **Bundling genuinely works, but only across capability categories.**
+  Every bundle that significantly beat its own best single component
+  spans more than one category (pose fixing / obstacle sensing / drift
+  reduction / heading holding) *and* adds a category that single
+  component lacked. Two sensors that fix the same failure mode largely
+  don't stack -- the second is correcting an error the first already
+  removed. Buy across failure modes, not the two best sensors.
+- **Nothing between $50 and $305 is worth buying.** The best robot at
+  a $150 budget and at a $300 budget is the same $50 one; the next rung
+  of the frontier is out of reach and every intermediate option is a
+  worse buy than something cheaper.
+- **Greedy "buy the best thing, then the next best thing" reasoning
+  happens to work here, and its steps show where it stops paying.**
+  Forward selection lands on the same robot as exhaustive search, but
+  only its *first* addition (odometry pods, +16.8%, p<0.001) is
+  statistically significant. The next two -- a $100 lidar (+5.6%,
+  p=0.156) and the free IMU (+0.8%, p=0.367) -- are not distinguishable
+  from noise, which is why `--require-significant` exists as a stopping
+  rule.
+
 ## Threats to validity / limitations
 
 Naming these plainly is what separates a research testbed from a demo
@@ -590,6 +653,15 @@ alone.
   a real field. The perturbation model (start drift, obstacle drift,
   an unplanned blocker) is a hypothesis about what kinds of deviation
   matter, not a validated model of what FTC fields actually do.
+- No sensor-fusion conflict. `ftc/bundle.py` merges a bundle's
+  capabilities optimistically: obstacle sensors union their detections,
+  the best localization hardware sets the drift rate, and multiple
+  cameras feed one detection pipeline. Two sensors *disagreeing* about
+  where the robot is -- and the filter/fusion work of resolving that --
+  is not modeled at all, so the optimizer's bundle results are an upper
+  bound on what combining buys. Real fusion also costs integration
+  effort this project's dollar model can't price; the `parts` count is
+  the only proxy for it.
 - Uncalibrated variance -- BOUNDED, not closed, until real
   measurements are supplied. `variance_level` and `ftc/sensors.py`'s
   drift-rate constants are order-of-magnitude engineering estimates
@@ -750,7 +822,8 @@ nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ i
   field_variance.py   Turns "how far reality deviates from the assumed map" into a sweepable knob, 3 independently-scalable deviation types
   policies.py         OpenLoopPolicy / ReactivePolicy / BeliefPolicy behind one shared interface
   uncertainty_benchmark.py  Open-loop vs reactive vs belief under swept map/reality deviation -> CSV + plot + statistical crossover
-  stats.py            Pure-stdlib bootstrap confidence intervals (no numpy/scipy in this venv)
+  stats.py            Pure-stdlib bootstrap confidence intervals, plus a PAIRED difference bootstrap
+                       (shared-scenario comparisons: resamples trial indices, not each list separately)
   scratch/         Standalone throwaway scripts used to prove each piece
                     works before it was wired into the visualizer/pybullet_main
                     (framework-agnostic tests only -- pygame/PyBullet-specific
@@ -779,12 +852,18 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
   gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
   calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
   recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
+  bundle.py          Composes 2+ suites into one working suite -- part-level costing (shared hardware counted
+                     once), capability merging, duplicate-robot detection; a 1-suite bundle is byte-for-byte
+                     that suite, and distance+AprilTag+odometry IS FullSuite (ftc/scratch/bundle_test.py)
+  optimizer.py       Searches the bundle space: scenario profiles, PAIRED significance testing of bundle vs.
+                     best single sensor, Pareto frontier, best-under-budget, exhaustive + greedy search
+  optimizer_benchmark.py The bundle study -- every buildable combination x 5 scenario profiles -> CSV + 2 plots + writeup
   trace.py           record_match() -- runs run_match() once and additionally captures a full tick-by-tick
                      replay trace via its on_tick hook (purely additive, doesn't change the simulation) --
                      what pygame_app/ftc_viz/'s animated visualizer is built on
   scratch/         Same role as nav/scratch/, for the FTC-specific pieces (includes fidelity_test.py,
-                     drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py, trace_test.py
-                     for this addition)
+                     drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py, trace_test.py,
+                     bundle_test.py and optimizer_test.py for this addition)
 
 pygame_app/        Everything that touches pygame
   main.py            Entry point: opens the interactive visualizer

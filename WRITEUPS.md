@@ -1977,3 +1977,124 @@ table and this project's own fixed grid cell size, not from a tuned
 constant. `slip_factor` remains the one number in `GEARING_OPTIONS`
 that is an explicit ballpark engineering estimate: no vendor publishes
 slip-vs-gearing data.
+
+## The bundle optimizer: from "which suite" to "which combination"
+
+Every study above this one compares a fixed list of suites. That list
+was always the real limitation, and it took a while to see it: five
+suites is a *comparison*, not a *search*, and one of the five
+(`FullSuite`) is a hand-written class that happens to hardcode one
+particular combination of three others. There are nine suites in
+`ftc/sensors.py` now. Nobody was going to hand-write the other
+combinations, so nobody could ask whether any of them were worth
+buying.
+
+`ftc/bundle.py` composes them on demand instead. The interesting part
+wasn't the composition -- OR the capability flags, take the min of the
+drift rates, union the obstacle sensors -- it was the two things that
+would have quietly produced wrong answers if I'd done the obvious
+thing.
+
+The first is cost. Suites price themselves with a flat `cost_usd`, and
+summing those over a bundle double-counts every shared part:
+`AprilTagSuite` ($25, one webcam) plus `AprilTagImuSuite` ($25, the
+same webcam and a free IMU) is not a $50 robot. It's a $25 robot,
+described twice. So a bundle is costed over the *union of its parts*
+(`ftc/config.py`'s `PART_COSTS_USD`), which does more than fix the
+arithmetic: it gives every bundle a part signature, and two bundles
+with the same signature are the same purchase. 92 raw combinations of
+8 suites collapse to 43 genuinely distinct robots, and the search never
+pays to simulate the same robot twice or offers a team two names for
+one option. A "cost model" that started as a bookkeeping fix turned
+into the deduplication key for the whole search.
+
+The second is that composition had to be *exact*, not approximate. If a
+bundle of {distance sensors, AprilTag, odometry pods} isn't
+byte-for-byte `FullSuite`, then every number the optimizer prints lives
+in a slightly different universe from the published headline results
+and the two can't be compared. `ftc/scratch/bundle_test.py` enforces
+that: a one-suite bundle reproduces that suite's `MatchResult` exactly
+(all 9 suites x 3 seeds x 2 fidelity tiers), and the three-component
+bundle reproduces `FullSuite` match for match. That constraint is what
+forced the one genuinely non-obvious design decision in the module.
+A bundle does NOT call each pose-fixing component's `tag_correction`
+in turn -- that would consume one rng draw per component per tick, so a
+two-camera bundle would diverge from an identical single-camera robot
+on a shared seed for reasons having nothing to do with its second
+camera. It runs one detection pipeline over the *union* of its camera
+mounts, which is both what the robot physically has and the only
+version that stays exact.
+
+### The statistics were the actual upgrade
+
+`ftc/optimizer.py` searches the space, but the part I'd defend hardest
+is the significance test, because "this bundle is better" is the claim
+the whole module exists to make and it's easy to make badly.
+
+Every benchmark in this repo already runs each candidate against the
+identical seeded scenarios -- shared scenarios are the reason a gap
+between suites is attributable to the suite. But every comparison in
+this repo then *threw that structure away*, computing two independent
+bootstrap CIs and eyeballing whether they overlap. That's leaving a lot
+on the table. Scenario difficulty is the dominant source of variance
+here: two candidates can differ reliably by 15 points on the same
+trials while each one's own success rate has a 30-point CI.
+
+`nav/stats.py`'s new `bootstrap_paired_diff_ci` resamples trial
+*indices* instead, so a resample takes trial i's outcome from both
+candidates or from neither. `ftc/scratch/optimizer_test.py` has the
+constructed case: A=14/40 and B=20/40 with independent CIs of [20%,
+50%] and [35%, 65%] -- heavily overlapping, a clear "call it a wash"
+under the old test -- have a paired difference of [+5.0%, +27.5%],
+p=0.004. Same data. The check that this cuts both ways is in the same
+file: identical vectors return [0, 0] with p=1.0, and two independent
+coin flips are not called significant.
+
+### What it found
+
+The headline is that bundling works, but only in a specific way: every
+bundle that significantly beat its own best single component spans more
+than one *capability category* (pose fixing, obstacle sensing, drift
+reduction, heading holding) AND adds a category that single component
+didn't have. That isn't a claim I wrote into the writeup and hoped for
+-- `ftc/optimizer_benchmark.py` checks it against the data and prints a
+hedged version instead if it doesn't hold. The mechanism is the one
+this project's own deviation-type analysis has been pointing at since
+the headline study: a match is lost to whichever deviation the robot
+has no answer for, so two sensors fixing the *same* failure mode mostly
+don't stack -- the second is correcting an error the first already
+removed.
+
+Three results I didn't expect:
+
+- **Nothing between $50 and $305 is worth buying.** The best robot at a
+  $150 budget and at a $300 budget is the same $50 one (front + rear
+  camera). The next rung of the Pareto frontier is out of reach and
+  every intermediate option is a worse buy than something cheaper. A
+  budget table with an "unspent" column makes that visible in a way a
+  ranking never would.
+- **The best-average robot and the most-robust robot cost $100
+  different for the same worst case.** Optimizing the mean across
+  scenarios and optimizing the *worst* scenario (minimax -- the right
+  objective when you can't predict your division) pick robots that tie
+  on worst-case success. The first draft of the writeup asserted they
+  were "different robots, which is the whole reason this study reports
+  both" -- true in general, false in this run, and it was only false
+  because `rank()` breaks worst-case ties toward the cheaper robot. The
+  prose now compares the worst-case *rates* and says plainly when the
+  two objectives agree. An artifact of a tiebreaker is not a finding.
+- **Greedy search happens to be enough here, and its steps are the more
+  useful output anyway.** Forward selection lands on the same robot as
+  exhaustive enumeration, but only its first addition (+odometry pods,
+  +16.8%, p<0.001) is statistically significant; a $100 lidar (+5.6%,
+  p=0.156) and a free IMU (+0.8%, p=0.367) after it are not. "Stop when
+  the mean stops going up" would have bought both. `--require-
+  significant` stops when the *evidence* stops, which is a different and
+  better rule.
+
+The honest limitation, stated in the study itself: fusion conflict
+isn't modeled. Capabilities merge optimistically -- sensors union their
+detections, the best localization hardware sets the drift rate -- so
+two sensors *disagreeing* about where the robot is, and the filter work
+of resolving that, costs nothing here. Every bundle number is therefore
+an upper bound on what combining actually buys.
