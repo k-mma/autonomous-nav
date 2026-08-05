@@ -8,23 +8,23 @@ Overall success rate, variance_level >= 0.3 across all three deviation types:
 
 | Suite | Cost | Optimistic | Realistic | Pessimistic |
 |---|---:|---:|---:|---:|
-| Full suite | $230 | 56% | 53% | 52% |
-| Odometry pods | $100 | 45% | 45% | 45% |
-| AprilTag | $40 | 35% | 26% | 23% |
-| Distance sensors | $90 | 21% | 19% | 19% |
+| Full suite | $399 | 58% | 54% | 53% |
+| Odometry pods | $280 | 45% | 45% | 45% |
+| AprilTag | $25 | 44% | 32% | 24% |
+| Distance sensors | $94 | 21% | 19% | 19% |
 | Dead reckoning | $0 | 19% | 23% | 22% |
 
 ## Best-value suite at each tier (success-rate gain over dead reckoning, per $100)
 
 | Tier | Best value | pp/$100 | Full suite's pp/$100 |
 |---|---|---:|---:|
-| optimistic | AprilTag | +40.0 | +16.2 |
-| realistic | Odometry pods | +22.3 | +13.0 |
-| pessimistic | Odometry pods | +22.7 | +13.0 |
+| optimistic | AprilTag | +99.3 | +9.7 |
+| realistic | AprilTag | +36.7 | +7.7 |
+| pessimistic | Odometry pods | +8.1 | +7.7 |
 
 ## Does the best-value recommendation survive tightening the model?
 
-The best-value suite changes across tiers: optimistic -> AprilTag; realistic -> Odometry pods; pessimistic -> Odometry pods. This is a real finding, not a failure of the sweep -- it means the published optimistic-tier recommendation is conditional on the optimistic tier's assumptions (omnidirectional camera, perfect heading knowledge), not universal. Fidelity tiers BOUND the camera-FOV/heading-error gap in the model (README.md's "Threats to validity"); they do not CALIBRATE it -- only ftc/calibration.py run against real measured data does that.
+The best-value suite changes across tiers: optimistic -> AprilTag; realistic -> AprilTag; pessimistic -> Odometry pods. This is a real finding, not a failure of the sweep -- it means the published optimistic-tier recommendation is conditional on the optimistic tier's assumptions (omnidirectional camera, perfect heading knowledge), not universal. Fidelity tiers BOUND the camera-FOV/heading-error gap in the model (README.md's "Threats to validity"); they do not CALIBRATE it -- only ftc/calibration.py run against real measured data does that.
 
 ## What this does and does not prove
 

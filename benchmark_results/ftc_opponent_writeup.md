@@ -7,16 +7,16 @@
 | Suite | Cost | Static | Moving | Difference |
 |---|---:|---:|---:|---:|
 | Dead reckoning | $0 | 8% | 30% | +22% |
-| Odometry pods | $100 | 27% | 74% | +47% |
-| Distance sensors | $90 | 24% | 25% | +0% |
-| AprilTag | $40 | 10% | 48% | +38% |
-| Full suite | $230 | 72% | 72% | -1% |
+| Odometry pods | $280 | 27% | 74% | +47% |
+| Distance sensors | $94 | 24% | 25% | +0% |
+| AprilTag | $25 | 17% | 52% | +36% |
+| Full suite | $399 | 74% | 74% | +1% |
 
 ## Best value by blocker type
 
-Static: Full suite (+27.6pp/$100, baseline 8%). Moving: Odometry pods (+44.0pp/$100, baseline 30%).
+Static: AprilTag (+34.0pp/$100, baseline 8%). Moving: AprilTag (+90.0pp/$100, baseline 30%).
 
-A moving opponent changes which suite wins: Full suite is best against a static blocker, but Odometry pods is best against a moving one. This is a real finding, not a failure of the sweep -- the existing static-blocker deviation type was, in this specific respect, silently favoring whichever suite handles a fixed obstacle best, not whichever suite handles a genuinely unpredictable opponent best.
+A moving opponent doesn't change which suite wins -- AprilTag is the best-value suite against both a static and a moving obstacle. Modeling the opponent as a random walk instead of a fixed point changes the raw numbers (see the table above) but not the recommendation.
 
 ## Why do suites that never sense the blocker at all also do better against a moving one?
 
@@ -29,7 +29,7 @@ Dead reckoning, Odometry pods, AprilTag never sense obstacles -- they can't reac
 | Dead reckoning | 0.75 | 0.49 | 0.00 | 0.00 |
 | Odometry pods | 0.73 | 0.26 | 0.00 | 0.00 |
 | Distance sensors | 0.58 | 0.57 | 0.65 | 0.65 |
-| AprilTag | 0.74 | 0.40 | 1.66 | 2.27 |
-| Full suite | 0.28 | 0.25 | 2.21 | 2.34 |
+| AprilTag | 0.74 | 0.35 | 3.20 | 4.82 |
+| Full suite | 0.27 | 0.23 | 3.72 | 3.80 |
 
 Suites that sense obstacles (Distance sensors, Full suite) replan more against a moving opponent than a static one, since a random-walking obstacle can wander back onto an already-cleared path -- extra active work a static blocker never demands, but work that still pays off in a lower collision rate (see the table above). The non-sensing suites' improvement above is a *passive* benefit (the blocker happens to wander off their fixed route); this is the *active* version of the same underlying advantage -- a sensing suite can additionally detect and route around the blocker even while it's still nearby, instead of just waiting for it to leave.

@@ -10,10 +10,10 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 27%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $230 | 87% | +25.8 |
-| AprilTag | $40 | 66% | +96.2 |
-| Odometry pods | $100 | 51% | +23.5 |
-| Distance sensors | $90 | 30% | +3.0 |
+| Full suite | $399 | 86% | +14.8 |
+| AprilTag | $25 | 70% | +170.7 |
+| Odometry pods | $280 | 51% | +8.4 |
+| Distance sensors | $94 | 30% | +2.8 |
 | Dead reckoning | $0 | 27% | n/a (free) |
 
 Best value on this layout: AprilTag.
@@ -24,10 +24,10 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 19%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $230 | 56% | +16.2 |
-| Odometry pods | $100 | 45% | +26.2 |
-| AprilTag | $40 | 35% | +40.0 |
-| Distance sensors | $90 | 21% | +2.4 |
+| Full suite | $399 | 58% | +9.7 |
+| Odometry pods | $280 | 45% | +9.3 |
+| AprilTag | $25 | 44% | +99.3 |
+| Distance sensors | $94 | 21% | +2.3 |
 | Dead reckoning | $0 | 19% | n/a (free) |
 
 Best value on this layout: AprilTag.
@@ -38,10 +38,10 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 22%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $230 | 67% | +19.4 |
-| AprilTag | $40 | 60% | +94.6 |
-| Odometry pods | $100 | 47% | +25.0 |
-| Distance sensors | $90 | 24% | +1.5 |
+| Full suite | $399 | 67% | +11.2 |
+| AprilTag | $25 | 61% | +155.3 |
+| Odometry pods | $280 | 47% | +8.9 |
+| Distance sensors | $94 | 24% | +1.4 |
 | Dead reckoning | $0 | 22% | n/a (free) |
 
 Best value on this layout: AprilTag.
@@ -52,4 +52,4 @@ AprilTag is the best-value suite on all three layouts -- sparse, cluttered, and 
 
 ## Consistency check
 
-The 'cluttered' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__`, so it reruns the identical scenarios. Overall success rate here: Dead reckoning 19%, Odometry pods 45%, Distance sensors 21%, AprilTag 35%, Full suite 56% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what 'cluttered' means rather than just adding two more layouts.
+The 'cluttered' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__`, so it reruns the identical scenarios. Overall success rate here: Dead reckoning 19%, Odometry pods 45%, Distance sensors 21%, AprilTag 44%, Full suite 58% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what 'cluttered' means rather than just adding two more layouts.

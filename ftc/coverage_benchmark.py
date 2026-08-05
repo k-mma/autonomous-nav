@@ -1,7 +1,8 @@
 """
 The strongest existing finding in this project is a negative one:
 DistanceSensorSuite (3 narrow ToF cones, ~12.5deg half-angle each,
-~$90) collides in roughly half its trials even at zero field deviation,
+~$95 at current REV pricing -- ftc/config.py's DISTANCE_SENSOR_COST_USD)
+collides in roughly half its trials even at zero field deviation,
 because those 3 cones cover only ~75deg of the 360deg around the robot
 -- and a controlled check showed pose drift is NOT the dominant cause
 (ftc_suite_writeup.md's "Honest findings"). That study never says
@@ -18,9 +19,11 @@ things:
    the suite worth its scaling price (DISTANCE_SENSOR_COST_USD per
    sensor).
 2. Adds LidarSuite (ftc/sensors.py) -- a full 360-degree disc scan,
-   ~$100, nav/sensor.py's LidarSensor already IS exactly this sensing
-   model -- as the direct head-to-head the blind-spot finding demands:
-   ~$90 of blind cones vs. ~$100 of full coverage.
+   ~$100 (Slamtec RPLIDAR A1, ftc/config.py's LIDAR_COST_USD),
+   nav/sensor.py's LidarSensor already IS exactly this sensing model --
+   as the direct head-to-head the blind-spot finding demands: the
+   headline 3-sensor DistanceSensorSuite's blind cones vs. full
+   coverage, for comparable money.
 
 Reduced trial count/level set relative to the headline sweep (the same
 "enough to see the shape, not a publication-grade curve at every point"
@@ -175,7 +178,8 @@ def write_writeup(stats, path):
         "pose drift wasn't the dominant cause. That study never asked whether more sensors fix it. This "
         f"sweeps `DISTANCE_SENSOR_COUNT` over {DISTANCE_SENSOR_COUNTS_SWEPT} (`ftc/sensors.py`'s "
         "`make_distance_sensor_suite`, mount-heading layout documented per count in `ftc/config.py`) and "
-        "adds `LidarSuite` (a full 360-degree disc scan, ~$100) as the direct head-to-head. Reduced "
+        "adds `LidarSuite` (a full 360-degree disc scan, ~$100 -- see the table below for exact figures) "
+        "as the direct head-to-head. Reduced "
         f"trial count relative to the headline sweep ({TRIALS} trials/point, levels {LEVELS}, all 3 "
         "deviation types, 'cluttered' layout -- see module docstring). Raw data in "
         "`ftc_coverage_results.csv`, chart in `ftc_coverage_comparison.png`.",
@@ -215,7 +219,8 @@ def write_writeup(stats, path):
             "should still reduce blind-spot collisions in principle."
         )
 
-    lines += ["", "## The direct head-to-head: ~$90 of blind cones vs. ~$100 of full coverage", "",
+    lines += ["", f"## The direct head-to-head: ${three_sensor['cost']:.0f} of blind cones vs. "
+              f"${lidar['cost']:.0f} of full coverage", "",
               f"Lidar (360deg coverage, ${lidar['cost']:.0f}) has a "
               f"{lidar['zero_dev_collision_rate']:.0%} zero-deviation collision rate, vs. "
               f"{three_sensor['zero_dev_collision_rate']:.0%} for the headline 3-sensor DistanceSensorSuite "

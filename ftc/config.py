@@ -14,22 +14,39 @@ make the sensing-investment comparison meaningful, not to be a validated
 hardware model.
 """
 
-# Field -- 12ft x 12ft (144in x 144in) square is the FTC standard field
-# size across recent seasons (Into The Deep 2024-25, Centerstage 2023-24,
-# etc.); see the FTC game manual's field-setup section for the current
-# season.
+# Field -- VERIFIED against the FTC Competition Manual's ARENA section
+# and ftc-docs' Playing Field Resources: the playing field is 12ft x
+# 12ft (3.66m x 3.66m), built from thirty-six (36) foam tiles of
+# approximately 24in x 24in (610mm x 610mm) each, 6x6. 6 x 24in =
+# 144in, so the nominal figure below is exact by construction.
+#
+# One caveat the manual states explicitly and this model does NOT
+# represent: the field wall's actual INSIDE dimension varies by which
+# manufacturer's perimeter and tiles an event uses, and that variation
+# shifts game-element locations and the gap between the outermost tiles
+# and the wall. The manual gives no single authoritative inside
+# dimension for that reason. 144in is the nominal design figure, not a
+# measured one -- a real surveyed field will differ by roughly a tile
+# tolerance.
 FIELD_SIZE_IN = 144.0
 # 6in cells: fine enough to resolve typical FTC game-element footprints
 # (scoring zones, poles, submersible walls) without the grid getting
-# large enough to slow the sweep down.
+# large enough to slow the sweep down. Also divides the 24in field tile
+# exactly 4 ways, so a cell boundary never falls partway across a tile.
 CELL_SIZE_IN = 6.0
 FTC_GRID_SIZE = round(FIELD_SIZE_IN / CELL_SIZE_IN)  # 24
 
-# Robot -- 18in x 18in x 18in is the FTC game manual's standard
-# starting-configuration size limit (most teams build to the limit for
-# reach/mechanism room). 18in / 6in cells = 3 cells wide: the whole
-# reason ftc/field.py can't plan this robot as a point, unlike every
-# grid in nav/.
+# Robot -- VERIFIED against the 2025-26 DECODE Competition Manual's
+# ROBOT Construction Rules (section 12): the starting configuration must
+# fit within an 18in x 18in x 18in cube (most teams build to the limit
+# for reach/mechanism room). Notably for this model, DECODE also caps
+# HORIZONTAL expansion at 18in x 18in for the whole match (vertical
+# expansion is allowed up to 38in), so an 18in footprint is correct for
+# the entire autonomous period, not just its first instant -- which is
+# what makes a single fixed footprint-inflation radius (below) a fair
+# model rather than a start-of-match-only one.
+# 18in / 6in cells = 3 cells wide: the whole reason ftc/field.py can't
+# plan this robot as a point, unlike every grid in nav/.
 ROBOT_SIZE_IN = 18.0
 ROBOT_FOOTPRINT_CELLS = round(ROBOT_SIZE_IN / CELL_SIZE_IN)  # 3
 # Cells from the robot's center to its edge -- the Minkowski-sum hard-
@@ -38,30 +55,63 @@ ROBOT_FOOTPRINT_CELLS = round(ROBOT_SIZE_IN / CELL_SIZE_IN)  # 3
 # plan on the original one (see ftc/field.py's build_grid).
 ROBOT_RADIUS_CELLS = ROBOT_FOOTPRINT_CELLS // 2  # 1
 
-# Autonomous period length, per the FTC game manual.
+# Autonomous period length -- VERIFIED: the FTC Competition Manual
+# defines a Match as a 30-second Autonomous Period, an 8-second
+# transition, then a 2-minute Driver-Controlled Period. This project
+# only models the first of those three.
 AUTONOMOUS_PERIOD_S = 30.0
 
-# Top drive speed -- ballpark for a geared 4-motor FTC drivetrain (e.g.
-# goBILDA 5203-series motors around 300-450 RPM output, 4in mecanum/
-# traction wheels): commonly cited team drivetrain calculators put this
-# around 4.5-5.5 ft/s, so 1.5 m/s (~4.9 ft/s) sits in the middle of that
-# range.
+# Top drive speed -- now DERIVED from real published hardware specs
+# rather than "commonly cited team drivetrain calculators." The
+# reference drivetrain is the most common FTC configuration: four
+# goBILDA 5203-series Yellow Jacket motors at the 19.2:1 ratio
+# (published no-load output 312 RPM) driving 96mm goBILDA wheels
+# (mecanum set or Hogback traction, both 96mm).
+#
+#   312 RPM / 60 = 5.2 rev/s
+#   96mm wheel circumference = pi * 0.096m = 0.3016m
+#   5.2 * 0.3016 = 1.568 m/s no-load (~5.1 ft/s)
+#
+# 1.5 m/s is that figure rounded slightly down, since a loaded
+# drivetrain never reaches its no-load speed. The other common FTC
+# drivetrain ratio, 13.7:1 (435 RPM), works out to 2.19 m/s by the same
+# arithmetic -- see GEARING_OPTIONS at the bottom of this file, which
+# models exactly that swap as a purchasable upgrade.
 MAX_DRIVE_SPEED_MPS = 1.5
-# In-place rotation rate for a tank/mecanum FTC drivetrain is commonly
-# reported in the 200-250 deg/s range at typical gearing -- 90 degrees
-# in roughly 0.36-0.45s. Used as a flat per-90-degree-turn cost rather
-# than modeling acceleration.
+# In-place rotation rate -- also derived rather than asserted. A robot
+# spinning in place drives its wheels at some tangential speed v about
+# its own center; for a wheel at radius r from that center, the angular
+# rate is v/r. At the 18in-cube size limit the drive wheels sit roughly
+# 9in (0.23m) out from center on each side, so at the 1.5 m/s above:
+#
+#   1.5 / 0.23 = 6.5 rad/s = 374 deg/s -> 90 degrees in ~0.24s
+#
+# That is the frictionless upper bound. 0.4s (225 deg/s) is used
+# instead, deliberately conservative: a real in-place turn scrubs all
+# four wheels sideways across foam tiles, never reaches the theoretical
+# rate, and has to accelerate and stop within the turn. No FTC-official
+# spec exists for turn rate (it depends on drivetrain geometry and
+# wheel choice), so this remains an engineering estimate -- but one
+# bracketed by a derived bound rather than a bare guess.
 TURN_TIME_PER_90DEG_S = 0.4
-# Straight-line acceleration -- no FTC-official spec exists (this varies
-# by gearing, wheel choice, and robot mass), so this is a ballpark
-# engineering estimate sized the same way TURN_TIME_PER_90DEG_S already
-# is: 0-to-MAX_DRIVE_SPEED_MPS in roughly half a second (1.5 / 3.0) for
-# a geared 4-motor mecanum/traction drivetrain, the same rough
-# acceleration-time-scale as this project's turn-rate estimate rather
-# than a separately-justified number. Used for a per-step trapezoidal
-# (or, when a step is too short to reach cruise speed, triangular)
-# velocity profile in ftc/match.py instead of assuming a robot reaches
-# MAX_DRIVE_SPEED_MPS instantaneously.
+# Straight-line acceleration -- no FTC-official spec exists (it depends
+# on gearing, wheel choice, robot mass, and floor traction), so this
+# stays an engineering estimate. It is, however, bounded on both sides
+# rather than picked freely:
+#  - Motor-torque ceiling: four 5203 motors at 19.2:1 produce 338 oz-in
+#    (2.39 N-m) each; across a 48mm wheel radius that is ~50N per motor,
+#    ~199N total, which on a ~15kg (33lb) competition robot would be
+#    ~13 m/s^2 -- far above what's usable.
+#  - Traction ceiling: the real limit is friction, not torque. Even at
+#    a generous coefficient of friction of ~1.0 against foam tiles, the
+#    robot cannot accelerate faster than ~9.8 m/s^2 without the wheels
+#    simply slipping.
+# 3.0 m/s^2 (0-to-1.5 m/s in half a second) sits well under both, which
+# is the honest place for it: an FTC drivetrain accelerating hard is
+# traction-limited and slip-limited, not torque-limited. Used for the
+# per-step trapezoidal (or, when a step is too short to reach cruise
+# speed, triangular) velocity profile in ftc/match.py instead of
+# assuming the robot reaches MAX_DRIVE_SPEED_MPS instantaneously.
 MAX_ACCEL_MPS2 = 3.0
 # Per-replan control-loop overhead on FTC-legal onboard compute (a REV
 # Control Hub): sensor read + odometry fusion + the search itself, not
@@ -69,17 +119,49 @@ MAX_ACCEL_MPS2 = 3.0
 # understate what a real re-plan actually costs mid-match).
 PLANNING_OVERHEAD_S = 0.05
 
-# Sensor suite costs -- ballpark 2024-25 street prices from common FTC
-# vendor sources (REV Robotics, goBILDA); meant to give a defensible
-# relative ordering across suites; not a procurement quote.
-ODOMETRY_POD_COST_USD = 100.0  # dead-wheel odometry pod set + mounting
-DISTANCE_SENSOR_COST_USD = 30.0  # per REV 2M distance sensor (2m ToF)
-DISTANCE_SENSOR_COUNT = 3  # narrow ToF cones at fixed mounts (spec: 2-4)
-APRILTAG_COST_USD = 40.0  # marginal cost of a dedicated webcam (~$30-40)
+# Sensor suite costs -- VERIFIED against current vendor listings
+# (REV Robotics, goBILDA, Logitech retail), not ballpark estimates.
+# Each is a real listed price for a real part a team would actually
+# buy; still not a procurement quote (no tax, shipping, spares, or the
+# motors/hubs every suite shares).
 
-# Distance sensor (ToF) geometry -- REV's 2M sensor's headline range is
-# ~2m; VL53L0X-class ToF sensors have a narrow beam, commonly quoted
-# around 25 degrees full width (half-angle ~12.5deg) -- "sees obstacles
+# goBILDA Odometry Pack -- two odometry pods plus one Pinpoint odometry
+# computer, listed at $279.99 as a bundle (Swingarm and 4-Bar packs are
+# the same price). Pods are $99.99 EACH separately and the Pinpoint V2
+# computer is $79.99, so the pack is the cheapest real path to working
+# dead-wheel odometry, which is why it's priced here rather than a
+# single pod.
+#
+# CORRECTION: this was previously $100.0, described as a "pod set +
+# mounting." That was wrong by nearly 3x -- $100 is roughly ONE pod,
+# not a working two-pod setup with the computer needed to fuse them.
+# Fixing it materially changes this project's reliability-per-dollar
+# headline; see README.md's "Threats to validity" and
+# benchmark_results/ftc_suite_writeup.md.
+ODOMETRY_POD_COST_USD = 279.99
+# REV 2m Distance Sensor (REV-31-1505), listed at $31.50.
+DISTANCE_SENSOR_COST_USD = 31.50
+DISTANCE_SENSOR_COUNT = 3  # narrow ToF cones at fixed mounts (spec: 2-4)
+# Marginal cost of a dedicated webcam for AprilTag detection. FTC's own
+# VisionPortal documentation lists four cameras that ship with built-in
+# lens calibrations usable for AprilTag POSE estimation (without a
+# calibration, a camera can still see a tag but can't reliably solve
+# its pose): Logitech C270 (~$25), Logitech C310, Microsoft LifeCam
+# HD-3000, and Logitech C920 (~$126). The C270 is the one FTC's docs
+# call the workhorse webcam for the program, so its price is used here;
+# the real range a team might spend is roughly $25-$126.
+#
+# CORRECTION: previously $40.0 ("~$30-40"), which matched no listed
+# calibration-supported camera.
+APRILTAG_COST_USD = 25.0
+
+# Distance sensor (ToF) geometry -- VERIFIED against REV's own
+# REV-31-1505 datasheet/product page: measurement range 5cm-200cm
+# (hence the 2.0m below) and field of view 25 degrees, i.e. a 12.5
+# degree half-angle. Both figures are manufacturer spec, not estimates
+# -- which matters, because the ~75-degrees-of-360 coverage figure
+# behind this project's headline negative result is computed directly
+# from DISTANCE_SENSOR_COUNT x 2 x this half-angle. "Sees obstacles
 # only where pointed," not a lidar disc.
 DISTANCE_SENSOR_RANGE_CELLS = round((2.0 / 0.0254) / CELL_SIZE_IN)  # ~13 cells
 DISTANCE_SENSOR_HALF_ANGLE_DEG = 12.5
@@ -105,12 +187,29 @@ DEAD_RECKONING_DRIFT_PER_CELL = 0.15
 ODOMETRY_DRIFT_PER_CELL = 0.03
 
 # AprilTag absolute pose correction.
-# Reliable detection range for a webcam/Limelight-class FTC vision setup
-# at typical field lighting, ~6ft.
-APRILTAG_RANGE_CELLS = round(72.0 / CELL_SIZE_IN)  # 12 cells
-# Combined camera-FOV / tag-readability usable detection cone (webcam
-# FOV is commonly ~60-78deg; tag readability angle is the tighter
-# constraint at this range).
+# Detection range -- VERIFIED upward. FIRST's own AprilTag
+# documentation reports that with a well-calibrated lens the SDK's
+# returned range lands within about an inch of the true measured
+# distance on 5in tags at TEN FEET. 120in is used accordingly.
+#
+# CORRECTION: this was previously 72in (6ft), described as the
+# "reliable detection range" -- that understated the officially
+# documented figure by nearly half, and it understated it in the
+# direction that made this project's own best-value winner look WORSE
+# than it should have. Fixing it raises AprilTag's success rate.
+APRILTAG_RANGE_CELLS = round(120.0 / CELL_SIZE_IN)  # 20 cells
+# The TAG's own readable cone -- how far off the tag's surface normal
+# the robot can stand and still resolve the tag's geometry. This used
+# to be documented as a COMBINED camera-FOV/tag-readability figure,
+# which stopped being accurate once MODEL_FIDELITY's CAMERA_FOV_DEG_BY_
+# TIER (below) split the camera's own aiming cone out into its own,
+# separately-gated check: the two are now independent tests in
+# ftc/sensors.py's tag_correction, so this constant has to mean the tag
+# half of that pair alone, not both at once.
+# 60 degrees remains the right magnitude (a fiducial viewed much more
+# obliquely than ~30 degrees off-normal loses the corner geometry a
+# pose solve needs), and is documented as an engineering estimate: FTC
+# publishes no per-tag readability-angle spec.
 APRILTAG_FOV_DEG = 60.0
 #
 # Correction quality degrades with range and with viewing obliquity
@@ -163,8 +262,11 @@ OPPONENT_REPOSITION_PERIOD_MS = 700
 # which tier's assumptions ftc/sensors.py and ftc/match.py use.
 # "optimistic" is the default specifically so every existing caller that
 # doesn't explicitly ask for a tier keeps reproducing the published
-# headline numbers (56/45/35/21/19% success rates, 40.0 vs. 16.2
-# pp/$100) trial-for-trial -- see ftc/scratch/fidelity_test.py's
+# headline numbers (benchmark_results/ftc_suite_writeup.md -- deliberately
+# not restated here as a specific figure, since a hardcoded snapshot of
+# them already went stale once, when the sensor costs/AprilTag range
+# below were corrected against real vendor/FTC-doc sources) trial-for-
+# trial -- see ftc/scratch/fidelity_test.py's
 # check_optimistic_tier_reproduces_headline_exactly, the regression
 # guarantee for those figures.
 MODEL_FIDELITY = "optimistic"
@@ -177,14 +279,32 @@ MODEL_FIDELITY = "optimistic"
 # be read from); a detection now needs to clear both -- the tag has to
 # be readable from where the robot is standing, AND the robot's camera
 # has to actually be pointed at it.
+# VERIFIED against FIRST's VisionPortal webcam documentation, which
+# lists the cameras shipping with built-in lens calibrations usable for
+# AprilTag pose estimation, with published fields of view:
+#   Logitech C270 .............. 60 deg  (FTC docs call this the
+#                                         "workhorse webcam" for FTC)
+#   Logitech C310 .............. 60 deg
+#   Microsoft LifeCam HD-3000 .. 68.5 deg
+#   Logitech C920 .............. 78 deg
+# So the real span across supported hardware is 60-78 degrees, and the
+# tiers below are anchored to actual products rather than picked freely.
 CAMERA_FOV_DEG_BY_TIER = {
     "optimistic": 360.0,  # omnidirectional -- reproduces pre-fidelity-tier behavior exactly
-    # A real Control-Hub-webcam FOV is commonly ~60-78deg (the same
-    # ballpark APRILTAG_FOV_DEG already cites) -- 70 sits in the middle.
-    "realistic": 70.0,
-    # A narrower and/or worse-aimed camera than the realistic estimate --
-    # ballpark engineering estimate, not sourced to a specific product.
-    "pessimistic": 50.0,
+    # The C270/C310 figure -- the low end of the supported range, and
+    # the camera FTC's own docs single out as the program's most common
+    # choice. Deliberately not the 78deg C920 number: picking the
+    # widest supported camera for the "realistic" tier would flatter
+    # every AprilTag-based suite on a hardware assumption most teams
+    # don't actually make.
+    "realistic": 60.0,
+    # Below every supported camera's nominal FOV -- not a product spec,
+    # and explicitly a ballpark engineering estimate. It stands in for
+    # the gap between a camera's NOMINAL field of view and its usable
+    # one: a tag right at the edge of frame is geometrically "in view"
+    # but is exactly where lens distortion is worst and where a partly
+    # cut-off tag fails to resolve at all.
+    "pessimistic": 45.0,
 }
 # Camera mount heading(s), relative to the robot's own heading (0 =
 # straight ahead) -- a single forward-facing webcam is the common FTC
@@ -250,20 +370,33 @@ FIDELITY_TIERS = {
 }
 
 # === Drivetrain (tank vs. mecanum) ======================================
-# Orthogonal to sensor suite -- see ftc/drivetrain.py. goBILDA-class
-# wheel-set street prices, ballpark 2024-25 (same sourcing caveat as the
-# sensor costs above: a defensible relative ordering, not a procurement
-# quote).
-TANK_WHEEL_COST_USD = 80.0      # 4x traction wheel set + mounting hardware
-MECANUM_WHEEL_COST_USD = 200.0  # 4x mecanum wheel set + mounting hardware
+# Orthogonal to sensor suite -- see ftc/drivetrain.py. VERIFIED against
+# goBILDA's current listings, matched at the same 96mm wheel diameter
+# the MAX_DRIVE_SPEED_MPS derivation above assumes, so the two costs
+# describe drivetrains that actually drive at the modeled speed.
+#
+# CORRECTION: these were previously $80 and $200, both ballpark. Real
+# listed prices are lower, and the GAP between them (the premium
+# ftc/drivetrain_benchmark.py asks whether mecanum repays) is $130, not
+# the $120 previously modeled.
+TANK_WHEEL_COST_USD = 39.96      # 4x goBILDA Hogback Traction Wheel, 96mm, $9.99 each
+MECANUM_WHEEL_COST_USD = 169.99  # goBILDA Mecanum Wheel Set, 96mm, set of 4
 
 # A mecanum robot can translate in any direction without turning, but
-# only at full speed while driving "forward" relative to whatever
-# heading it's holding -- strafing (moving sideways/diagonally relative
-# to that held heading) is slower, since the wheels' rollers are doing
-# more of the sideways work than the motors are doing forward work.
-# Ballpark engineering estimate (no FTC-official spec for any specific
-# wheel), not a measured figure.
+# not at full speed in every direction. Game Manual 0's drivetrain
+# reference states the mechanism directly: a mecanum drivetrain drives
+# faster forward/backward than in any other direction, both because of
+# friction and because the rollers sit at a 45-degree angle to the
+# wheel's axis of rotation, so it structurally "can't strafe as fast as
+# [it] can drive."
+#
+# The DIRECTION of this effect is therefore sourced, but the MAGNITUDE
+# is not: neither GM0 nor any vendor publishes a strafe-speed
+# percentage, since it depends on wheel quality, roller durometer,
+# weight distribution, and floor surface. 0.8 remains an explicit
+# ballpark engineering estimate for that reason -- ftc/robustness.py's
+# style of tipping-point sweep is the right way to bound it, not a
+# more confident-sounding number.
 MECANUM_STRAFE_SPEED_FACTOR = 0.8
 # Strafing also drifts more than driving straight -- mecanum rollers
 # scrub sideways against the floor in a way a traction wheel driving
@@ -297,29 +430,42 @@ DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT = {
     8: [i * 45.0 for i in range(8)],
 }
 
-# RPLidar-A1-class 2D scanner, ballpark 2024-25 street price -- a full
-# 360-degree disc scan, which nav/sensor.py's LidarSensor already models
-# exactly (see ftc/sensors.py's LidarSuite). NOTE: FTC's laser-class-
-# device rules must be checked against the CURRENT season's game manual
-# before treating this as a real, legal recommendation for a team to
-# buy -- this repo prices and simulates the sensing model, it does not
-# assert legality.
+# Slamtec RPLIDAR A1 -- VERIFIED at $99.95 (Adafruit's listed price for
+# the A1M8 360-degree laser range scanner); other resellers list the
+# same unit anywhere from ~$99 to ~$220, so this is the low, most
+# commonly cited end of a real spread. A full 360-degree disc scan,
+# which nav/sensor.py's LidarSensor already models exactly (see
+# ftc/sensors.py's LidarSuite).
+#
+# NOTE: FTC's laser-class-device rules must be checked against the
+# CURRENT season's game manual before treating this as a real, legal
+# recommendation for a team to buy -- this repo prices and simulates
+# the sensing model, it does not assert legality. (The A1's own spec
+# sheet lists it as a Class 1 laser product, the same class as the REV
+# 2m Distance Sensor's 940nm emitter above, but "same laser class as a
+# part teams already use" is an argument to check the manual with, not
+# a substitute for checking it.)
 LIDAR_COST_USD = 100.0
-# An RPLidar A1's spec range (commonly ~12m) comfortably exceeds this
-# field's own diagonal (144in x 144in = ~5.2m) -- set to safely exceed
-# the 24x24 grid's own ~34-cell diagonal so the sensor model reads as
-# "sees the whole field," not artificially range-limited below its real
-# spec.
+# The A1's published scan radius is 12m, which comfortably exceeds this
+# field's own corner-to-corner diagonal (144in x 144in = 203in = 5.2m)
+# -- so range genuinely is not the binding constraint for this sensor
+# on this field. Set to safely exceed the 24x24 grid's own ~34-cell
+# diagonal so the sensor model reads as "sees the whole field," which
+# is what the real hardware would do here.
 LIDAR_RANGE_CELLS = FTC_GRID_SIZE * 2
 
 # === New suites enabled by the fidelity-tier model ======================
-# Every REV Control Hub already ships an integrated IMU -- this suite's
-# hardware cost is genuinely $0; the only real cost is the integration
-# effort of reading and fusing it, which this project's dollar-based
-# cost model has no way to price (see ftc/sensors.py's ImuSuite and
-# ftc/*_benchmark.py's explicit handling of cost_usd == 0.0 -- pp/$100
-# is undefined there, not infinite, and has to be reported as such
-# rather than divided-by-zero).
+# VERIFIED: every REV Control Hub ships with an integrated IMU -- a
+# Bosch BNO055 on units built before September 2022, and a Bosch
+# BHI260AP on units built after, both exposed through the FTC SDK's
+# Universal IMU Interface (SDK 8.1+). So this suite's hardware cost is
+# genuinely $0 for any team that already has a Control Hub, which is
+# every team; the only real cost is the integration effort of reading
+# and fusing it, which this project's dollar-based cost model has no
+# way to price (see ftc/sensors.py's ImuSuite and ftc/*_benchmark.py's
+# explicit handling of cost_usd == 0.0 -- pp/$100 is undefined there,
+# not infinite, and has to be reported as such rather than
+# divided-by-zero).
 IMU_COST_USD = 0.0
 # Fraction of accumulated HEADING error one IMU fusion cycle removes,
 # applied every tick (no need for a tag, or anything else, to be in
@@ -330,8 +476,11 @@ IMU_COST_USD = 0.0
 # heading-correction factor.
 IMU_HEADING_CORRECTION_FACTOR = 0.9
 
-# Two cameras (front + rear) instead of AprilTag's one, ~$40 each --
-# ftc/sensors.py's DualCameraAprilTagSuite.
+# Two cameras (front + rear) instead of AprilTag's one -- ftc/sensors.py's
+# DualCameraAprilTagSuite. Derived from APRILTAG_COST_USD rather than
+# hardcoded, so it tracks that constant's now-verified $25 C270 price
+# automatically (it previously read "~$40 each," inheriting the same
+# unsourced figure corrected above).
 DUAL_CAMERA_APRILTAG_COST_USD = APRILTAG_COST_USD * 2
 
 # === Drivetrain speed / gearing (optional, Priority 5) ==================
@@ -342,37 +491,65 @@ DUAL_CAMERA_APRILTAG_COST_USD = APRILTAG_COST_USD * 2
 # time (a robot that never runs out of time has nothing to gain from
 # more speed). goBILDA/REV both sell higher-speed, lower-torque gearing
 # options for the same 5203-series-class motor at a real price premium;
-# GEARING_OPTIONS below is a small, explicit menu of them, keyed by
-# name, each overriding max_speed_mps/max_accel_mps2 and adding a
-# real tradeoff a faster-is-just-better model would hide: more speed
-# means more wheel slip, so `slip_factor` scales `drift_per_cell`
-# UP along with speed, rather than being a free win. "stock" reproduces
-# MAX_DRIVE_SPEED_MPS/MAX_ACCEL_MPS2/no-slip-penalty exactly -- ftc/
-# match.py's `gearing=None` default resolves to "stock", so every
-# existing caller is unaffected (see ftc/scratch/gearing_test.py's
-# regression check).
+# GEARING_OPTIONS below is now built directly from goBILDA's PUBLISHED
+# 5203-series spec table rather than invented multipliers, keyed by
+# name, each overriding max_speed_mps/max_accel_mps2 and adding the
+# tradeoff a faster-is-just-better model would hide.
 #
-# Speed/accel multipliers and slip factors are ballpark engineering
-# estimates (no FTC-official spec for any specific gearing swap, same
-# status as MAX_ACCEL_MPS2 itself); prices are the same ballpark
-# 2024-25 street-price sourcing as every other cost in this file, for a
-# 4-motor gearing swap (not a full drivetrain replacement -- wheels/
-# mounts are assumed unchanged).
+#   Ratio     No-load RPM   Torque (oz-in)   Price
+#   19.2:1        312            338         $54.99   <- "stock"
+#   13.7:1        435            260         $54.99   <- "fast"
+#    5.2:1       1150            109         $54.99   <- "faster"
+#
+# Two corrections this table forced, both of which had the previous
+# model pointing the wrong way:
+#
+# 1. ACCELERATION FALLS as gearing gets faster; it does not rise. The
+#    previous version had accel multipliers of 1.15x and 1.25x
+#    alongside its speed increases, i.e. it modeled a faster gearing
+#    option as accelerating harder TOO. Real gearmotors trade exactly
+#    the other way -- 435 RPM comes with 260 oz-in against 312 RPM's
+#    338 oz-in -- so accel now scales by the published TORQUE ratio,
+#    which is below 1 for every faster option.
+# 2. COST is per-motor and ratio-independent. Every 5203 variant lists
+#    at the same $54.99 regardless of ratio, so a drivetrain gearing
+#    swap costs 4 x $54.99 = $219.96 whichever ratio is chosen -- not
+#    the $60/$120 "more speed costs more" schedule previously modeled.
+#    What a team buys with the higher price is nothing; the choice is
+#    free at the till and paid for entirely in torque.
+#
+# `slip_factor` (scales `drift_per_cell` up, so more speed means more
+# wheel slip rather than a free win) is the one number here still NOT
+# sourced -- no vendor publishes slip-vs-gearing data. It stays an
+# explicit ballpark engineering estimate, scaled with top speed.
+#
+# "stock" reproduces MAX_DRIVE_SPEED_MPS/MAX_ACCEL_MPS2/no-slip-penalty
+# exactly -- ftc/match.py's `gearing=None` default resolves to "stock",
+# so every existing caller is unaffected (see ftc/scratch/
+# gearing_test.py's regression check).
+_MOTOR_COST_USD = 54.99          # goBILDA 5203 Yellow Jacket, any ratio
+_DRIVETRAIN_MOTOR_COUNT = 4
+_GEARING_SWAP_COST_USD = _MOTOR_COST_USD * _DRIVETRAIN_MOTOR_COUNT  # $219.96
 GEARING_OPTIONS = {
+    # 19.2:1, 312 RPM, 338 oz-in -- the reference drivetrain every other
+    # constant in this file is derived against.
     "stock": dict(max_speed_mps=MAX_DRIVE_SPEED_MPS, max_accel_mps2=MAX_ACCEL_MPS2,
                    cost_usd=0.0, slip_factor=1.0),
-    # A higher-speed-rated motor option (e.g. goBILDA 6000-series-class
-    # "Yellow Jacket" swapped to a faster ratio) -- roughly 1.4x top
-    # speed, a more modest 1.15x accel bump (higher speed, not
-    # proportionally higher torque), and a real wheel-slip cost.
-    "fast": dict(max_speed_mps=MAX_DRIVE_SPEED_MPS * 1.4, max_accel_mps2=MAX_ACCEL_MPS2 * 1.15,
-                  cost_usd=60.0, slip_factor=1.35),
-    # A further, more aggressive gearing swap -- diminishing accel
-    # returns (torque drops faster than speed rises at this end of a
-    # typical DC gearmotor's curve) and a correspondingly larger slip
-    # penalty.
-    "faster": dict(max_speed_mps=MAX_DRIVE_SPEED_MPS * 1.8, max_accel_mps2=MAX_ACCEL_MPS2 * 1.25,
-                    cost_usd=120.0, slip_factor=1.8),
+    # 13.7:1, 435 RPM, 260 oz-in -- the other genuinely common FTC
+    # drivetrain ratio. 435/312 = 1.394x speed, 260/338 = 0.769x torque
+    # and therefore 0.769x acceleration.
+    "fast": dict(max_speed_mps=MAX_DRIVE_SPEED_MPS * (435 / 312),
+                  max_accel_mps2=MAX_ACCEL_MPS2 * (260 / 338),
+                  cost_usd=_GEARING_SWAP_COST_USD, slip_factor=1.35),
+    # 5.2:1, 1150 RPM, 109 oz-in. This is a real, purchasable 5203
+    # variant, but it is NOT a sensible drivetrain choice -- 1150 RPM on
+    # a 96mm wheel is ~5.8 m/s (19 ft/s) across a 12ft field, at less
+    # than a third of stock's torque. It's included as a deliberate
+    # far-end anchor for the sweep (does more speed EVER pay off?), not
+    # as a configuration this project recommends.
+    "faster": dict(max_speed_mps=MAX_DRIVE_SPEED_MPS * (1150 / 312),
+                    max_accel_mps2=MAX_ACCEL_MPS2 * (109 / 338),
+                    cost_usd=_GEARING_SWAP_COST_USD, slip_factor=1.8),
 }
 GEARING_ORDER = ["stock", "fast", "faster"]
 GEARING_LABELS = {"stock": "Stock gearing", "fast": "Fast gearing", "faster": "Faster gearing"}

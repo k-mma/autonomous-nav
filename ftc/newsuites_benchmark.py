@@ -1,7 +1,9 @@
 """
 The two new suites Priority 1's fidelity-tier fix enables:
 ImuSuite ($0 -- every REV Control Hub already ships one, ftc/config.py's
-IMU_COST_USD) and DualCameraAprilTagSuite (~$80, front + rear camera).
+IMU_COST_USD) and DualCameraAprilTagSuite (two Logitech C270s, front +
+rear -- see ftc/config.py's DUAL_CAMERA_APRILTAG_COST_USD for the
+current sourced price).
 Also includes AprilTagImuSuite (AprilTag + IMU stacked) as the
 IMU-augmented variant of an existing suite the task brief asks for.
 

@@ -214,8 +214,8 @@ def plot_reliability_per_dollar(stats, path):
     """Bar height is (rate - baseline), a success-rate FRACTION, divided
     by (cost / 100) -- i.e. fraction-of-success-rate per $100 spent.
     Multiplying by 100 turns that into percentage POINTS per $100 (e.g.
-    a suite that's 16 percentage points better at $40 reads as +40, the
-    number you'd actually want to read off the bar) -- leaving it
+    a hypothetical suite that's 16 percentage points better at $50 reads
+    as +32, the number you'd actually want to read off the bar) -- leaving it
     unscaled would silently be 100x smaller than what the axis label
     and the write_writeup() text below both claim to be showing."""
     baseline = overall_success_rate(stats, "dead_reckoning")

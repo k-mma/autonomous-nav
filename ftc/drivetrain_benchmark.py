@@ -1,7 +1,9 @@
 """
-Does a mecanum drivetrain's cost premium (ftc/drivetrain.py: $200 vs.
-tank's $80) get repaid, and does it change which SENSOR suite is the
-best buy? README.md's "Threats to validity" names "no mecanum-specific
+Does a mecanum drivetrain's cost premium (ftc/drivetrain.py: goBILDA's
+own 96mm mecanum set vs. traction set, see ftc/config.py's
+MECANUM_WHEEL_COST_USD/TANK_WHEEL_COST_USD for the current sourced
+figures) get repaid, and does it change which SENSOR suite is the best
+buy? README.md's "Threats to validity" names "no mecanum-specific
 strafing advantage" as an open limitation ftc/drivetrain.py closes;
 this is the study that measures what closing it actually changes.
 
@@ -12,10 +14,11 @@ tags for the ENTIRE match, which Priority 1's camera-FOV gating should
 help AprilTag substantially -- while a tank robot's camera swings away
 from the tag wall every time it changes direction. ftc/
 fidelity_benchmark.py's own realistic-tier numbers already show
-AprilTag's overall success rate drop from 35% (optimistic) to 26%
-(realistic) using the DEFAULT (tank-equivalent) drivetrain -- this
-module's job is to check whether a mecanum drivetrain recovers some or
-all of that gap.
+AprilTag's overall success rate drop measurably from the optimistic
+tier to the realistic one using the DEFAULT (tank-equivalent)
+drivetrain (see benchmark_results/ftc_fidelity_writeup.md for the
+current figures) -- this module's job is to check whether a mecanum
+drivetrain recovers some or all of that gap.
 
 Deliberately crossed with fidelity tier (ftc.config.FIDELITY_TIERS'
 "optimistic" and "realistic") rather than run at only one: at
@@ -156,14 +159,22 @@ def plot_comparison(stats, path):
 
 
 def write_writeup(stats, rows, path):
+    # Pulled from ftc.drivetrain.DRIVETRAINS rather than hardcoded -- a
+    # hardcoded dollar figure in this exact spot already went stale once
+    # (see ftc/robustness.py's own fix for the same trap), when ftc/
+    # config.py's wheel costs were corrected against real vendor prices.
+    tank_cost = DRIVETRAINS["tank"].cost_usd
+    mecanum_cost = DRIVETRAINS["mecanum"].cost_usd
+    mecanum_premium = mecanum_cost - tank_cost
     lines = [
         "# Does a mecanum drivetrain's cost premium get repaid?",
         "",
-        "ftc/drivetrain.py adds TANK ($80) and MECANUM ($200) as an axis orthogonal to sensor suite: "
-        "TANK must rotate to face its direction of travel (the existing flat per-90-degree turn cost, "
-        "unchanged from before this addition); MECANUM holds a fixed heading -- aimed at the nearest "
-        "AprilTag wall site -- for the whole match, paying no turn cost but a speed/drift penalty on any "
-        f"step that isn't roughly forward relative to that held heading. Crossed with 2 fidelity tiers "
+        f"ftc/drivetrain.py adds TANK (${tank_cost:.0f}) and MECANUM (${mecanum_cost:.0f}) as an axis "
+        "orthogonal to sensor suite: TANK must rotate to face its direction of travel (the existing flat "
+        "per-90-degree turn cost, unchanged from before this addition); MECANUM holds a fixed heading -- "
+        "aimed at the nearest AprilTag wall site -- for the whole match, paying no turn cost but a "
+        f"speed/drift penalty on any step that isn't roughly forward relative to that held heading. "
+        f"Crossed with 2 fidelity tiers "
         f"({', '.join(FIDELITY_ORDER)}) x 5 suites x 3 deviation types x levels {LEVELS} x {TRIALS} "
         "trials/point on the 'cluttered' layout -- reduced relative to the headline sweep (see module "
         "docstring). Raw data in `ftc_drivetrain_results.csv`, chart in `ftc_drivetrain_comparison.png`.",
@@ -201,9 +212,17 @@ def write_writeup(stats, rows, path):
             "MECANUM_STRAFE_SPEED_FACTOR/_DRIFT_MULTIPLIER (0.8x speed, 1.6x drift, ftc/config.py) on "
             "close to every step, not just the occasional sideways one. That drift penalty compounds "
             "across the whole route and shows up as a lower success rate for EVERY suite under mecanum, "
-            "not just AprilTag (see the per-suite table below) -- the camera-stays-aimed-at-tags benefit "
-            "this module set out to check is real (see the realistic-tier gap narrowing slightly relative "
-            "to the optimistic-tier one below) but is swamped by the constant-strafe cost of a heading "
+            "not just AprilTag (see the per-suite table below) -- "
+            + (
+                "the camera-stays-aimed-at-tags benefit this module set out to check is real (see the "
+                "realistic-tier gap narrowing slightly relative to the optimistic-tier one below) but is "
+                if realistic_helps_relative_to_optimistic_gap else
+                "the camera-stays-aimed-at-tags benefit this module set out to check does NOT show up in "
+                "the tank-vs-mecanum gap itself (the gap WIDENS from optimistic to realistic, not narrows "
+                "-- see the table below), so at this trial count the strafe penalty dominates completely; "
+                "AprilTag's success rate is "
+            )
+            + "swamped by the constant-strafe cost of a heading "
             "policy that's fixed for the whole match regardless of where the route actually goes. This is "
             "a real limitation of the specific 'hold a fixed heading toward the nearest tag wall for the "
             "whole match' policy this module implements, not evidence that mecanum drivetrains are "
@@ -244,10 +263,10 @@ def write_writeup(stats, rows, path):
                           f"{results[best]['per_100']:+.1f} |")
 
     lines += ["", "## Does mecanum's own premium get repaid?", "",
-              "Comparing each suite's success rate on mecanum vs. tank, at mecanum's $120 total premium "
-              "(MECANUM_WHEEL_COST_USD - TANK_WHEEL_COST_USD, ftc/config.py) on top of that suite's own "
-              "sensor cost:", "",
-              "| Suite | Tank rate | Mecanum rate | Difference | Worth the $120 premium? |",
+              f"Comparing each suite's success rate on mecanum vs. tank, at mecanum's ${mecanum_premium:.0f} "
+              "total premium (MECANUM_WHEEL_COST_USD - TANK_WHEEL_COST_USD, ftc/config.py) on top of that "
+              "suite's own sensor cost:", "",
+              f"| Suite | Tank rate | Mecanum rate | Difference | Worth the ${mecanum_premium:.0f} premium? |",
               "|---|---:|---:|---:|---|"]
     for suite in SUITE_ORDER:
         tank_rate = stats[("tank", "realistic", suite)]["rate"]

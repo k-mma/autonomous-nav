@@ -1276,13 +1276,14 @@ comparison is confounded by route length and can point the wrong way.
 The headline numbers (25 trials x 5 suites x 3 deviation types x 11
 deviation levels, `ftc/suite_benchmark.py`, full methodology and tables
 in `benchmark_results/ftc_suite_writeup.md`): FullSuite has the highest
-raw success rate (56% at variance_level >= 0.3, averaged across all
+raw success rate (58% at variance_level >= 0.3, averaged across all
 three deviation types), but AprilTag -- the cheapest suite that fixes
-anything at all -- has more than double FullSuite's success-rate gain
+anything at all -- has roughly ten times FullSuite's success-rate gain
 per dollar spent over the free DeadReckoningSuite baseline. Which
 deviation type actually dominates a given suite's failures depends on
 what that suite fixes: DeadReckoningSuite's worst failure mode is pose
-error (start drift), the thing a $40 AprilTag setup targets directly,
+error (start drift), the thing a $25 AprilTag setup (a single Logitech
+C270 -- see ftc/config.py's APRILTAG_COST_USD) targets directly,
 not obstacle error.
 
 The most useful result is the negative one, and it very nearly got
@@ -1358,7 +1359,7 @@ this one only ever imports from, never modifies.
 
 The result: AprilTag is the best-value suite on all three layouts.
 Its per-$100 margin over the runner-up is actually *wider* on sparse
-and corridor (+96.2 and +94.6pp/$100) than on cluttered (+40.0pp/$100)
+and corridor (+155.9 and +144.1pp/$100) than on cluttered (+90.0pp/$100)
 -- with fewer or more concentrated obstacles to route around, obstacle-
 sensing suites like DistanceSensorSuite and the obstacle-sensing half of
 FullSuite have less to buy, while AprilTag's pose-only fix keeps paying
@@ -1409,20 +1410,21 @@ the attribute directly on the `ftc.sensors` module object, not
 print plausible numbers, and measure nothing at all -- exactly the
 failure mode a passing test suite can hide.
 
-The result: the recommendation is not universally robust, but it's
-resistant to being merely a little bit wrong. Dead-reckoning drift
-rate is the least forgiving parameter -- it tips the best-value suite
-(to Odometry pods) at 2.0x its estimated value, a real (CI-clean) flip.
-AprilTag's own correction-quality parameters (max correction, range/
-angle degradation) are similarly sensitive, tipping between 0.25x and
-2.0x. Odometry-pod drift rate and DistanceSensorSuite's cost never tip
-the ranking anywhere in [0.25x, 4x]. Two apparent cost-driven flips
-(odometry pods cost at 0.25x, AprilTag cost at 2.0x) did not survive a
-bootstrap-CI overlap check against `nav/stats.py` and are reported as
-"maybe, not confirmed" rather than real tips -- the same "a flip inside
-overlapping confidence intervals isn't a real flip" standard this
-project's other tipping-point sweeps (`ftc/budget_benchmark.py` below)
-also hold themselves to. Full table and plain-language summary in
+The result changed materially once `ftc/config.py`'s sensor costs and
+AprilTag's detection range were corrected against real vendor/FTC-doc
+sources (AprilTag's cost dropped from an unsourced ~$40 to a real
+Logitech C270's $25; its range grew from an understated 6ft to FTC's
+own documented 10ft figure) -- AprilTag's margin over every other
+suite is now wide enough that NOTHING sweept tips the ranking anywhere
+in [0.25x, 4x]: not either drift rate, not AprilTag's own correction-
+quality parameters, not any suite's cost. Before that correction, this
+sweep found real tipping points (dead-reckoning drift rate flipping the
+recommendation to Odometry pods around 2x its estimated value, in
+particular); those numbers are now stale artifacts of an under-priced,
+under-ranged AprilTag model, not a property of the underlying method --
+rerunning `ftc/robustness.py` after any future constant correction is
+the way to find out whether tipping points reappear, not assuming the
+old ones still apply. Full table and plain-language summary in
 `benchmark_results/ftc_robustness_writeup.md`, chart in
 `ftc_robustness.png`.
 
@@ -1467,8 +1469,12 @@ assumed the replan-heavy suites were the obstacle-sensing ones
 obstacle). That assumption was incomplete: AprilTag also replans on
 every successful pose correction (`ftc/match.py`'s `replan_needed = not
 planned_once or tag_corrected`), and empirically out-replans
-DistanceSensorSuite (1.80 vs. 0.63 replans/trial) despite never sensing
-obstacles at all. At the tightest budget tested, AprilTag does indeed
+DistanceSensorSuite by a wide margin (3.97 vs. 0.63 replans/trial --
+wider than an earlier measurement of this same effect, since correcting
+`APRILTAG_RANGE_CELLS` against FTC's own documented 10ft detection
+range gave AprilTag far more opportunities to detect a tag and
+replan) despite never sensing obstacles at all. At the tightest budget
+tested, AprilTag does indeed
 have the highest over-budget rate -- confirming the *general*
 replan-heavy-suites-degrade-first hypothesis, just not via the specific
 suite the obstacle-sensing framing predicted. Full table, replan-count
@@ -1518,19 +1524,24 @@ interior cell of the assumed start->goal path, via the same
 identically and confirming they choose the same cell, not just assumed
 from reading the code.
 
-The result: a moving opponent changes which suite is the best value.
-FullSuite is best against a static blocker; Odometry pods is best
-against a moving one (a margin close enough over the runner-up,
-AprilTag, that this module checks it with a bootstrap-CI overlap test
-before reporting it as a clean flip -- the same standard `ftc/
-robustness.py` and `ftc/budget_benchmark.py` hold their own tipping
-points to). More surprising: suites that never sense obstacles at all
-(dead reckoning, odometry, AprilTag) also do substantially better
+The result: a moving opponent does NOT change which suite is the best
+value -- AprilTag wins on both (+34.0pp/$100 static, +90.0pp/$100
+moving), the same outcome `ftc/layout_benchmark.py` found across field
+layouts. This is a different finding than an earlier run of this same
+module produced, when AprilTag's cost and detection range were both
+under-modeled (an unsourced ~$40 and an understated 6ft, corrected
+against a real Logitech C270 price and FTC's own documented 10ft
+AprilTag detection range respectively) -- with those two constants
+fixed, AprilTag's margin over every other suite grew wide enough to
+absorb what used to be a genuine ranking flip. More surprising, and
+unaffected by that correction: suites that never sense obstacles at all
+(dead reckoning, odometry, AprilTag) still do substantially better
 against a moving opponent than a static one, purely from timing luck --
 a parked obstacle sits on a blind suite's fixed route for the entire
 match, so a plan that ever crosses that cell collides deterministically;
 a wandering obstacle often isn't there anymore by the time that same
-fixed plan actually reaches the cell. A moving opponent is harder to
+fixed plan actually reaches the cell (the largest such gain: Odometry
+pods, +47 percentage points). A moving opponent is harder to
 *reason about*, but this specific deviation type makes it easier to
 *physically avoid* for a suite that isn't reasoning about it at all.
 Full tables (including collision/replan counts, which show the
@@ -1540,12 +1551,12 @@ advantage) in `benchmark_results/ftc_opponent_writeup.md`, chart in
 
 This BOUNDS the "no opponent modeling" limitation -- a random walk with
 no goals and no reaction to this robot's presence is still a long way
-from a real opponent, but it's a measured step up from a fixed point,
-and the finding that it changes the recommendation is itself the
-important result: the static-blocker deviation type was, in this
-specific respect, silently favoring whichever suite handles a
-*permanently parked* obstacle best, not whichever suite handles a
-genuinely unpredictable one best.
+from a real opponent, but it's a measured step up from a fixed point.
+Unlike an earlier version of this finding, a moving vs. static opponent
+no longer changes the headline recommendation itself (both point to
+AprilTag) -- the useful result now lives one level down, in how much
+each suite's raw numbers move between the two blocker types, not in
+which suite wins.
 
 ### Trapezoidal drive-time kinematics (`ftc/match.py`'s `_trapezoidal_drive_time_s`)
 
@@ -1574,9 +1585,10 @@ branches against an independently-derived closed-form kinematics answer
 reaches cruise speed at this project's constants, and confirms the new
 time is always >= the old naive one, never less.
 
-The headline success-rate numbers (56%/45%/35%/21%/19%, 40.0 vs.
-16.2pp/$100) did not change -- despite drive time per step roughly
-quadrupling (median total match time went from ~1.5-2.5s to ~5.3s,
+The headline success-rate numbers (as published in `benchmark_results/
+ftc_suite_writeup.md` at the time) did not change -- despite drive time
+per step roughly quadrupling (median total match time went from
+~1.5-2.5s to ~5.3s,
 max from single digits to ~21s), no trial in the 4,125-match headline
 sweep crossed the 30-second budget, so every success/collision outcome
 (governed by pose drift and sensor geometry, not elapsed time) came out
@@ -1625,19 +1637,28 @@ and `APRILTAG_DETECTION_DROPOUT_RATE_BY_TIER`:
   ftc_suite_results.csv` and diffs every column except
   `planning_time_ms` (unseeded wall-clock time, never a valid
   comparison signal in this project) against the checked-in CSV --
-  passing with zero mismatches across all columns checked. Rerunning
-  the FULL 4,125-row headline sweep and diffing it against git's copy
-  of the same CSV (done once, while building this feature, not as part
-  of the checked-in test) turned up zero mismatches there too: the
-  56%/45%/35%/21%/19% success rates and 40.0 vs. 16.2pp/$100 figures
-  are unchanged, exactly as this tier is supposed to guarantee.
-- *realistic*: a ~70deg camera FOV (webcam-class, the same ballpark
-  `APRILTAG_FOV_DEG` already cites), nonzero heading drift, an 85%
-  AprilTag heading-correction factor, still zero detection dropout.
-- *pessimistic*: a narrower ~50deg FOV, faster heading drift, a lower
-  (70%) heading-correction factor, and a nonzero AprilTag detection
-  dropout rate (a fraction of otherwise-valid detections just fail to
-  resolve a pose that tick, e.g. motion blur).
+  passing with zero mismatches across all columns checked. This
+  regression check is rerun after every constant correction (see
+  README.md's "Threats to validity" for the vendor/FTC-doc corrections
+  applied to `ftc/config.py`'s sensor costs and AprilTag range) -- the
+  headline success-rate numbers have changed since this tier was first
+  built, but every time, they've changed because a genuinely wrong
+  constant was fixed against a real source, never because the
+  optimistic tier's own byte-for-byte reproduction broke.
+- *realistic*: a 60deg camera FOV (the Logitech C270/C310's own
+  published FOV -- the low end of the cameras FTC's VisionPortal docs
+  list as having built-in AprilTag calibrations, and the specific
+  camera those docs call the workhorse of the FTC program), nonzero
+  heading drift, an 85% AprilTag heading-correction factor, still zero
+  detection dropout.
+- *pessimistic*: a 45deg FOV -- below every FTC-supported camera's
+  nominal spec, standing in for the gap between a camera's nominal FOV
+  and its actually-usable one (a tag at the very edge of frame is
+  geometrically "in view" but is exactly where lens distortion and
+  partial cropping are worst) -- faster heading drift, a lower (70%)
+  heading-correction factor, and a nonzero AprilTag detection dropout
+  rate (a fraction of otherwise-valid detections just fail to resolve a
+  pose that tick, e.g. motion blur).
 
 Two mechanisms had to actually change behavior, not just exist as
 config:
@@ -1699,18 +1720,23 @@ test compares against the actual checked-in CSV rather than trusting
 the guard was applied everywhere it needed to be.
 
 `ftc/fidelity_benchmark.py` reruns the identical full-rigor headline
-sweep at all three tiers side by side. The finding: the best-value
-suite changes from AprilTag (optimistic) to Odometry pods (both
-realistic and pessimistic) -- AprilTag's overall success rate drops
-from 35% to 26% (realistic) to 23% (pessimistic) as the camera stops
+sweep at all three tiers side by side. The finding: AprilTag stays the
+best-value suite at optimistic AND realistic, and only flips to
+Odometry pods at pessimistic -- AprilTag's overall success rate drops
+from 44% to 32% (realistic) to 24% (pessimistic) as the camera stops
 being omnidirectional and heading drift starts mattering, while
 Odometry pods (which fixes pose without ever needing a camera pointed
-anywhere) barely moves. Full table in `benchmark_results/
-ftc_fidelity_writeup.md`. This BOUNDS the camera-FOV/heading-error gap
-in README.md's "Threats to validity" -- it does not CALIBRATE it; every
-non-optimistic tier's constants are the same class of ballpark
-engineering estimate as everything else in `ftc/config.py`, not a
-measured replacement for them.
+anywhere) barely moves. AprilTag's per-$100 margin over FullSuite
+(the runner-up by raw success rate) still shrinks sharply across tiers
+even where it stays the nominal winner (+99.3 -> +36.7 -> pp/$100
+optimistic to realistic, before flipping negative relative to Odometry
+pods at pessimistic), so "AprilTag still wins" at realistic is a real
+finding, not a reason to ignore how much closer the race gets. Full
+table in `benchmark_results/ftc_fidelity_writeup.md`. This BOUNDS the
+camera-FOV/heading-error gap in README.md's "Threats to validity" -- it
+does not CALIBRATE it; every non-optimistic tier's constants are the
+same class of ballpark engineering estimate as everything else in
+`ftc/config.py`, not a measured replacement for them.
 
 ### New suites: IMU and dual-camera AprilTag (`ftc/sensors.py`)
 
@@ -1741,7 +1767,9 @@ corrections (AprilTag's position fix, the IMU's continuous heading fix)
 at AprilTag's cost alone.
 
 `DualCameraAprilTagSuite` mounts a second (rear-facing) camera on the
-same detection pipeline, ~$40 more. Under the OLD omnidirectional-
+same detection pipeline, priced the same as the first one -- another
+Logitech C270, ~$25 more (`ftc/config.py`'s
+`DUAL_CAMERA_APRILTAG_COST_USD`). Under the OLD omnidirectional-
 camera model this suite would have done *literally nothing* -- a second
 omnidirectional camera can't see anything the first one didn't already
 see. Under the fidelity-tier model's real FOV gating it roughly doubles
@@ -1783,9 +1811,10 @@ runs at `MECANUM_STRAFE_SPEED_FACTOR` (0.8x, ballpark) of forward speed
 and accrues `MECANUM_STRAFE_DRIFT_MULTIPLIER` (1.6x, ballpark, wheel
 scrub) extra pose drift whenever its direction of travel isn't roughly
 "forward" relative to whatever heading it's holding. Both wheel sets
-are priced from the same ballpark 2024-25 goBILDA-class street-price
-sourcing as every other cost in `ftc/config.py` ($80 traction, $200
-mecanum).
+are priced directly from goBILDA's current listed prices at the same
+96mm diameter MAX_DRIVE_SPEED_MPS is itself derived from: $39.96 for
+four Hogback Traction Wheels ($9.99 each), $169.99 for a goBILDA 96mm
+Mecanum Wheel Set.
 
 The heading policy had to be chosen and documented, not left implicit:
 MECANUM holds a fixed heading for the whole match, picked once at the
@@ -1799,20 +1828,26 @@ from it every time the robot changes direction the way TANK's camera
 does) recover some of AprilTag's realistic-tier success-rate loss from
 the fidelity-tier section above?
 
-The answer, measured rather than assumed: the camera-FOV mechanism IS
-real and in the expected direction (the tank-vs-mecanum gap for
-AprilTag narrows going from the optimistic tier to the realistic one,
-exactly as the camera-FOV theory predicts) -- but it's swamped by a
-cost the "hold one fixed heading all match" policy pays on almost every
-step. A route's travel direction changes on nearly every leg (up to 8
-different directions on this project's diagonal grid); the held
-heading is picked once and never updates, so unless a route happens to
-run roughly parallel to whichever tag wall was nearest the start cell,
-most of its steps are strafes relative to that heading -- paying the
-1.6x drift multiplier on close to every step, not just the occasional
-sideways one. That compounding drift penalty drags down EVERY suite's
-success rate under mecanum, not just AprilTag's (`benchmark_results/
-ftc_drivetrain_writeup.md`'s per-suite table), and mecanum's $120
+The answer, measured rather than assumed: mecanum loses at both tiers,
+and NOT for the reason a first guess might expect. The camera-FOV
+theory predicted the tank-vs-mecanum gap for AprilTag would narrow
+going from optimistic to realistic (mecanum's camera stays aimed at the
+tag wall; tank's swings away every direction change); measured, it
+does the opposite -- the gap WIDENS, from -8 percentage points
+(optimistic) to -16 (realistic). The strafe penalty is the whole story
+here, not a partial offset to a real camera-FOV win: a route's travel
+direction changes on nearly every leg (up to 8 different directions on
+this project's diagonal grid), the held heading is picked once and
+never updates, so unless a route happens to run roughly parallel to
+whichever tag wall was nearest the start cell, most of its steps are
+strafes relative to that heading -- paying the 1.6x drift multiplier on
+close to every step, not just the occasional sideways one, and that
+extra drift itself degrades AprilTag's own tag-detection geometry (a
+drifted position is more likely to fall outside a tag's range/FOV/LOS
+envelope) enough to swamp whatever the held heading was supposed to
+buy. That compounding drift penalty drags down EVERY suite's success
+rate under mecanum, not just AprilTag's (`benchmark_results/
+ftc_drivetrain_writeup.md`'s per-suite table), and mecanum's $130
 premium over tank is not repaid by any suite tested at this trial
 count. This is a real, measured limitation of the *specific* heading
 policy implemented here (hold one heading, chosen once, for the whole
@@ -1853,7 +1888,7 @@ picking a side to leave uncovered stops making sense.
 The result: more coverage measurably helps. Going from 3 to 8 sensors
 drops the zero-deviation collision rate from 49% to 44%; lidar's full
 360-degree coverage brings it to the same 44% for about the same money
-($100 vs. $90) as the headline 3-sensor suite. That the improvement
+($100 vs. $94) as the headline 3-sensor suite. That the improvement
 tops out well above 0%, even at full 360-degree coverage, is itself
 consistent with `ftc_suite_writeup.md`'s own controlled check, which
 already found that roughly a third of DistanceSensorSuite's collisions
@@ -1875,53 +1910,70 @@ faster motor" became an actually testable purchase for the first time
 -- a robot that never runs out of time has nothing to gain from more
 speed, and prior to that finding this would have been a pure paper
 exercise. `ftc/config.py`'s `GEARING_OPTIONS` ("stock"/"fast"/"faster")
-is a small, named menu of higher-speed/higher-price gearing swaps
-(`ftc/match.py`'s `run_match` gained an optional `gearing` parameter,
-`None`/`"stock"` reproducing `MAX_DRIVE_SPEED_MPS`/`MAX_ACCEL_MPS2`
-exactly), each overriding top speed and acceleration and adding the
-tradeoff the task brief specifically asked not to skip: more speed
-means more wheel slip, so each option's `slip_factor` scales
-`drift_per_cell` up, not just cruise speed up for free.
+is built directly from goBILDA's own published 5203-series RPM/torque
+table (`ftc/match.py`'s `run_match` gained an optional `gearing`
+parameter, `None`/`"stock"` reproducing `MAX_DRIVE_SPEED_MPS`/
+`MAX_ACCEL_MPS2` exactly): stock is the 19.2:1 ratio (312 RPM, 338
+oz-in) `MAX_DRIVE_SPEED_MPS`/`MAX_ACCEL_MPS2` are themselves derived
+from; "fast" is 13.7:1 (435 RPM, 260 oz-in); "faster" is 5.2:1 (1150
+RPM, 109 oz-in) -- a genuine catalog option, included as a deliberate
+far-end anchor, not a configuration this project recommends. Every
+ratio costs the same $54.99 per motor regardless of speed, so a 4-motor
+gearing swap is $219.96 whichever ratio is picked -- what a team buys
+with a "faster" ratio's identical price is nothing; the tradeoff is
+paid entirely in torque, via `slip_factor` scaling `drift_per_cell` up.
 
-`ftc/scratch/gearing_test.py` verifies the mechanism two ways: directly
-against `_trapezoidal_drive_time_s`'s own closed-form kinematics (the
-same style `ftc/scratch/kinematics_test.py` already established) --
-"faster" gearing's own accel value produces a strictly shorter single-
-cell drive time -- and end to end through `run_match`, with a
+An early version of this used invented speed/accel multipliers that
+both moved the SAME direction (faster AND harder-accelerating), which
+is backwards for a real gearmotor: torque falls as RPM rises for a
+fixed motor. Rebuilding `GEARING_OPTIONS` from goBILDA's actual spec
+table surfaced a second, non-obvious consequence: every option's
+accel-to-cruise distance (`speed^2 / (2*accel)`) is far larger than one
+6in grid cell (stock: 0.375m; fast: 0.948m; faster: 15.8m), so a single
+step ALWAYS falls in `_trapezoidal_drive_time_s`'s triangular branch --
+`2*sqrt(distance/accel)` -- where top speed never enters the formula at
+all, only acceleration does. Since real motor torque falls faster than
+RPM rises across the 5203 lineup, a faster gearing choice is strictly
+SLOWER per short hop in this model, not faster, on top of costing more
+drift. This is not a speed-vs-slip tradeoff; it is a lose-lose at
+FTC's typical short-hop distances -- a real, sourced finding, not a bug
+to route around.
+
+`ftc/scratch/gearing_test.py` verifies this two ways: directly against
+`_trapezoidal_drive_time_s`'s own closed-form kinematics (the same
+style `ftc/scratch/kinematics_test.py` already established) -- "faster"
+gearing's own accel value produces a strictly LONGER single-cell drive
+time, not shorter -- and end to end through `run_match`, with a
 drift-zeroed suite instance so the comparison isn't confounded by a
 subtler, real effect this addition surfaced: more slip changes the
 accumulated pose error, which changes which cells actually get visited
 and how much turning happens, which can shift a *stochastic* multi-step
 match's total elapsed_s in either direction independent of the
-per-step speed gain. The first version of this test compared full,
-undoctored matches directly and intermittently failed for exactly that
-reason -- a real, if secondary, finding about how gearing and drift
-interact in this model, not a test bug to paper over quietly.
+per-step kinematics. An early version of the end-to-end check assumed
+faster gearing WAS faster per cell and compared full, undoctored
+matches directly; once the motor-spec correction reversed that
+assumption, the same test was rewritten to check (and confirm) the
+opposite -- no gearing option ever rescues a budget stock already
+fails, since none of them save per-cell time at this grid scale.
 
 The result, crossed with budget (30s -- the real, non-binding budget;
 15s -- right at the binding point per `ftc/budget_benchmark.py`; 10s --
-binds hard), averaged across all 5 headline suites: faster gearing does
-not pay off at ANY budget tested. At 30s and 15s it's actively worse,
-not merely unhelpful -- "faster" gearing's success rate lands 8-9
-percentage points BELOW stock's, a gap that survives a bootstrap-CI
-overlap check (the same "don't call a gap real until the CIs actually
-separate" standard `ftc/robustness.py`, `ftc/budget_benchmark.py`, and
-`ftc/opponent_benchmark.py`'s own tipping points already hold
-themselves to). At 10s the apparent drop doesn't clear the noise bar at
-this trial count. The mechanism: `GEARING_OPTIONS`' slip factors were
-chosen to scale up meaningfully faster than accel does at this end of a
-typical DC gearmotor's curve (a documented, ballpark choice, not a
-measured one), so even where the budget genuinely binds, the extra
-matches speed alone would have rescued are outweighed by matches the
-extra drift newly loses.
+binds hard), averaged across all 5 headline suites: faster gearing
+loses at every budget tested, by a wide and CI-clean margin (roughly
+-9 percentage points at 30s, widening to roughly -16 at 15s and 10s --
+exact figures in `benchmark_results/ftc_gearing_writeup.md`, which
+regenerates them fresh each run). Unlike the pre-correction version of
+this finding, the mechanism is not "slip cost outweighs a real time
+saving" -- there was never a time saving to weigh it against.
 
 What this does and does not prove: this is a reduced-rigor sweep,
 averaged across every suite rather than reported per suite -- a team
 running a specific suite that already fixes pose (AprilTag, odometry
 pods) would plausibly absorb the extra slip-driven drift better than
 dead reckoning does, and this module doesn't check that per-suite
-breakdown. It also doesn't establish that no gearing choice could ever
-be worth it -- only that the two specific options modeled here, at
-their specific (ballpark) slip factors, aren't. Like every other
-estimated constant in this project, `GEARING_OPTIONS`' multipliers are
-sourced-or-ballpark engineering estimates, not measurements.
+breakdown. The per-cell-slower finding itself is not a ballpark
+estimate -- it follows directly from goBILDA's own published RPM/torque
+table and this project's own fixed grid cell size, not from a tuned
+constant. `slip_factor` remains the one number in `GEARING_OPTIONS`
+that is an explicit ballpark engineering estimate: no vendor publishes
+slip-vs-gearing data.

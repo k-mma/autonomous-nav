@@ -8,13 +8,13 @@ Overall success rate, variance_level >= 0.3 across all three deviation types (ex
 
 | Suite | Cost | Overall success rate |
 |---|---:|---:|
-| Full suite | $230 | 56% |
-| Odometry pods | $100 | 45% |
-| AprilTag | $40 | 35% |
-| Distance sensors | $90 | 21% |
+| Full suite | $399 | 58% |
+| Odometry pods | $280 | 45% |
+| AprilTag | $25 | 44% |
+| Distance sensors | $94 | 21% |
 | Dead reckoning | $0 | 19% |
 
-Full suite has the highest overall success rate (56%) at $230. See `ftc_reliability_per_dollar.png` and the value section below for whether that's actually the best *spend*, not just the best raw number.
+Full suite has the highest overall success rate (58%) at $399. See `ftc_reliability_per_dollar.png` and the value section below for whether that's actually the best *spend*, not just the best raw number.
 
 ## Which deviation type dominates real failure
 
@@ -25,19 +25,19 @@ For each suite, the deviation type with the lowest mean success rate at variance
 | Dead reckoning | Start drift (pose error) | 5% | 5% | 41% | 11% |
 | Odometry pods | Start drift (pose error) | 9% | 9% | 79% | 27% |
 | Distance sensors | Start drift (pose error) | 9% | 9% | 26% | 28% |
-| AprilTag | Unplanned blocker (opponent robot) | 23% | 24% | 51% | 23% |
-| Full suite | Start drift (pose error) | 29% | 29% | 73% | 63% |
+| AprilTag | Unplanned blocker (opponent robot) | 21% | 38% | 64% | 21% |
+| Full suite | Start drift (pose error) | 30% | 30% | 73% | 65% |
 
 With no sensing at all (DeadReckoningSuite, the baseline every FTC team already has for free), Start drift (pose error) is what actually breaks a run. FullSuite's worst deviation type is the *same* one (Start drift (pose error)) -- spending on every suite at once didn't change which failure mode dominates, only how often it happens.
 
 ## Do the expensive suites earn their cost?
 
-- AprilTag ($40): +16% success rate over the free baseline -- +40.0pp/$100.
-- Odometry pods ($100): +26% success rate over the free baseline -- +26.2pp/$100.
-- Full suite ($230): +37% success rate over the free baseline -- +16.2pp/$100.
-- Distance sensors ($90): +2% success rate over the free baseline -- +2.4pp/$100.
+- AprilTag ($25): +25% success rate over the free baseline -- +99.3pp/$100.
+- Full suite ($399): +39% success rate over the free baseline -- +9.7pp/$100.
+- Odometry pods ($280): +26% success rate over the free baseline -- +9.3pp/$100.
+- Distance sensors ($94): +2% success rate over the free baseline -- +2.3pp/$100.
 
-AprilTag is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+16.2pp/$100) is lower than AprilTag's: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
+AprilTag is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+9.7pp/$100) is lower than AprilTag's: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
 
 ## Honest findings
 

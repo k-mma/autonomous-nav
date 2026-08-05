@@ -4,24 +4,36 @@ that the 30-second budget genuinely binds? `ftc/budget_benchmark.py`
 found `AUTONOMOUS_PERIOD_S` starts costing real matches around 15-20s
 under the trapezoidal kinematics model (it barely bound at all under
 the old naive drive-time formula) -- which is exactly the condition
-under which a faster drivetrain has something to win. `ftc/config.py`'s
-`GEARING_OPTIONS` ("stock"/"fast"/"faster") trade drive speed for wheel
-slip (`slip_factor` scales `drift_per_cell` up, not a free win) rather
-than modeling more speed as strictly better.
+under which a faster drivetrain would have something to win, IF it
+actually bought more speed where it matters.
+
+`ftc/config.py`'s `GEARING_OPTIONS` ("stock"/"fast"/"faster") is built
+directly from goBILDA's published 5203-series RPM/torque table, not
+invented multipliers -- and that data surfaces a real, non-obvious
+finding: because torque falls as RPM rises for a fixed motor, and
+because every option's accel-to-cruise distance is far larger than one
+6in grid cell (so a single step never leaves `_trapezoidal_drive_time_s`'s
+triangular, accel-only branch -- see ftc/scratch/gearing_test.py),
+faster gearing is strictly SLOWER per cell in this model, not faster,
+on top of `slip_factor` scaling `drift_per_cell` up. This is not a
+speed-vs-slip tradeoff; it is a lose-lose at FTC's typical short-hop
+distances, and this module measures exactly how much of a lose-lose it
+is once translated into match success rate.
 
 Crossed with AUTONOMOUS_PERIOD_S at three points: 30s (the real budget,
 where `ftc/budget_benchmark.py` found it never binds -- gearing should
-buy nothing here except more drift), 15s (right at where binding
-starts), and 10s (binds hard). Reduced trial count/level set relative
-to the headline sweep (the same reasoning ftc/robustness.py's own
-docstring already documents), since this crosses 3 gearing options x 3
-budgets x 5 suites x 3 deviation types on top of the headline axes.
+buy nothing here except more drift and slower per-cell drive time),
+15s (right at where binding starts), and 10s (binds hard). Reduced
+trial count/level set relative to the headline sweep (the same
+reasoning ftc/robustness.py's own docstring already documents), since
+this crosses 3 gearing options x 3 budgets x 5 suites x 3 deviation
+types on top of the headline axes.
 
 Writes benchmark_results/ftc_gearing_results.csv (every trial, raw,
 with added `gearing` and `budget_s` columns), benchmark_results/
 ftc_gearing_comparison.png (success rate by gearing, one panel per
-budget), and benchmark_results/ftc_gearing_writeup.md (whether the
-speed/slip tradeoff actually pays off, and at which budget).
+budget), and benchmark_results/ftc_gearing_writeup.md (whether a
+faster-motor purchase ever pays off, and at which budget).
 """
 import csv
 import random
@@ -133,9 +145,15 @@ def write_writeup(stats, path):
         "# Is a faster-motor purchase worth it now that the budget binds?",
         "",
         "`ftc/budget_benchmark.py` found `AUTONOMOUS_PERIOD_S` starts binding around 15-20s under the "
-        "trapezoidal kinematics model -- the first point at which a faster drivetrain has anything to "
-        "win. `ftc/config.py`'s `GEARING_OPTIONS` trade drive speed for wheel slip: `slip_factor` scales "
-        "`drift_per_cell` up along with speed, so more speed isn't a free win. Crossed with budget at "
+        "trapezoidal kinematics model -- the first point at which a faster drivetrain would have anything "
+        "to win, IF it actually bought more speed where it matters. `ftc/config.py`'s `GEARING_OPTIONS` is "
+        "built from goBILDA's published 5203-series RPM/torque table, and that data says it doesn't: "
+        "torque falls as RPM rises, and every option's accel-to-cruise distance is far larger than one "
+        "6in grid cell, so a single step never reaches cruise speed regardless of gearing -- only "
+        "acceleration governs per-cell drive time, and real acceleration is LOWER at every faster ratio "
+        "(see ftc/scratch/gearing_test.py). `slip_factor` then scales `drift_per_cell` up on top of that. "
+        "This is not a speed-vs-slip tradeoff; it's a lose-lose at this grid's cell scale. Crossed with "
+        "budget at "
         f"{BUDGET_LEVELS} (30s = the real budget where it never binds; 15s = right at the binding point; "
         f"10s = binds hard), averaged across all 5 headline suites, {TRIALS} trials/point, levels "
         f"{LEVELS}, all 3 deviation types, 'cluttered' layout -- reduced relative to the headline sweep "
@@ -172,25 +190,27 @@ def write_writeup(stats, path):
         if best_gearing != "stock" and best["rate"] > stock["rate"] + 0.02:
             lines.append(
                 f"At {budget_s:g}s, {GEARING_LABELS[best_gearing]} measurably beats stock: {best['rate']:.0%} "
-                f"vs. {stock['rate']:.0%} -- the extra speed recovers matches that would otherwise run over "
-                "budget, outweighing the slip-driven drift cost at this tightness."
+                f"vs. {stock['rate']:.0%} -- unexpected given the per-cell kinematics (see module docstring), "
+                "worth double-checking against ftc_gearing_results.csv directly rather than assumed away."
             )
         elif faster["rate"] < stock["rate"] - 0.02 and not overlap:
             lines.append(
-                f"At {budget_s:g}s, faster gearing is ACTIVELY WORSE, not just unhelpful: "
+                f"At {budget_s:g}s, faster gearing is worse, exactly as the per-cell kinematics predict: "
                 f"{GEARING_LABELS['faster']} lands at {faster['rate']:.0%} vs. stock's {stock['rate']:.0%} "
                 f"({(faster['rate'] - stock['rate']):+.0%}), and the two suites' success-rate confidence "
-                f"intervals don't overlap at this trial count -- at a {budget_s:g}s budget, the wheel-slip "
-                "drift cost outweighs whatever time savings the extra speed bought. Buying speed without "
-                "also buying something that corrects pose (odometry pods, AprilTag) makes the average "
-                "suite's overall reliability worse here, not better."
+                f"intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off "
+                "-- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and "
+                "ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be "
+                "weighed against. Buying speed without also buying something that corrects pose (odometry "
+                "pods, AprilTag) makes the average suite's overall reliability worse, not better."
             )
         else:
             lines.append(
                 f"At {budget_s:g}s, no gearing option measurably beats stock ({stock['rate']:.0%}) at this "
                 f"trial count (fast: {stats[('fast', budget_s)]['rate']:.0%}, faster: {faster['rate']:.0%}) -- "
-                + ("expected at 30s: the budget never binds there (ftc_budget_writeup.md), so there's "
-                   "nothing for extra speed to win, only extra wheel-slip drift to lose." if budget_s == 30.0
+                + ("expected at 30s: the budget never binds there (ftc_budget_writeup.md), and neither "
+                   "faster option even saves per-cell drive time at this grid scale (module docstring), so "
+                   "there's nothing here for extra speed to win, only extra wheel-slip drift to lose." if budget_s == 30.0
                    else "the apparent drop doesn't clear the noise bar at this trial count; worth rechecking "
                    "with more trials before calling it either a real cost or a real non-effect.")
             )
@@ -199,9 +219,13 @@ def write_writeup(stats, path):
               "This is a reduced-rigor sweep (see module docstring), averaged across all 5 suites rather "
               "than reported per suite -- a real team would want to check this against the SPECIFIC suite "
               "it's actually running, since a suite that already fixes pose (AprilTag, odometry pods) can "
-              "absorb the extra slip-driven drift better than one that can't (dead reckoning). "
-              "GEARING_OPTIONS' speed/accel multipliers and slip_factor values are documented ballpark "
-              "engineering estimates, the same status as every other estimated constant in this project."]
+              "absorb the extra slip-driven drift better than one that can't (dead reckoning). The "
+              "per-cell-slower finding itself is not a ballpark estimate -- it follows directly from "
+              "goBILDA's own published RPM/torque table for the 5203 motor and this project's own grid "
+              "cell size, both fixed facts, not tuned constants. `slip_factor` is the one number in "
+              "GEARING_OPTIONS that remains an explicit ballpark engineering estimate: no vendor publishes "
+              "slip-vs-gearing data, so it's a documented guess, same status as every other estimated "
+              "constant in this project."]
 
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")

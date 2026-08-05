@@ -1,29 +1,29 @@
 # Is a faster-motor purchase worth it now that the budget binds?
 
-`ftc/budget_benchmark.py` found `AUTONOMOUS_PERIOD_S` starts binding around 15-20s under the trapezoidal kinematics model -- the first point at which a faster drivetrain has anything to win. `ftc/config.py`'s `GEARING_OPTIONS` trade drive speed for wheel slip: `slip_factor` scales `drift_per_cell` up along with speed, so more speed isn't a free win. Crossed with budget at [30.0, 15.0, 10.0] (30s = the real budget where it never binds; 15s = right at the binding point; 10s = binds hard), averaged across all 5 headline suites, 15 trials/point, levels [0.3, 0.5, 0.7, 0.9], all 3 deviation types, 'cluttered' layout -- reduced relative to the headline sweep (see module docstring). Raw data in `ftc_gearing_results.csv`, chart in `ftc_gearing_comparison.png`.
+`ftc/budget_benchmark.py` found `AUTONOMOUS_PERIOD_S` starts binding around 15-20s under the trapezoidal kinematics model -- the first point at which a faster drivetrain would have anything to win, IF it actually bought more speed where it matters. `ftc/config.py`'s `GEARING_OPTIONS` is built from goBILDA's published 5203-series RPM/torque table, and that data says it doesn't: torque falls as RPM rises, and every option's accel-to-cruise distance is far larger than one 6in grid cell, so a single step never reaches cruise speed regardless of gearing -- only acceleration governs per-cell drive time, and real acceleration is LOWER at every faster ratio (see ftc/scratch/gearing_test.py). `slip_factor` then scales `drift_per_cell` up on top of that. This is not a speed-vs-slip tradeoff; it's a lose-lose at this grid's cell scale. Crossed with budget at [30.0, 15.0, 10.0] (30s = the real budget where it never binds; 15s = right at the binding point; 10s = binds hard), averaged across all 5 headline suites, 15 trials/point, levels [0.3, 0.5, 0.7, 0.9], all 3 deviation types, 'cluttered' layout -- reduced relative to the headline sweep (see module docstring). Raw data in `ftc_gearing_results.csv`, chart in `ftc_gearing_comparison.png`.
 
 ## Success rate by gearing x budget
 
 | Budget | Stock | Fast | Faster |
 |---:|---:|---:|---:|
-| 30s | 37% | 32% | 28% |
-| 15s | 36% | 31% | 28% |
-| 10s | 27% | 25% | 24% |
+| 30s | 40% | 34% | 31% |
+| 15s | 39% | 32% | 22% |
+| 10s | 29% | 24% | 14% |
 
 ## Accumulated pose error by gearing (the slip cost)
 
 | Budget | Stock | Fast | Faster |
 |---:|---:|---:|---:|
-| 30s | 4.85in | 5.75in | 6.67in |
-| 15s | 4.85in | 5.73in | 6.66in |
-| 10s | 4.79in | 5.65in | 6.61in |
+| 30s | 4.48in | 5.29in | 6.23in |
+| 15s | 4.48in | 5.25in | 6.07in |
+| 10s | 4.39in | 5.14in | 5.92in |
 
 ## Does it pay off?
 
-At 30s, faster gearing is ACTIVELY WORSE, not just unhelpful: Faster gearing lands at 28% vs. stock's 37% (-9%), and the two suites' success-rate confidence intervals don't overlap at this trial count -- at a 30s budget, the wheel-slip drift cost outweighs whatever time savings the extra speed bought. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse here, not better.
-At 15s, faster gearing is ACTIVELY WORSE, not just unhelpful: Faster gearing lands at 28% vs. stock's 36% (-8%), and the two suites' success-rate confidence intervals don't overlap at this trial count -- at a 15s budget, the wheel-slip drift cost outweighs whatever time savings the extra speed bought. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse here, not better.
-At 10s, no gearing option measurably beats stock (27%) at this trial count (fast: 25%, faster: 24%) -- the apparent drop doesn't clear the noise bar at this trial count; worth rechecking with more trials before calling it either a real cost or a real non-effect.
+At 30s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 31% vs. stock's 40% (-9%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
+At 15s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 22% vs. stock's 39% (-16%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
+At 10s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 14% vs. stock's 29% (-15%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
 
 ## What this does and does not prove
 
-This is a reduced-rigor sweep (see module docstring), averaged across all 5 suites rather than reported per suite -- a real team would want to check this against the SPECIFIC suite it's actually running, since a suite that already fixes pose (AprilTag, odometry pods) can absorb the extra slip-driven drift better than one that can't (dead reckoning). GEARING_OPTIONS' speed/accel multipliers and slip_factor values are documented ballpark engineering estimates, the same status as every other estimated constant in this project.
+This is a reduced-rigor sweep (see module docstring), averaged across all 5 suites rather than reported per suite -- a real team would want to check this against the SPECIFIC suite it's actually running, since a suite that already fixes pose (AprilTag, odometry pods) can absorb the extra slip-driven drift better than one that can't (dead reckoning). The per-cell-slower finding itself is not a ballpark estimate -- it follows directly from goBILDA's own published RPM/torque table for the 5203 motor and this project's own grid cell size, both fixed facts, not tuned constants. `slip_factor` is the one number in GEARING_OPTIONS that remains an explicit ballpark engineering estimate: no vendor publishes slip-vs-gearing data, so it's a documented guess, same status as every other estimated constant in this project.

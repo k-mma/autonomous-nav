@@ -419,8 +419,10 @@ class AprilTagImuSuite(SensorSuite):
 
 
 class DualCameraAprilTagSuite(SensorSuite):
-    """Two cameras (front + rear, ~$40 each) instead of AprilTagSuite's
-    one. Under Priority 1's camera-FOV gating this roughly doubles the
+    """Two cameras (front + rear, each priced like AprilTagSuite's own
+    -- see ftc/config.py's DUAL_CAMERA_APRILTAG_COST_USD) instead of
+    AprilTagSuite's one. Under Priority 1's camera-FOV gating this
+    roughly doubles the
     robot's angular tag coverage (two camera_fov_deg-wide cones on
     opposite sides of the robot instead of one) -- under the OLD
     omnidirectional-camera model a second camera would have done
@@ -455,9 +457,11 @@ class _OmniLidarSensor(LidarSensor):
 class LidarSuite(SensorSuite):
     """An RPLidar-A1-class 2D scanner -- the direct head-to-head
     Priority 3's coverage sweep exists to run: DistanceSensorSuite's 3
-    narrow ToF cones cover only ~75deg of 360deg for ~$90; this is a
+    narrow ToF cones cover only ~75deg of 360deg for a REV-sensor-based
+    price (see ftc/config.py's DISTANCE_SENSOR_COST_USD); this is a
     full 360-degree disc scan (nav/sensor.py's LidarSensor, already
-    exactly this sensing model -- see module docstring) for ~$100."""
+    exactly this sensing model -- see module docstring) for a
+    comparable price (ftc/config.py's LIDAR_COST_USD)."""
     name = "lidar"
     cost_usd = LIDAR_COST_USD
     integration_notes = ("A single 2D lidar scanner + mount -- one sensor instead of N, no I2C "

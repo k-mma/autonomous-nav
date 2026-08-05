@@ -1,6 +1,6 @@
 """
 The headline finding (AprilTag = best value by success-rate-gained-per-
-dollar, more than double FullSuite's) rests on estimated constants --
+dollar, well ahead of FullSuite's) rests on estimated constants --
 ftc/config.py's own docstring calls them "ballpark engineering
 estimates," not measurements. This answers the question that leaves
 open: how wrong would those estimates have to be before the
@@ -369,13 +369,20 @@ def plot_robustness(all_points, tipping_points, path):
 
 
 def write_writeup(all_points, tipping_points, path):
+    # Pulled from ftc.sensors.SUITES rather than hardcoded -- a hardcoded
+    # dollar figure here already went stale once, when ftc/config.py's
+    # sensor costs were corrected against real vendor prices (see
+    # ftc/config.py's per-constant source comments). Computing it fresh
+    # every run is the actual fix, not just a one-time re-typing.
+    apriltag_cost = SUITES["apriltag"].cost_usd
+    full_suite_cost = SUITES["full_suite"].cost_usd
     lines = [
         "# Robustness: how wrong would the estimated constants have to be?",
         "",
-        "The headline finding (`ftc_suite_writeup.md`) is that AprilTag ($40) is the best-"
-        "value sensor suite by success-rate-gained-per-dollar, more than double FullSuite's "
-        "($230) return. That rests on estimated constants in ftc/config.py -- documented "
-        "ballpark engineering figures, not measurements. This sweeps each one from 0.25x to "
+        f"The headline finding (`ftc_suite_writeup.md`) is that AprilTag (${apriltag_cost:.0f}) is the "
+        f"best-value sensor suite by success-rate-gained-per-dollar, well ahead of FullSuite's "
+        f"(${full_suite_cost:.0f}) return. That rests on estimated constants in ftc/config.py -- "
+        "documented ballpark engineering figures, not measurements. This sweeps each one from 0.25x to "
         "4x its estimated value and asks one question: does the best-value suite actually "
         f"change? {ROBUSTNESS_TRIALS} trials/point at levels {ROBUSTNESS_LEVELS} (reduced "
         "from the headline sweep's 25 trials/11 levels -- a tipping-point search needs "

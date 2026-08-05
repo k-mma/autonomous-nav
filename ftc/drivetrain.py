@@ -15,9 +15,10 @@ ftc/match.py already charged, unconditionally, before this module
 existed IS tank behavior, and stays the exact default when no
 drivetrain is given. MECANUM can translate in any direction while
 holding a fixed chassis heading, at the cost of a real drivetrain-price
-premium (goBILDA-class mecanum ~$200 vs. traction ~$80, ftc/config.py)
-and a speed/drift penalty on any step that isn't roughly "forward"
-relative to whatever heading it's holding.
+premium (goBILDA's 96mm mecanum wheel set vs. its 96mm traction wheel
+set -- see ftc/config.py's MECANUM_WHEEL_COST_USD/TANK_WHEEL_COST_USD
+for the current sourced prices) and a speed/drift penalty on any step
+that isn't roughly "forward" relative to whatever heading it's holding.
 
 Heading policy, chosen and documented rather than left implicit:
 MECANUM holds a fixed heading for the whole match, aimed at the nearest
