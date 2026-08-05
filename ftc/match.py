@@ -143,7 +143,7 @@ class MatchResult:
 
 
 def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_sites, rng,
-              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None):
+              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None, on_tick=None):
     """Drive `suite` from `actual_start` (ground truth) to `goal`,
     planning against `assumed_grid`'s layout (the suite's only source of
     obstacle knowledge unless it senses otherwise) until it succeeds,
@@ -169,7 +169,22 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     by that option's `slip_factor` -- a faster gearing swap trades drive
     time for more wheel slip, not a free win. "stock" is exactly
     MAX_DRIVE_SPEED_MPS/MAX_ACCEL_MPS2/no slip penalty, so the default
-    is a byte-for-byte no-op."""
+    is a byte-for-byte no-op.
+
+    `on_tick` (optional, None by default) is a read-only side channel
+    for animation/visualization (see ftc/trace.py, pygame_app/ftc_viz/)
+    -- if given, it's called with an already-computed snapshot dict at
+    a handful of points each tick (see _emit below): "start" once
+    before the loop, "step" after each successful move, "collision" for
+    an attempted-but-rejected move, and "end" once after the loop, with
+    the final success/over_budget outcome. It is purely a dead end --
+    nothing on_tick does or returns is ever read back by run_match, so
+    it cannot perturb `rng`, `path`, `error`, or anything else this
+    function's own determinism depends on. That's what keeps it safe to
+    add without touching the byte-for-byte optimistic-tier regression
+    guarantee ftc/scratch/fidelity_test.py enforces: on_tick=None (every
+    caller before this addition, and every existing test) skips every
+    call site outright."""
     fidelity = fidelity or config_module.MODEL_FIDELITY
     tier = config_module.FIDELITY_TIERS[fidelity]
     gearing_config = config_module.GEARING_OPTIONS[gearing or "stock"]
@@ -209,6 +224,31 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     path = None
     idx = 0
     planned_once = False
+
+    tick_counter = 0
+
+    def _emit(event, **extra):
+        """Read-only snapshot for `on_tick` -- see run_match's own
+        docstring for the safety argument. Reads the CURRENT value of
+        every enclosing-scope variable at call time (ordinary Python
+        closure lookup, not a copy taken when _emit was defined), so a
+        call site further down the loop always sees this tick's
+        already-updated state."""
+        nonlocal tick_counter
+        if on_tick is None:
+            return
+        snapshot = dict(
+            tick=tick_counter, event=event, elapsed_s=elapsed_s,
+            true_position=true_position, heading_deg=heading,
+            error=error, heading_error_deg=heading_error,
+            path=list(path) if path else None,
+            collisions=collisions, replans=replans,
+        )
+        snapshot.update(extra)
+        on_tick(snapshot)
+        tick_counter += 1
+
+    _emit("start")
 
     for _ in range(MAX_TICKS):
         if true_position == goal:
@@ -298,6 +338,7 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
 
         if not ground_truth.is_valid(*next_true) or ground_truth.is_obstacle(*next_true):
             collisions += 1
+            _emit("collision", attempted_position=next_true, newly_seen_believed=set(newly_seen_believed))
             break
 
         step_dist = math.hypot(next_true[0] - true_position[0], next_true[1] - true_position[1])
@@ -349,8 +390,11 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             if heading_drift > 0:
                 heading_error += rng.gauss(0, heading_drift * step_dist)
         steps += 1
+        _emit("step", replanned=replan_needed, tag_corrected=tag_corrected,
+              newly_seen_believed=set(newly_seen_believed))
 
     success = (true_position == goal) and not over_budget
+    _emit("end", success=success, over_budget=over_budget)
     return MatchResult(
         success=success,
         elapsed_s=round(elapsed_s, 4),

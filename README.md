@@ -168,6 +168,10 @@ pip install -r requirements.txt
 
 python3 pygame_app/main.py                       # the pygame visualizer
 python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
+python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner-style), all 5 headline suites side by side
+python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag                     # one suite, one big panel
+python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite         # an arbitrary side-by-side comparison
+python3 pygame_app/scenarios/scenario_ftc_suites.py --suites all --fidelity pessimistic  # every suite ftc/sensors.py defines, at the pessimistic tier
 python3 -m nav.benchmark                         # regenerate benchmark_results/
 python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
 python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
@@ -774,15 +778,22 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
   gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
   calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
   recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
+  trace.py           record_match() -- runs run_match() once and additionally captures a full tick-by-tick
+                     replay trace via its on_tick hook (purely additive, doesn't change the simulation) --
+                     what pygame_app/ftc_viz/'s animated visualizer is built on
   scratch/         Same role as nav/scratch/, for the FTC-specific pieces (includes fidelity_test.py,
-                     drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py for this addition)
+                     drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py, trace_test.py
+                     for this addition)
 
 pygame_app/        Everything that touches pygame
   main.py            Entry point: opens the interactive visualizer
   visualizer.py      The pygame app
   scenario.py        ScenarioConfig -- preset state for scenarios/*.py
   scenarios/         Standalone launchers that open the visualizer into a preset scene
-                      (maze, cost map, bottleneck, noisy sensor, step replay, uncertainty comparison, ...)
+                      (maze, cost map, bottleneck, noisy sensor, step replay, uncertainty comparison,
+                      scenario_ftc_suites.py's RoadRunner-style FTC suite-comparison replay, ...)
+  ftc_viz/           Drawing primitives for scenario_ftc_suites.py's animated field panels (field_view.py) --
+                      pure functions of an ftc/trace.py MatchTrace + tick index, no simulation of its own
   scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths
 
 pybullet_app/      Everything that touches PyBullet
