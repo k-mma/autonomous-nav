@@ -26,14 +26,20 @@ ftc/match.py for the loop that actually drives this each tick.
 import math
 
 from nav.grid import Grid
+from nav.sensor import LidarSensor
 
+import ftc.config as config_module
 from ftc.field import in_to_cell
 from ftc.config import (
     DISTANCE_SENSOR_COST_USD, DISTANCE_SENSOR_COUNT, DISTANCE_SENSOR_HALF_ANGLE_DEG,
-    DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_RANGE_CELLS,
+    DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT,
+    DISTANCE_SENSOR_RANGE_CELLS,
     ODOMETRY_POD_COST_USD, APRILTAG_COST_USD, APRILTAG_RANGE_CELLS, APRILTAG_FOV_DEG,
     APRILTAG_CORRECTION_FACTOR_MAX, APRILTAG_RANGE_DEGRADATION, APRILTAG_ANGLE_DEGRADATION,
     DEAD_RECKONING_DRIFT_PER_CELL, ODOMETRY_DRIFT_PER_CELL,
+    CAMERA_MOUNT_HEADINGS_DEG, DUAL_CAMERA_APRILTAG_COST_USD,
+    IMU_COST_USD, IMU_HEADING_CORRECTION_FACTOR,
+    LIDAR_COST_USD, LIDAR_RANGE_CELLS,
 )
 
 
@@ -72,6 +78,28 @@ def line_of_sight(grid, cell_a, cell_b):
         if grid.is_valid(r, c) and grid.cells[r][c] == Grid.OBSTACLE:
             return False
     return True
+
+
+def _tag_in_camera_fov(true_position, tag_cell, heading_deg_now, camera_mount_headings_deg, camera_fov_deg):
+    """True if `tag_cell` falls inside the robot's own camera FOV
+    cone(s) right now, given the robot's TRUE heading -- the gate
+    Priority 1(a) found missing entirely: AprilTagSuite.tag_correction
+    accepted heading_deg_now but never used it, so a robot detected tags
+    regardless of which way its camera actually faced. Separate from
+    the tag's own FOV check (is the robot standing somewhere the tag
+    can be read from) -- this is "is the robot's camera actually
+    pointed at the tag." At camera_fov_deg >= 360 (the optimistic tier)
+    this is always True -- an omnidirectional camera, which is exactly
+    the assumption ftc/config.py's MODEL_FIDELITY docstring says the
+    optimistic tier exists to reproduce unchanged."""
+    if camera_fov_deg >= 360.0:
+        return True
+    angle_robot_to_tag = heading_deg(true_position, tag_cell)
+    half = camera_fov_deg / 2.0
+    return any(
+        abs(angular_diff(angle_robot_to_tag, heading_deg_now + mount)) <= half
+        for mount in camera_mount_headings_deg
+    )
 
 
 class ConeSensor:
@@ -131,28 +159,50 @@ class ConeSensor:
 class SensorSuite:
     """Common interface every suite below implements. `senses_obstacles`
     and `fixes_pose` are the two independent axes ftc/match.py's loop
-    branches on; a suite can be neither, either, or both."""
+    branches on; a suite can be neither, either, or both. `fixes_heading`
+    is a third, independent axis (Priority 4's ImuSuite) -- an IMU
+    corrects HEADING error only, continuously, with no need for anything
+    to be "in view" the way a tag detection is, and never triggers a
+    replan (see ftc/match.py's module docstring)."""
     name = "base"
     cost_usd = 0.0
     integration_notes = ""
     senses_obstacles = False
     fixes_pose = False
+    fixes_heading = False
     # Stddev of pose error (cells) injected per cell of real travel --
     # every suite drifts at some rate; only `fixes_pose` suites ever
     # correct it back down.
     drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
+    # Camera mount heading(s) relative to the robot's own heading, used
+    # only by suites that override tag_correction below -- a suite
+    # hardware choice (DualCameraAprilTagSuite mounts two), not a
+    # fidelity-tier one (ftc/config.py's CAMERA_FOV_DEG_BY_TIER is the
+    # tier-level piece: how WIDE each of these mounts can see).
+    camera_mount_headings_deg = CAMERA_MOUNT_HEADINGS_DEG
 
     def make_obstacle_sensor(self):
         return None
 
-    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng):
+    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity=None):
         """None if no tag is currently visible, else a float in [0, 1]:
         the fraction of accumulated pose error this detection removes
         -- degrades with range and viewing obliquity (see
         AprilTagSuite.tag_correction and ftc/config.py's APRILTAG_*
         constants), plus a little per-detection jitter so repeated
-        corrections don't all land identically."""
+        corrections don't all land identically. `fidelity` (one of
+        ftc.config.FIDELITY_TIERS' keys, defaulting to
+        ftc.config.MODEL_FIDELITY when None) additionally gates
+        visibility on the robot's own camera FOV and can drop an
+        otherwise-valid detection -- see AprilTagSuite.tag_correction."""
         return None
+
+    def heading_correction(self, rng):
+        """Fraction of accumulated HEADING error this tick's correction
+        removes -- only ever called when fixes_heading is True (see
+        ImuSuite). 0.0 (no-op) for every suite that doesn't override
+        it."""
+        return 0.0
 
 
 class DeadReckoningSuite(SensorSuite):
@@ -199,10 +249,36 @@ class DistanceSensorSuite(SensorSuite):
     senses_obstacles = True
     fixes_pose = False
     drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
+    # Class attribute, same status as cost_usd/drift_per_cell above (see
+    # ftc/robustness.py's docstring for why that matters): the headline
+    # 3-sensor layout by default; ftc/coverage_benchmark.py's
+    # make_distance_sensor_suite builds a differently-covered variant by
+    # overriding this and cost_usd on the INSTANCE, never mutating the
+    # class or ftc.config.
+    mount_headings_deg = DISTANCE_SENSOR_MOUNT_HEADINGS_DEG
 
     def make_obstacle_sensor(self):
-        return ConeSensor(DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_HALF_ANGLE_DEG,
+        return ConeSensor(self.mount_headings_deg, DISTANCE_SENSOR_HALF_ANGLE_DEG,
                             DISTANCE_SENSOR_RANGE_CELLS)
+
+
+def make_distance_sensor_suite(count):
+    """A DistanceSensorSuite variant with `count` ToF sensors at the
+    documented mount-heading layout for that count (ftc/config.py's
+    DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT) -- ftc/coverage_benchmark.py's
+    Priority 3 sweep over {3, 4, 6, 8}. INSTANCE overrides only (cost_usd
+    and mount_headings_deg are both class attributes baked at import
+    time, exactly the trap ftc/robustness.py's docstring warns about --
+    see ftc/scratch/coverage_test.py's check_suite_override_takes_effect,
+    which is written to FAIL if this used a class-level or ftc.config
+    mutation instead)."""
+    if count not in DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT:
+        raise ValueError(f"no documented mount-heading layout for count={count}")
+    suite = DistanceSensorSuite()
+    suite.name = f"distance_sensors_{count}"
+    suite.cost_usd = DISTANCE_SENSOR_COST_USD * count
+    suite.mount_headings_deg = DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT[count]
+    return suite
 
 
 class AprilTagSuite(SensorSuite):
@@ -219,7 +295,7 @@ class AprilTagSuite(SensorSuite):
     fixes_pose = True
     drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
 
-    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng):
+    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity=None):
         """Correction quality isn't uniform across the detection
         envelope -- it degrades linearly with range (fraction of
         APRILTAG_RANGE_CELLS used) and, more steeply, with viewing
@@ -230,7 +306,20 @@ class AprilTagSuite(SensorSuite):
         of the usable cone -- so a detection right at the edge of
         either envelope is technically "in view" but contributes only
         a fraction of APRILTAG_CORRECTION_FACTOR_MAX, not the same
-        correction a close, head-on detection would."""
+        correction a close, head-on detection would.
+
+        `fidelity` (defaulting to ftc.config.MODEL_FIDELITY, read fresh
+        here rather than baked in at import time -- unlike APRILTAG_
+        CORRECTION_FACTOR_MAX etc. below, which ARE module globals baked
+        at import, see ftc/robustness.py's docstring) adds two gates the
+        old model didn't have: the robot's own camera FOV (Priority 1a
+        -- _tag_in_camera_fov, gated on heading_deg_now, which used to be
+        accepted and silently ignored) and a flat per-detection dropout
+        rate. Both are no-ops at the optimistic tier (360deg camera,
+        0.0 dropout) so this reproduces the pre-fidelity-tier behavior
+        exactly -- see ftc/scratch/fidelity_test.py."""
+        fidelity = fidelity or config_module.MODEL_FIDELITY
+        tier = config_module.FIDELITY_TIERS[fidelity]
         for tag in tag_sites:
             tag_cell = in_to_cell(tag.x_in, tag.y_in)
             dist = math.hypot(tag_cell[0] - true_position[0], tag_cell[1] - true_position[1])
@@ -240,7 +329,13 @@ class AprilTagSuite(SensorSuite):
             incidence = abs(angular_diff(angle_tag_to_robot, tag.heading_deg))
             if incidence > APRILTAG_FOV_DEG / 2:
                 continue
+            if not _tag_in_camera_fov(true_position, tag_cell, heading_deg_now,
+                                        self.camera_mount_headings_deg, tier["camera_fov_deg"]):
+                continue
             if not line_of_sight(true_grid, tag_cell, true_position):
+                continue
+            dropout = tier["apriltag_detection_dropout_rate"]
+            if dropout > 0 and rng.random() < dropout:
                 continue
             range_factor = 1.0 - APRILTAG_RANGE_DEGRADATION * (dist / APRILTAG_RANGE_CELLS)
             angle_factor = 1.0 - APRILTAG_ANGLE_DEGRADATION * (incidence / (APRILTAG_FOV_DEG / 2))
@@ -268,8 +363,113 @@ class FullSuite(SensorSuite):
         return ConeSensor(DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_HALF_ANGLE_DEG,
                             DISTANCE_SENSOR_RANGE_CELLS)
 
-    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng):
-        return AprilTagSuite.tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng)
+    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity=None):
+        return AprilTagSuite.tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity)
+
+
+class ImuSuite(SensorSuite):
+    """Every REV Control Hub already ships an integrated IMU -- this
+    suite corrects HEADING error only (an IMU has no absolute position
+    reference at all, so translation drift is untouched, same rate as
+    DeadReckoningSuite) continuously, every tick, with no need for a tag
+    -- or anything else -- to be in view, unlike AprilTag's per-
+    detection correction. An IMU fix never triggers a replan either
+    (ftc/match.py only replans on a POSITION correction or a newly-
+    sensed obstacle; a heading-only fix doesn't change which grid cell
+    the robot believes it's at, so there's nothing for a fresh astar
+    call to find that the old path wouldn't). Hardware cost is
+    genuinely $0 -- the question this suite exists to make honest is
+    "is the free hardware worth the integration code," which a
+    $-per-percentage-point metric can't express at cost_usd == 0 (see
+    ftc/*_benchmark.py's explicit handling of that case rather than a
+    silent divide-by-zero)."""
+    name = "imu"
+    cost_usd = IMU_COST_USD
+    integration_notes = "The Control Hub's built-in IMU + a fusion loop reading it every tick -- $0 hardware, real firmware/integration effort."
+    senses_obstacles = False
+    fixes_pose = False
+    fixes_heading = True
+    drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
+    heading_correction_factor = IMU_HEADING_CORRECTION_FACTOR
+
+    def heading_correction(self, rng):
+        return self.heading_correction_factor
+
+
+class AprilTagImuSuite(SensorSuite):
+    """AprilTag's absolute position correction plus an IMU's continuous
+    heading correction -- an IMU-augmented variant of AprilTagSuite. The
+    two hardware upgrades correct different error components (position
+    vs. heading) and stack cleanly rather than competing, at
+    AprilTagSuite's cost alone, since the IMU adds $0."""
+    name = "apriltag_imu"
+    cost_usd = APRILTAG_COST_USD + IMU_COST_USD
+    integration_notes = "AprilTagSuite's webcam pipeline plus the Control Hub's built-in IMU fusion loop -- the IMU adds $0 to AprilTagSuite's existing integration cost."
+    senses_obstacles = False
+    fixes_pose = True
+    fixes_heading = True
+    drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
+    heading_correction_factor = IMU_HEADING_CORRECTION_FACTOR
+
+    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity=None):
+        return AprilTagSuite.tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity)
+
+    def heading_correction(self, rng):
+        return self.heading_correction_factor
+
+
+class DualCameraAprilTagSuite(SensorSuite):
+    """Two cameras (front + rear, ~$40 each) instead of AprilTagSuite's
+    one. Under Priority 1's camera-FOV gating this roughly doubles the
+    robot's angular tag coverage (two camera_fov_deg-wide cones on
+    opposite sides of the robot instead of one) -- under the OLD
+    omnidirectional-camera model a second camera would have done
+    literally nothing (an omnidirectional camera already sees
+    everything the first one did), which is exactly the point: this
+    suite is a clean demonstration of why the Priority 1 fidelity fix
+    mattered, not just "a more expensive AprilTag.\""""
+    name = "dual_camera_apriltag"
+    cost_usd = DUAL_CAMERA_APRILTAG_COST_USD
+    integration_notes = "A second webcam (rear-facing) on the same AprilTag detection pipeline -- double the camera hardware and mounting, same code path run twice per tick."
+    senses_obstacles = False
+    fixes_pose = True
+    drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
+    camera_mount_headings_deg = [0.0, 180.0]
+
+    def tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity=None):
+        return AprilTagSuite.tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity)
+
+
+class _OmniLidarSensor(LidarSensor):
+    """Adapts nav.sensor.LidarSensor's 2-arg sense(grid, position) to the
+    3-arg (grid, position, heading_deg_now) signature every obstacle
+    sensor gets called through in ftc/match.py -- a full 360-degree disc
+    scan has no heading dependence at all, so this just ignores the
+    extra argument rather than requiring nav/ (which must stay FTC-free,
+    see README.md's "nav/ vs ftc/" section) to grow an FTC-specific call
+    signature."""
+    def sense(self, grid, position, heading_deg_now):
+        return super().sense(grid, position)
+
+
+class LidarSuite(SensorSuite):
+    """An RPLidar-A1-class 2D scanner -- the direct head-to-head
+    Priority 3's coverage sweep exists to run: DistanceSensorSuite's 3
+    narrow ToF cones cover only ~75deg of 360deg for ~$90; this is a
+    full 360-degree disc scan (nav/sensor.py's LidarSensor, already
+    exactly this sensing model -- see module docstring) for ~$100."""
+    name = "lidar"
+    cost_usd = LIDAR_COST_USD
+    integration_notes = ("A single 2D lidar scanner + mount -- one sensor instead of N, no I2C "
+                          "multiplexing to wire up. CHECK THE CURRENT SEASON'S FTC GAME MANUAL's "
+                          "laser/rules section before treating this as a legal component for a real "
+                          "robot -- not asserted here, only priced and simulated.")
+    senses_obstacles = True
+    fixes_pose = False
+    drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
+
+    def make_obstacle_sensor(self):
+        return _OmniLidarSensor(LIDAR_RANGE_CELLS)
 
 
 SUITES = {
@@ -278,6 +478,14 @@ SUITES = {
     "distance_sensors": DistanceSensorSuite,
     "apriltag": AprilTagSuite,
     "full_suite": FullSuite,
+    # Not part of SUITE_ORDER / the headline sweep -- Priority 3/4
+    # additions, exercised by their own studies (ftc/coverage_
+    # benchmark.py, ftc/newsuites_benchmark.py) so the published
+    # headline numbers above stay untouched by their presence here.
+    "imu": ImuSuite,
+    "apriltag_imu": AprilTagImuSuite,
+    "dual_camera_apriltag": DualCameraAprilTagSuite,
+    "lidar": LidarSuite,
 }
 SUITE_ORDER = ["dead_reckoning", "odometry_pods", "distance_sensors", "apriltag", "full_suite"]
 SUITE_LABELS = {
@@ -286,4 +494,8 @@ SUITE_LABELS = {
     "distance_sensors": "Distance sensors",
     "apriltag": "AprilTag",
     "full_suite": "Full suite",
+    "imu": "IMU",
+    "apriltag_imu": "AprilTag + IMU",
+    "dual_camera_apriltag": "Dual-camera AprilTag",
+    "lidar": "Lidar",
 }

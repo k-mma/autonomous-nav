@@ -100,7 +100,15 @@ def _solvable_scenario(trial_seed, grid, free_cells):
     raise RuntimeError(f"no solvable scenario for seed {trial_seed} after {MAX_ATTEMPTS_PER_TRIAL} attempts")
 
 
-def run_combo(deviation_type, variance_level, num_trials, base_seed, grid, free_cells, tag_sites):
+def run_combo(deviation_type, variance_level, num_trials, base_seed, grid, free_cells, tag_sites,
+              fidelity=None):
+    """`fidelity` defaults to None -- run_match resolves that to
+    ftc.config.MODEL_FIDELITY (the "optimistic" default) fresh on every
+    call, so every caller that doesn't pass it (every one that existed
+    before ftc/fidelity_benchmark.py) is completely unaffected. Passing
+    an explicit tier is what lets ftc/fidelity_benchmark.py rerun this
+    exact sweep at "realistic"/"pessimistic" without duplicating this
+    function."""
     rows = []
     scale_kwargs = DEVIATION_TYPES[deviation_type]
     for t in range(num_trials):
@@ -112,7 +120,7 @@ def run_combo(deviation_type, variance_level, num_trials, base_seed, grid, free_
         for suite_name in SUITE_ORDER:
             suite = SUITES[suite_name]()
             result = run_match(suite, grid, start, goal, ground_truth, actual_start, tag_sites,
-                                random.Random(trial_seed))
+                                random.Random(trial_seed), fidelity=fidelity)
             rows.append({
                 "suite": suite_name,
                 "deviation_type": deviation_type,

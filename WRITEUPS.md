@@ -1584,3 +1584,344 @@ identical. The effect instead shows up entirely in `ftc/
 budget_benchmark.py`'s sweep (see above): the *interaction* with a
 tighter budget is where realistic kinematics actually changes a
 conclusion, exactly as anticipated going into this addition.
+
+### Model fidelity tiers: camera FOV and heading error (`ftc/config.py`'s `MODEL_FIDELITY`)
+
+Two unmodeled optimisms sat underneath every number in this project
+until now, both flattering AprilTag specifically (the headline best-
+value winner) and every suite generally: `AprilTagSuite.tag_correction`
+accepted `heading_deg_now` -- the robot's current heading -- as an
+argument and never used it, so a tag was "detected" regardless of which
+way the robot's camera actually pointed, as if every AprilTag setup
+were an omnidirectional camera; and `ftc/match.py` tracked pose error
+as a `(row, col)` translation vector only, with no heading error
+anywhere, as if the robot always knew exactly which way it was
+pointing. Real dead reckoning doesn't work that way -- small angular
+error compounds into large lateral error over distance (a robot 2
+degrees off heading drifts about 3.5in laterally over just one field-
+length traverse), which is why gyro/heading drift is usually the
+*dominant* real-world dead-reckoning failure mode, not a footnote next
+to translation drift.
+
+The fix couldn't just be "re-tune the model pessimistically" -- the
+replacement parameters (how narrow is a real camera's FOV, how fast
+does heading really drift) are themselves uncalibrated ballpark
+estimates, exactly the same status as every other constant in `ftc/
+config.py`. Silently swapping one set of unvalidated numbers for
+another wouldn't have closed anything, and it would have invalidated
+the published headline numbers with no way to reproduce them. Instead,
+`ftc/config.py`'s `MODEL_FIDELITY` picks between three named tiers,
+each with its own values for `CAMERA_FOV_DEG_BY_TIER`, `HEADING_DRIFT_
+DEG_PER_CELL_BY_TIER`, `APRILTAG_HEADING_CORRECTION_FACTOR_BY_TIER`,
+and `APRILTAG_DETECTION_DROPOUT_RATE_BY_TIER`:
+
+- *optimistic* (the default): camera FOV >= 360deg (omnidirectional),
+  zero heading drift, zero AprilTag detection dropout. This isn't a
+  new, more honest baseline -- it's the OLD, pre-fix behavior, given a
+  name specifically so later tiers can be compared against it.
+  `ftc/scratch/fidelity_test.py`'s
+  `check_optimistic_tier_reproduces_headline_exactly` reruns a sample
+  of the exact seeded trials behind `benchmark_results/
+  ftc_suite_results.csv` and diffs every column except
+  `planning_time_ms` (unseeded wall-clock time, never a valid
+  comparison signal in this project) against the checked-in CSV --
+  passing with zero mismatches across all columns checked. Rerunning
+  the FULL 4,125-row headline sweep and diffing it against git's copy
+  of the same CSV (done once, while building this feature, not as part
+  of the checked-in test) turned up zero mismatches there too: the
+  56%/45%/35%/21%/19% success rates and 40.0 vs. 16.2pp/$100 figures
+  are unchanged, exactly as this tier is supposed to guarantee.
+- *realistic*: a ~70deg camera FOV (webcam-class, the same ballpark
+  `APRILTAG_FOV_DEG` already cites), nonzero heading drift, an 85%
+  AprilTag heading-correction factor, still zero detection dropout.
+- *pessimistic*: a narrower ~50deg FOV, faster heading drift, a lower
+  (70%) heading-correction factor, and a nonzero AprilTag detection
+  dropout rate (a fraction of otherwise-valid detections just fail to
+  resolve a pose that tick, e.g. motion blur).
+
+Two mechanisms had to actually change behavior, not just exist as
+config:
+
+1. Camera FOV gating (`ftc/sensors.py`'s `_tag_in_camera_fov`): a NEW
+   gate, separate from the existing tag-side FOV check (is the robot
+   standing somewhere the tag itself can be read from). This one asks
+   whether the robot's own camera, given its current TRUE heading, is
+   actually pointed at the tag -- `angle_robot_to_tag` (the direction
+   from the robot to the tag) has to fall within `camera_fov_deg/2` of
+   one of the suite's `camera_mount_headings_deg`, offset by the
+   robot's heading. At `camera_fov_deg >= 360` this returns `True`
+   unconditionally without even looking at the heading arguments --
+   the optimistic tier's exactness guarantee in code, not just in
+   intent. `ftc/scratch/fidelity_test.py`'s
+   `check_camera_fov_gate_rejects_tags_behind_the_robot` confirms a tag
+   that's otherwise perfectly in range/FOV/line-of-sight gets rejected
+   once the robot's camera faces away from it at the realistic tier,
+   and `check_camera_fov_gate_is_a_noop_at_optimistic_tier` confirms
+   the IDENTICAL scenario still corrects at the optimistic tier.
+2. Heading error that actually rotates executed motion, not just a
+   reported number (`ftc/match.py`). Pose error grew a third component,
+   `heading_error` (degrees), alongside the existing `(row, col)`
+   translation `error` -- both still "true = believed + error," the
+   translation term added, the heading term *rotating*. Every step, the
+   commanded motion is computed as a vector in the believed frame (the
+   next grid cell the plan wants, relative to the current one); that
+   vector gets rotated by `heading_error` (`ftc/match.py`'s `_rotate`)
+   before being applied to the robot's TRUE position -- a wrong heading
+   belief doesn't just mis-report where the robot thinks it is, it
+   steers the robot somewhere it didn't intend to go, exactly the
+   compounding-lateral-error mechanism real dead reckoning has.
+   `_rotate` short-circuits to an exact identity at `deg == 0.0` rather
+   than computing through `cos`/`sin`, which is what lets
+   `heading_error` staying exactly `0.0` at the optimistic tier
+   guarantee byte-identical `next_true` cells, not just numerically
+   close ones. `ftc/scratch/fidelity_test.py`'s
+   `check_heading_error_rotates_execution` confirms both the identity
+   case and that a real (25-degree) heading error rotates a hand-built
+   step vector to a measurably different cell, then confirms the same
+   thing end to end through `run_match`: `final_heading_error_deg`
+   stays exactly `0.0` at the optimistic tier across a real match and
+   is nonzero at the pessimistic one.
+
+A trap worth naming for whoever touches this next: every new random
+draw this feature adds (`rng.gauss` for heading drift, `rng.random()`
+for AprilTag dropout) is explicitly guarded behind `if <tier value> >
+0:` rather than called unconditionally with a zero-valued parameter.
+`random.gauss` consumes the same number of underlying `random()` calls
+regardless of `sigma` (it caches every other call's second Box-Muller
+value internally), so calling it even with `sigma=0.0` would have
+silently shifted every subsequent random draw in the match -- rng
+state, elapsed_s, everything downstream -- relative to the pre-
+Priority-1 code, breaking the optimistic tier's byte-identical
+reproduction guarantee in a way that would have been very hard to spot
+(the guarded caller looks correct; only the underlying rng stream
+position is wrong). This is exactly why the optimistic-tier regression
+test compares against the actual checked-in CSV rather than trusting
+the guard was applied everywhere it needed to be.
+
+`ftc/fidelity_benchmark.py` reruns the identical full-rigor headline
+sweep at all three tiers side by side. The finding: the best-value
+suite changes from AprilTag (optimistic) to Odometry pods (both
+realistic and pessimistic) -- AprilTag's overall success rate drops
+from 35% to 26% (realistic) to 23% (pessimistic) as the camera stops
+being omnidirectional and heading drift starts mattering, while
+Odometry pods (which fixes pose without ever needing a camera pointed
+anywhere) barely moves. Full table in `benchmark_results/
+ftc_fidelity_writeup.md`. This BOUNDS the camera-FOV/heading-error gap
+in README.md's "Threats to validity" -- it does not CALIBRATE it; every
+non-optimistic tier's constants are the same class of ballpark
+engineering estimate as everything else in `ftc/config.py`, not a
+measured replacement for them.
+
+### New suites: IMU and dual-camera AprilTag (`ftc/sensors.py`)
+
+Two suites only exist, or only matter, because of the fidelity-tier
+model above:
+
+`ImuSuite` corrects HEADING error only -- an IMU has no absolute
+position reference at all, so translation drift is untouched, same
+rate as `DeadReckoningSuite` -- continuously, every tick, with no need
+for anything to be "in view" the way an AprilTag detection is. Its
+hardware cost is genuinely `$0` (every REV Control Hub already ships
+one); the only real cost is integration effort, which this project's
+dollar-based cost model has no way to price. `ftc/newsuites_
+benchmark.py` reports that case explicitly as "undefined," not
+`inf` -- `ftc_suite_writeup.md`'s existing `per_100 = ... if cost > 0
+else float("inf")` pattern was written for a suite that's the free
+BASELINE (`dead_reckoning`, always excluded from its own ranking); a
+free suite that ISN'T the baseline needed a genuinely different
+treatment, since "infinite value per dollar" isn't a meaningful claim
+about a suite whose real cost is engineering time this project can't
+price at all. A heading-only correction also never triggers a replan
+(`ftc/match.py` only replans on a position correction or a newly-sensed
+obstacle -- a heading fix doesn't change which grid cell the robot
+believes it's at), which is the other half of "is the free hardware
+worth the code": unlike AprilTag, an IMU fix costs nothing in
+`PLANNING_OVERHEAD_S` either. `AprilTagImuSuite` stacks both
+corrections (AprilTag's position fix, the IMU's continuous heading fix)
+at AprilTag's cost alone.
+
+`DualCameraAprilTagSuite` mounts a second (rear-facing) camera on the
+same detection pipeline, ~$40 more. Under the OLD omnidirectional-
+camera model this suite would have done *literally nothing* -- a second
+omnidirectional camera can't see anything the first one didn't already
+see. Under the fidelity-tier model's real FOV gating it roughly doubles
+angular tag coverage, and `ftc/scratch/newsuites_test.py`'s
+`check_dual_camera_helps_under_realistic_fov_but_not_optimistic`
+confirms both halves of that claim directly: a scripted tag placed
+behind a robot facing away from it is invisible to the single-camera
+suite and visible to the dual-camera one at the realistic tier, and
+BOTH suites see it at the optimistic tier (where "behind" doesn't mean
+anything to an omnidirectional camera). `ftc/newsuites_benchmark.py`'s
+sweep confirms the same shape end to end: a +0% gap at the optimistic
+tier, a real (+3-4pp) gap at the realistic one -- a clean demonstration
+that the Priority 1 fidelity fix is what makes this suite meaningful to
+model at all, not just a more expensive AprilTag.
+
+### Tank vs. mecanum drivetrain (`ftc/drivetrain.py`)
+
+`ftc/field.py` has defaulted to `diagonal=True` "on the assumption of a
+holonomic drivetrain" since Phase 2, and README.md named "no mecanum-
+specific strafing advantage" as an open limitation ever since: every
+suite paid the same flat `TURN_TIME_PER_90DEG_S` cost on every
+direction change, whether or not the robot it was modeling could
+actually translate without turning. `ftc/drivetrain.py` adds `TANK` and
+`MECANUM` as a `Drivetrain` axis orthogonal to sensor suite -- any
+suite from `ftc/sensors.py` can run on either one, so this is swept
+like `ftc/layout_benchmark.py`'s field layout or `ftc/
+budget_benchmark.py`'s budget, not folded into `SUITE_ORDER`.
+
+TANK must physically rotate to face its direction of travel before
+every direction change -- this IS the existing (pre-this-addition)
+behavior, which is why `ftc/match.py`'s `drivetrain=None` default
+reproduces it exactly, and an explicit `TANK` instance is required to
+be functionally identical to that default
+(`ftc/scratch/drivetrain_test.py`'s `check_tank_matches_legacy_default`
+verifies this to the bit, on a real seeded match, not just by
+inspecting the two code paths). MECANUM can translate in any direction
+while holding a fixed chassis heading, paying zero turn cost -- but
+runs at `MECANUM_STRAFE_SPEED_FACTOR` (0.8x, ballpark) of forward speed
+and accrues `MECANUM_STRAFE_DRIFT_MULTIPLIER` (1.6x, ballpark, wheel
+scrub) extra pose drift whenever its direction of travel isn't roughly
+"forward" relative to whatever heading it's holding. Both wheel sets
+are priced from the same ballpark 2024-25 goBILDA-class street-price
+sourcing as every other cost in `ftc/config.py` ($80 traction, $200
+mecanum).
+
+The heading policy had to be chosen and documented, not left implicit:
+MECANUM holds a fixed heading for the whole match, picked once at the
+start, aimed at whichever `TagSite` is nearest the robot's true
+starting position (`ftc/match.py`, `run_match`). This is the natural
+choice for a robot that's investing in an AprilTag-reading camera at
+all -- and it's the specific interaction `ftc/drivetrain_benchmark.py`
+was built to check: does holding that heading (keeping the camera
+aimed at the tag wall for the entire match, instead of swinging away
+from it every time the robot changes direction the way TANK's camera
+does) recover some of AprilTag's realistic-tier success-rate loss from
+the fidelity-tier section above?
+
+The answer, measured rather than assumed: the camera-FOV mechanism IS
+real and in the expected direction (the tank-vs-mecanum gap for
+AprilTag narrows going from the optimistic tier to the realistic one,
+exactly as the camera-FOV theory predicts) -- but it's swamped by a
+cost the "hold one fixed heading all match" policy pays on almost every
+step. A route's travel direction changes on nearly every leg (up to 8
+different directions on this project's diagonal grid); the held
+heading is picked once and never updates, so unless a route happens to
+run roughly parallel to whichever tag wall was nearest the start cell,
+most of its steps are strafes relative to that heading -- paying the
+1.6x drift multiplier on close to every step, not just the occasional
+sideways one. That compounding drift penalty drags down EVERY suite's
+success rate under mecanum, not just AprilTag's (`benchmark_results/
+ftc_drivetrain_writeup.md`'s per-suite table), and mecanum's $120
+premium over tank is not repaid by any suite tested at this trial
+count. This is a real, measured limitation of the *specific* heading
+policy implemented here (hold one heading, chosen once, for the whole
+match) -- not a closed verdict on mecanum drivetrains in general. A
+policy that re-picks its held heading periodically (toward whichever
+tag wall is nearest the CURRENT position, say, or toward a route's own
+dominant direction) would strafe far less and isn't tested here; README
+records this as CLOSED for "does the drivetrain model itself account
+for strafing" and open for "which heading policy should a real team
+actually run."
+
+### Sensor coverage: can you buy out the distance-sensor blind spot? (`ftc/coverage_benchmark.py`)
+
+`ftc_suite_writeup.md`'s strongest negative finding never answered the
+obvious follow-up question: DistanceSensorSuite's 3 narrow ToF cones
+cover only ~75 of the 360 degrees around the robot and collide in
+roughly half their trials even at zero field deviation, but does buying
+MORE sensors actually fix that, or is a sparse fixed-cone suite doomed
+regardless of count? `ftc/coverage_benchmark.py` answers directly:
+sweeping `DISTANCE_SENSOR_COUNT` over {3, 4, 6, 8} (`ftc/sensors.py`'s
+`make_distance_sensor_suite`, an instance-override factory -- see `ftc/
+robustness.py`'s docstring for why this has to be instance-level, not a
+class or `ftc.config` mutation, and `ftc/scratch/coverage_test.py`'s
+`check_suite_override_takes_effect` for the test written to fail if it
+weren't) and adding `LidarSuite`, a full 360-degree disc scan
+(`nav/sensor.py`'s `LidarSensor` already IS exactly this sensing model
+-- wiring it into `ftc/` cost almost nothing) priced as an RPLidar-A1-
+class scanner, ~$100.
+
+Mount-heading placement is documented per count in `ftc/config.py`,
+since even coverage vs. front-weighted is itself a real design choice,
+not an afterthought: 3 stays front/left/right (the existing headline
+layout, front-weighted toward the direction of travel); 4 adds a rear
+sensor for full cardinal coverage; 6 and 8 switch to EVEN spacing
+(60deg and 45deg respectively) once there are enough sensors that
+picking a side to leave uncovered stops making sense.
+
+The result: more coverage measurably helps. Going from 3 to 8 sensors
+drops the zero-deviation collision rate from 49% to 44%; lidar's full
+360-degree coverage brings it to the same 44% for about the same money
+($100 vs. $90) as the headline 3-sensor suite. That the improvement
+tops out well above 0%, even at full 360-degree coverage, is itself
+consistent with `ftc_suite_writeup.md`'s own controlled check, which
+already found that roughly a third of DistanceSensorSuite's collisions
+persist even with pose drift completely disabled -- coverage angle is
+the DOMINANT cause of the zero-deviation collisions, not the only one.
+`LidarSuite`'s own `integration_notes` flag the one thing this repo
+can't verify on its own: FTC's laser-class-device rules must be checked
+against the CURRENT season's game manual before treating a lidar
+recommendation as real and legal -- this study prices and simulates the
+sensing model, it does not assert legality.
+
+### Drivetrain speed / gearing (optional, `ftc/gearing_benchmark.py`)
+
+The lowest-priority, explicitly optional addition: `MAX_DRIVE_SPEED_MPS`
+and `MAX_ACCEL_MPS2` were plain constants, but once `ftc/
+budget_benchmark.py` showed `AUTONOMOUS_PERIOD_S` genuinely starts
+binding around 15-20s under the trapezoidal kinematics model, "buy a
+faster motor" became an actually testable purchase for the first time
+-- a robot that never runs out of time has nothing to gain from more
+speed, and prior to that finding this would have been a pure paper
+exercise. `ftc/config.py`'s `GEARING_OPTIONS` ("stock"/"fast"/"faster")
+is a small, named menu of higher-speed/higher-price gearing swaps
+(`ftc/match.py`'s `run_match` gained an optional `gearing` parameter,
+`None`/`"stock"` reproducing `MAX_DRIVE_SPEED_MPS`/`MAX_ACCEL_MPS2`
+exactly), each overriding top speed and acceleration and adding the
+tradeoff the task brief specifically asked not to skip: more speed
+means more wheel slip, so each option's `slip_factor` scales
+`drift_per_cell` up, not just cruise speed up for free.
+
+`ftc/scratch/gearing_test.py` verifies the mechanism two ways: directly
+against `_trapezoidal_drive_time_s`'s own closed-form kinematics (the
+same style `ftc/scratch/kinematics_test.py` already established) --
+"faster" gearing's own accel value produces a strictly shorter single-
+cell drive time -- and end to end through `run_match`, with a
+drift-zeroed suite instance so the comparison isn't confounded by a
+subtler, real effect this addition surfaced: more slip changes the
+accumulated pose error, which changes which cells actually get visited
+and how much turning happens, which can shift a *stochastic* multi-step
+match's total elapsed_s in either direction independent of the
+per-step speed gain. The first version of this test compared full,
+undoctored matches directly and intermittently failed for exactly that
+reason -- a real, if secondary, finding about how gearing and drift
+interact in this model, not a test bug to paper over quietly.
+
+The result, crossed with budget (30s -- the real, non-binding budget;
+15s -- right at the binding point per `ftc/budget_benchmark.py`; 10s --
+binds hard), averaged across all 5 headline suites: faster gearing does
+not pay off at ANY budget tested. At 30s and 15s it's actively worse,
+not merely unhelpful -- "faster" gearing's success rate lands 8-9
+percentage points BELOW stock's, a gap that survives a bootstrap-CI
+overlap check (the same "don't call a gap real until the CIs actually
+separate" standard `ftc/robustness.py`, `ftc/budget_benchmark.py`, and
+`ftc/opponent_benchmark.py`'s own tipping points already hold
+themselves to). At 10s the apparent drop doesn't clear the noise bar at
+this trial count. The mechanism: `GEARING_OPTIONS`' slip factors were
+chosen to scale up meaningfully faster than accel does at this end of a
+typical DC gearmotor's curve (a documented, ballpark choice, not a
+measured one), so even where the budget genuinely binds, the extra
+matches speed alone would have rescued are outweighed by matches the
+extra drift newly loses.
+
+What this does and does not prove: this is a reduced-rigor sweep,
+averaged across every suite rather than reported per suite -- a team
+running a specific suite that already fixes pose (AprilTag, odometry
+pods) would plausibly absorb the extra slip-driven drift better than
+dead reckoning does, and this module doesn't check that per-suite
+breakdown. It also doesn't establish that no gearing choice could ever
+be worth it -- only that the two specific options modeled here, at
+their specific (ballpark) slip factors, aren't. Like every other
+estimated constant in this project, `GEARING_OPTIONS`' multipliers are
+sourced-or-ballpark engineering estimates, not measurements.

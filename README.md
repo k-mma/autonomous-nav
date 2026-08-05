@@ -176,6 +176,11 @@ python3 -m ftc.robustness                        # tipping-point sweep on the he
 python3 -m ftc.layout_benchmark                  # does the best-value suite change on a different field layout?
 python3 -m ftc.budget_benchmark                  # sweep AUTONOMOUS_PERIOD_S -- when does the budget start to bind?
 python3 -m ftc.opponent_benchmark                # static vs. moving opponent -- does it change which suite wins?
+python3 -m ftc.fidelity_benchmark                # headline sweep at all 3 MODEL_FIDELITY tiers side by side
+python3 -m ftc.drivetrain_benchmark              # tank vs. mecanum -- does holding heading toward a tag wall pay off?
+python3 -m ftc.coverage_benchmark                # distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot?
+python3 -m ftc.newsuites_benchmark               # IMU / AprilTag+IMU / dual-camera AprilTag
+python3 -m ftc.gearing_benchmark                 # faster motor gearing vs. wheel slip, crossed with the budget
 python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
 python3 -m ftc.recommend                         # decision CLI: suite ranking + predicted success/time/cost
 python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
@@ -508,6 +513,26 @@ other two layouts (sparse, corridor) and finds AprilTag stays the
 best-value suite on both -- see `benchmark_results/
 ftc_layout_writeup.md` and "Threats to validity" below.
 
+All of the above is measured at `ftc/config.py`'s `MODEL_FIDELITY =
+"optimistic"` tier -- the assumption every previously-published number
+in this repo (this table, the conference poster, both PDFs) rests on:
+an omnidirectional camera (AprilTag detects a tag regardless of which
+way the robot's camera actually faces) and perfect heading knowledge
+(no heading error, only a translation pose-error vector). Both are
+real, unmodeled optimisms -- heading drift compounding into lateral
+error over distance is the dominant real dead-reckoning failure mode,
+and a real camera only sees what it's actually pointed at. `ftc/
+fidelity_benchmark.py` reruns the identical headline sweep at two more
+tiers, "realistic" (real camera-FOV gating + heading drift) and
+"pessimistic" (narrower FOV, more drift, AprilTag detection dropout),
+and finds the best-value suite changes from AprilTag to Odometry pods
+at both -- see `benchmark_results/ftc_fidelity_writeup.md` for the
+full three-tier table and "Threats to validity" below for what this
+does and doesn't prove. `ftc/drivetrain_benchmark.py` and `ftc/
+coverage_benchmark.py` close two more previously-open gaps (mecanum
+strafing, distance-sensor blind spots) the same way -- see "Threats to
+validity" below and `WRITEUPS.md`.
+
 The most useful negative result: DistanceSensorSuite collides in
 roughly half its trials even at zero field deviation. A controlled
 check (same trials, pose drift forced to zero) shows about two-thirds
@@ -573,14 +598,66 @@ alone.
   acceleration to `MAX_DRIVE_SPEED_MPS` -- a real, if still simplified,
   improvement (a single 6in cell step is almost always too short to
   reach cruise speed at all, so drive time per step is now ~4-5x the
-  old naive distance/speed figure). What's still not modeled: velocity
-  isn't carried across consecutive collinear steps (each step starts
-  and ends at rest, the same assumption the existing per-90-degree turn
-  cost already makes), no wheel slip beyond the modeled pose drift, and
-  no mecanum-specific strafing advantage despite `ftc/field.py`
-  defaulting to 8-directional movement on the assumption of a holonomic
-  drivetrain. A real robot's actual time-to-goal will still differ from
-  this model's prediction by some amount this repo doesn't measure.
+  old naive distance/speed figure). `ftc/config.py`'s optional
+  `GEARING_OPTIONS` (`ftc/gearing_benchmark.py`) adds speed-linked wheel
+  slip on top of this -- a faster/harder-geared drivetrain drifts more
+  per cell, not just arrives sooner -- and the finding there is a real,
+  measured negative: at every budget tested (30s/15s/10s), a faster
+  gearing option's own drift cost outweighs its time savings, averaged
+  across all 5 headline suites (a single suite that already fixes pose,
+  e.g. AprilTag or odometry pods, would likely absorb the extra drift
+  better -- not checked per-suite here). What's still not modeled:
+  velocity isn't carried across consecutive collinear steps (each step
+  starts and ends at rest, the same assumption the existing
+  per-90-degree turn cost already makes), and wheel slip beyond what
+  speed alone predicts (cornering, robot mass, floor traction). A real
+  robot's actual time-to-goal will still differ from this model's
+  prediction by some amount this repo doesn't measure.
+- No mecanum-specific strafing advantage -- CLOSED for the drivetrain
+  model itself, still open on which heading policy a real team should
+  use. `ftc/field.py` defaulted to 8-directional movement "on the
+  assumption of a holonomic drivetrain" without ever actually modeling
+  one; `ftc/drivetrain.py` adds TANK/MECANUM as an axis orthogonal to
+  sensor suite (TANK pays the existing flat per-90-degree turn cost on
+  every direction change; MECANUM pays none, but a speed/drift penalty
+  on any step that isn't roughly forward relative to a fixed heading it
+  holds all match). `ftc/drivetrain_benchmark.py`'s finding: mecanum's
+  $120 premium (`MECANUM_WHEEL_COST_USD - TANK_WHEEL_COST_USD`) is NOT
+  repaid under the one heading policy this repo implements and tested
+  (hold heading toward the nearest AprilTag wall from match start) --
+  a route's travel direction changes far more often than that one fixed
+  heading does, so most steps end up strafing, and the resulting drift
+  penalty swamps the camera-stays-aimed-at-tags benefit the policy was
+  chosen to demonstrate. See `benchmark_results/
+  ftc_drivetrain_writeup.md` for the full diagnosis -- this is a
+  measured limitation of the specific heading policy implemented, not a
+  closed question about mecanum drivetrains in general; a policy that
+  re-picks its held heading periodically isn't tested here.
+- Camera field of view and heading error -- previously UNSTATED,
+  now BOUNDED via `ftc/config.py`'s `MODEL_FIDELITY` tiers, not
+  calibrated. Every number in this README before this addition assumed
+  an omnidirectional camera (`ftc/sensors.py`'s `AprilTagSuite.
+  tag_correction` accepted `heading_deg_now` and never used it -- a tag
+  was detected regardless of which way the robot's camera actually
+  faced) and perfect heading knowledge (`ftc/match.py` tracked pose
+  error as a translation vector only, with no heading error anywhere,
+  even though small angular error compounding into large lateral error
+  over distance is the dominant real dead-reckoning failure mode). The
+  "optimistic" tier reproduces that assumption exactly, by construction
+  (see `ftc/scratch/fidelity_test.py`'s regression check) -- it is not
+  a new, more honest default, it's the OLD default now given a name so
+  it can be compared against something. "Realistic" and "pessimistic"
+  add real camera-FOV gating, heading drift that actually rotates
+  executed motion (not just a reported number), and, at the pessimistic
+  tier, AprilTag detection dropout. `ftc/fidelity_benchmark.py`'s
+  finding: the best-value suite changes from AprilTag to Odometry pods
+  at both non-optimistic tiers. Fidelity tiers BOUND this gap -- they
+  make its size visible and swept -- they do NOT CALIBRATE it: every
+  non-optimistic tier's constants (`CAMERA_FOV_DEG_BY_TIER`,
+  `HEADING_DRIFT_DEG_PER_CELL_BY_TIER`, etc.) are documented ballpark
+  engineering estimates, the same status as every other estimated
+  constant in this file, until real measurements are run through `ftc/
+  calibration.py`.
 - No opponent modeling -- BOUNDED. The existing `unplanned_blocker`
   deviation type (one static obstacle, dropped once and left in place)
   is now joined by a `moving_blocker` variant in `ftc/
@@ -657,18 +734,29 @@ nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ i
 
 ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
                     in this repo where FTC-specific names/numbers belong.
-  config.py          Field/robot/match/sensor constants, each with its real-world source noted
+  config.py          Field/robot/match/sensor constants, each with its real-world source noted;
+                     includes MODEL_FIDELITY's 3 tiers and the drivetrain/coverage/new-suite constants
   field.py           Parameterized field layouts (not tied to one season's game) -> a real-footprint-inflated nav.grid.Grid
-  sensors.py         5 sensor suites (dead reckoning / odometry / distance sensors / AprilTag / full) -- which fix POSE error vs OBSTACLE error
-  match.py           30-second autonomous-period budget model: drive + turn + replan time, pose-error offset mechanic
+  sensors.py         9 sensor suites (5 headline: dead reckoning / odometry / distance sensors /
+                     AprilTag / full; 4 Priority-3/4 additions: IMU / AprilTag+IMU / dual-camera
+                     AprilTag / lidar) -- which fix POSE error, OBSTACLE error, or (IMU) HEADING error
+  drivetrain.py      TANK/MECANUM -- an axis orthogonal to sensor suite, not part of SUITE_ORDER
+  match.py           30-second autonomous-period budget model: drive + turn + replan time,
+                     (row, col, heading) pose-error mechanic, fidelity-tier + drivetrain + gearing hooks
   suite_benchmark.py The headline study -- suite x deviation type x deviation level x trials -> CSV + 2 plots + writeup
   robustness.py      Tipping-point sweep on suite_benchmark.py's own estimated constants -- does the best-value suite change if they're wrong? -> CSV + plot + writeup
   layout_benchmark.py Reruns the headline sweep on all 3 field layouts -- does the best-value suite change with the layout? -> CSV + plot + writeup
   budget_benchmark.py Sweeps AUTONOMOUS_PERIOD_S downward -- when does the budget start to bind, and does it change the ranking? -> CSV + plot + writeup
   opponent_benchmark.py Static vs. moving (nav/obstacles.py MovingObstacle) opponent -- does a real-ish opponent change which suite wins? -> CSV + plot + writeup
+  fidelity_benchmark.py The headline sweep rerun at all 3 MODEL_FIDELITY tiers -> CSV + plot + writeup
+  drivetrain_benchmark.py Tank vs. mecanum x fidelity tier -- does holding heading toward a tag wall pay off? -> CSV + plot + writeup
+  coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot? -> CSV + plot + writeup
+  newsuites_benchmark.py IMU / AprilTag+IMU / dual-camera AprilTag x fidelity tier -> CSV + plot + writeup
+  gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
   calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
   recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
-  scratch/         Same role as nav/scratch/, for the FTC-specific pieces
+  scratch/         Same role as nav/scratch/, for the FTC-specific pieces (includes fidelity_test.py,
+                     drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py for this addition)
 
 pygame_app/        Everything that touches pygame
   main.py            Entry point: opens the interactive visualizer

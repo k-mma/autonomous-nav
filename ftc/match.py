@@ -11,16 +11,48 @@ a footnote, unlike nav/uncertainty_benchmark.py's harness (which has no
 time budget at all -- every closed-loop policy there gets to replan for
 free, forever).
 
-Pose error is tracked as a single continuous vector `error` such that
-true_position = believed_position + error. This generalizes nav/
-policies.py's OpenLoopPolicy offset mechanic (a single fixed value, set
-once from field_variance's start drift) into something that grows every
-tick a suite has no way to correct it (dead reckoning) and shrinks when
-a suite does (AprilTag). Obstacle sensing and planning both happen
-entirely in the robot's *believed* frame -- exactly what a real robot
-does, since it only ever has its own (possibly wrong) idea of where it
-is -- and the resulting motion command gets translated into the true
-frame by the current `error` before being checked against ground truth.
+Pose error is tracked as (row, col, heading_deg): a continuous
+translation vector `error` such that true_position = believed_position
++ error (unchanged from before Priority 1), plus a continuous scalar
+`heading_error` (degrees) representing how wrong the robot's own
+heading BELIEF is. This generalizes nav/policies.py's OpenLoopPolicy
+offset mechanic (a single fixed value, set once from field_variance's
+start drift) into something that grows every tick a suite has no way to
+correct it (dead reckoning) and shrinks when a suite does (AprilTag,
+IMU). Obstacle sensing and planning both happen entirely in the robot's
+own *believed* frame -- exactly what a real robot does, since it only
+ever has its own (possibly wrong) idea of where it is and which way it
+points -- and the resulting motion command gets translated into the
+true frame by BOTH error terms before being checked against ground
+truth: `error` offsets it, and `heading_error` ROTATES it (the commanded
+step is computed in the believed frame and executed in the true frame,
+so a wrong heading belief doesn't just misreport a number, it steers
+the robot somewhere it didn't intend to go -- see
+ftc/scratch/fidelity_test.py's check_heading_error_rotates_execution).
+
+Which fidelity tier's assumptions apply (`fidelity`, defaulting to
+ftc.config.MODEL_FIDELITY, resolved fresh on every call the same way
+AUTONOMOUS_PERIOD_S already is below -- NOT baked in at import time)
+governs camera FOV gating, heading drift rate, AprilTag's heading-
+correction strength, and AprilTag detection dropout; see ftc/config.py's
+MODEL_FIDELITY docstring. At the "optimistic" default, heading_error
+never leaves 0.0 and every new code path in this module is either
+skipped outright or evaluates to an exact no-op, so this reproduces
+every pre-Priority-1 caller's results trial-for-trial (see
+ftc/scratch/fidelity_test.py's check_optimistic_tier_reproduces_
+headline_exactly, the regression guarantee for the published headline
+numbers).
+
+`drivetrain` (defaulting to None -- ftc/drivetrain.py's TANK/MECANUM,
+Priority 2) is a second, independent axis: None reproduces the exact
+pre-Priority-2 behavior (a flat per-90-degree turn cost on every
+direction change, chassis heading = true direction of travel) for
+every existing caller; an explicit Drivetrain instance switches to a
+drivetrain-aware model of turn cost, chassis heading policy, and (for a
+holonomic drivetrain) a strafe speed/drift penalty -- see
+ftc/drivetrain.py's module docstring for the heading-policy choice
+(mecanum holds a fixed heading facing the nearest AprilTag wall; tank
+always faces its direction of travel, identical to the None default).
 
 Drive time per step follows a trapezoidal (accelerate, cruise,
 decelerate) velocity profile bounded by MAX_ACCEL_MPS2, not
@@ -47,10 +79,12 @@ from dataclasses import dataclass
 from nav.algorithms import astar
 from nav.sensor import KnownGrid, blocks_remaining_path
 
+import ftc.config as config_module
 from ftc.config import (
     AUTONOMOUS_PERIOD_S, CELL_SIZE_IN, INCHES_PER_METER, MAX_ACCEL_MPS2, MAX_DRIVE_SPEED_MPS,
     PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
 )
+from ftc.field import in_to_cell
 from ftc.sensors import angular_diff, heading_deg
 
 MAX_TICKS = 500
@@ -80,6 +114,21 @@ def _trapezoidal_drive_time_s(distance_m, max_speed_mps=MAX_DRIVE_SPEED_MPS, max
     return 2 * math.sqrt(distance_m / max_accel_mps2)
 
 
+def _rotate(vec, deg):
+    """Rotate a (row, col) vector by `deg` degrees, in the same
+    atan2(d_row, d_col) convention every heading in this project uses.
+    Exact identity at deg == 0.0 (short-circuited rather than computed
+    via cos(0)/sin(0)) -- the guarantee Priority 1's optimistic-tier
+    regression depends on: heading_error stays exactly 0.0 at that tier,
+    so every rotation this module performs has to be a true no-op, not
+    just numerically close to one."""
+    if deg == 0.0:
+        return vec
+    rad = math.radians(deg)
+    cos_a, sin_a = math.cos(rad), math.sin(rad)
+    return (vec[0] * cos_a - vec[1] * sin_a, vec[0] * sin_a + vec[1] * cos_a)
+
+
 @dataclass
 class MatchResult:
     success: bool
@@ -90,16 +139,18 @@ class MatchResult:
     planning_time_s: float
     final_pose_error_in: float
     steps: int
+    final_heading_error_deg: float = 0.0
 
 
 def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_sites, rng,
-              moving_obstacles=()):
+              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None):
     """Drive `suite` from `actual_start` (ground truth) to `goal`,
     planning against `assumed_grid`'s layout (the suite's only source of
     obstacle knowledge unless it senses otherwise) until it succeeds,
     collides, gets stuck, or exhausts AUTONOMOUS_PERIOD_S. See module
     docstring for the believed-frame planning / true-frame execution
-    split.
+    split, and for `fidelity`/`drivetrain`/`gearing`'s defaults
+    reproducing every pre-Priority-1/2/5 caller's behavior exactly.
 
     `moving_obstacles` (optional, empty by default so every existing
     caller is unaffected) is a sequence of nav.obstacles.MovingObstacle
@@ -110,13 +161,44 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     iteration with `now_ms = elapsed_s * 1000` -- SIMULATED match time,
     not wall-clock time, since MovingObstacle.tick's period_ms/now_ms
     timing has to stay reproducible independent of how fast this process
-    actually executes."""
+    actually executes.
+
+    `gearing` (defaulting to "stock" via ftc.config.GEARING_OPTIONS,
+    optional Priority 5) overrides MAX_DRIVE_SPEED_MPS/MAX_ACCEL_MPS2
+    with a named option's own values and multiplies translation drift
+    by that option's `slip_factor` -- a faster gearing swap trades drive
+    time for more wheel slip, not a free win. "stock" is exactly
+    MAX_DRIVE_SPEED_MPS/MAX_ACCEL_MPS2/no slip penalty, so the default
+    is a byte-for-byte no-op."""
+    fidelity = fidelity or config_module.MODEL_FIDELITY
+    tier = config_module.FIDELITY_TIERS[fidelity]
+    gearing_config = config_module.GEARING_OPTIONS[gearing or "stock"]
+
     obstacle_sensor = suite.make_obstacle_sensor()
     known_obstacles_believed = set()
 
     true_position = actual_start
     error = (float(actual_start[0] - start[0]), float(actual_start[1] - start[1]))
-    heading = heading_deg(actual_start, goal) if actual_start != goal else 0.0
+    heading_error = 0.0
+
+    # Mecanum holds a fixed heading for the whole match -- the natural
+    # choice for a robot investing in an AprilTag-reading camera is to
+    # aim it at the nearest tag wall and never turn away from it (see
+    # ftc/drivetrain.py's module docstring). Computed once, from the
+    # true starting position, since a real robot would pick its held
+    # heading before the match starts, not re-derive it mid-run.
+    fixed_heading_deg = None
+    if drivetrain is not None and drivetrain.holonomic and tag_sites:
+        def _tag_dist(t):
+            tc = in_to_cell(t.x_in, t.y_in)
+            return math.hypot(tc[0] - actual_start[0], tc[1] - actual_start[1])
+        nearest_tag = min(tag_sites, key=_tag_dist)
+        fixed_heading_deg = heading_deg(actual_start, in_to_cell(nearest_tag.x_in, nearest_tag.y_in))
+
+    if drivetrain is not None and drivetrain.holonomic and fixed_heading_deg is not None:
+        heading = fixed_heading_deg
+    else:
+        heading = heading_deg(actual_start, goal) if actual_start != goal else 0.0
 
     elapsed_s = 0.0
     replans = 0
@@ -155,10 +237,18 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
 
         tag_corrected = False
         if suite.fixes_pose:
-            frac = suite.tag_correction(ground_truth, true_position, heading, tag_sites, rng)
+            frac = suite.tag_correction(ground_truth, true_position, heading, tag_sites, rng, fidelity=fidelity)
             if frac is not None:
                 error = (error[0] * (1 - frac), error[1] * (1 - frac))
                 tag_corrected = True
+                heading_factor = tier["apriltag_heading_correction_factor"]
+                if heading_factor > 0:
+                    heading_error *= (1 - heading_factor)
+
+        if suite.fixes_heading:
+            hfrac = suite.heading_correction(rng)
+            if hfrac:
+                heading_error *= (1 - hfrac)
 
         replan_needed = not planned_once or tag_corrected
         if suite.senses_obstacles and not replan_needed:
@@ -186,23 +276,61 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         if path is None or idx >= len(path) - 1:
             break
 
+        prev_believed = path[idx]
         idx += 1
         next_believed = path[idx]
-        next_true = (round(next_believed[0] + error[0]), round(next_believed[1] + error[1]))
+        step_vec_believed = (next_believed[0] - prev_believed[0], next_believed[1] - prev_believed[1])
+
+        # The commanded step is computed in the believed frame; heading
+        # error rotates the realized motion vector when it's executed
+        # in the true frame (Priority 1b) -- a no-op (exact (0.0, 0.0)
+        # delta) whenever heading_error is exactly 0.0, which it always
+        # is at the optimistic tier.
+        if heading_error != 0.0:
+            step_vec_true = _rotate(step_vec_believed, heading_error)
+            heading_delta = (step_vec_true[0] - step_vec_believed[0], step_vec_true[1] - step_vec_believed[1])
+        else:
+            heading_delta = (0.0, 0.0)
+
+        next_true_continuous = (next_believed[0] + error[0] + heading_delta[0],
+                                 next_believed[1] + error[1] + heading_delta[1])
+        next_true = (round(next_true_continuous[0]), round(next_true_continuous[1]))
 
         if not ground_truth.is_valid(*next_true) or ground_truth.is_obstacle(*next_true):
             collisions += 1
             break
 
         step_dist = math.hypot(next_true[0] - true_position[0], next_true[1] - true_position[1])
+        speed_factor, drift_mult = 1.0, 1.0
         if step_dist > 1e-9:
-            new_heading = heading_deg(true_position, next_true)
-            turn_deg = abs(angular_diff(new_heading, heading))
-            elapsed_s += (turn_deg / 90.0) * TURN_TIME_PER_90DEG_S
-            heading = new_heading
+            # Direction of the TRUE realized motion (after error/heading-
+            # error have already been applied above) -- used uniformly
+            # for both the legacy path and every Drivetrain, which is
+            # exactly what makes an explicit TANK instance byte-for-byte
+            # identical to the drivetrain=None default (ftc/drivetrain.py's
+            # own docstring promises this; see ftc/scratch/
+            # drivetrain_test.py's check_tank_matches_legacy_default):
+            # TANK.robot_heading_deg returns travel_heading unchanged and
+            # TANK.speed_and_drift_factor is always (1.0, 1.0), so the
+            # drivetrain-aware branch below reduces to exactly the same
+            # arithmetic the legacy `if drivetrain is None` branch does.
+            travel_heading = heading_deg(true_position, next_true)
+            if drivetrain is None:
+                turn_deg = abs(angular_diff(travel_heading, heading))
+                elapsed_s += (turn_deg / 90.0) * TURN_TIME_PER_90DEG_S
+                heading = travel_heading
+            else:
+                new_heading = drivetrain.robot_heading_deg(heading, travel_heading, fixed_heading_deg)
+                elapsed_s += drivetrain.turn_cost_s(heading, new_heading)
+                speed_factor, drift_mult = drivetrain.speed_and_drift_factor(new_heading, travel_heading)
+                heading = new_heading
 
         step_meters = (step_dist * CELL_SIZE_IN) / INCHES_PER_METER
-        elapsed_s += _trapezoidal_drive_time_s(step_meters)
+        elapsed_s += _trapezoidal_drive_time_s(
+            step_meters,
+            max_speed_mps=gearing_config["max_speed_mps"] * speed_factor,
+            max_accel_mps2=gearing_config["max_accel_mps2"],
+        )
 
         if elapsed_s > AUTONOMOUS_PERIOD_S:
             over_budget = True
@@ -210,8 +338,16 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
 
         true_position = next_true
         if step_dist > 1e-9:
-            sigma = suite.drift_per_cell * step_dist
+            # Wheel slip: a faster/harder-geared drivetrain drifts more
+            # per cell of real travel, not just arrives sooner --
+            # gearing_config["slip_factor"] is 1.0 at "stock" (a no-op),
+            # > 1.0 for every faster option (ftc/config.py's
+            # GEARING_OPTIONS).
+            sigma = suite.drift_per_cell * step_dist * drift_mult * gearing_config["slip_factor"]
             error = (error[0] + rng.gauss(0, sigma), error[1] + rng.gauss(0, sigma))
+            heading_drift = tier["heading_drift_deg_per_cell"]
+            if heading_drift > 0:
+                heading_error += rng.gauss(0, heading_drift * step_dist)
         steps += 1
 
     success = (true_position == goal) and not over_budget
@@ -224,4 +360,5 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         planning_time_s=round(planning_time_s, 6),
         final_pose_error_in=round(math.hypot(*error) * CELL_SIZE_IN, 3),
         steps=steps,
+        final_heading_error_deg=round(heading_error, 3),
     )
