@@ -2427,3 +2427,155 @@ magnitude is reported exactly as computed -- consistent with this
 project's own rule that a finding that doesn't flatter its own
 machinery (DistanceSensorSuite's blind spot, mecanum's unpaid premium)
 gets reported with the same confidence as one that does.
+
+## Planning latency at the tail
+
+The brief for this addition was explicit about order of operations:
+read `ftc/match.py` before writing anything, and describe what it
+actually does rather than assuming a per-tick deadline exists. That
+turned out to matter, because the real structure isn't what a first
+guess would produce.
+
+### What reading the code actually found
+
+`run_match` tracks `elapsed_s` as a purely SIMULATED time accumulator
+-- drive time, turn time, collision recovery, all added as computed
+quantities, never compared against a wall clock. The only REAL
+wall-clock measurement anywhere in the function is a `time.perf_counter()`
+pair bracketing each `astar()` call, accumulated into
+`planning_time_s`. That measured value is returned on `MatchResult` and
+used elsewhere purely for reporting (`avg_planning_ms` in other
+benchmarks' aggregate tables) -- it is never added to `elapsed_s`. What
+IS added to `elapsed_s` is a flat constant, `PLANNING_OVERHEAD_S`
+(0.05s), charged once per replan, and only on replans AFTER the first
+-- the very first planning call in a match, which real matches often
+spend on the longest search of the whole run, costs `elapsed_s` exactly
+nothing, charged or measured.
+
+This is a deliberate design decision, not an oversight -- `PLANNING_
+OVERHEAD_S`'s own comment in `ftc/config.py` says so directly: raw
+Python `astar()` "is sub-millisecond... and would understate what a
+real re-plan actually costs" on FTC-legal onboard compute. But it has
+a consequence that comment doesn't spell out, and that this addition's
+whole job was to check: under the model exactly as implemented, no
+measured planning latency, however large, can change `over_budget` or
+`success`. That's not a hypothesis to test with a sweep -- it's a fact
+about the code, and the first thing this addition did was PROVE it
+directly rather than just cite it: `ftc/scratch/planning_latency_
+test.py`'s `check_flat_charge_ignores_measured_latency` reruns the
+identical scenario and seed twice, once against real `astar()` and once
+against a version that sleeps an extra 0.1s on every call (more than
+double `PLANNING_OVERHEAD_S`, more than a match with several replans
+would even notice), and confirms `elapsed_s` comes back byte-for-byte
+identical either way -- 13.9372s both times, regardless of roughly a
+full extra second of real, injected delay across the match's 11
+replans.
+
+### The actual question, and why it has to be a counterfactual
+
+Given that structural fact, "does the tail matter" can't be asked by
+just looking at whether any published `over_budget` value moves --
+none ever could, by construction. The only way to ask the real
+question is a counterfactual: for each match, what would `elapsed_s`
+have been if it had used THIS match's own real measured planning total
+instead of the flat charge? That's `result.elapsed_s - (replans *
+PLANNING_OVERHEAD_S) + measured_total` -- subtract out what the flat
+model charged for planning, add back in what planning actually took,
+including the first call the flat model never charges at all. A match
+that flips from under-budget to over-budget under that substitution is
+one where the tail would have mattered, if this project's match model
+charged for it.
+
+### Getting the latency numbers without touching ftc/match.py
+
+The measurement itself needed to not risk anything published. Rather
+than add instrumentation to `ftc/match.py` -- which would mean auditing
+every existing call site for a behavior change, exactly the kind of
+risk this project's own conventions exist to avoid -- `ftc/planning_
+latency_benchmark.py`'s `capture_astar_latencies()` is a context
+manager that monkeypatches `ftc.match.astar` (not `nav.algorithms.astar`
+-- Python binds `from nav.algorithms import astar` into `ftc.match`'s
+own namespace at import time, so patching the original module's
+attribute after that would silently intercept nothing) for the
+duration of one `run_match()` call, records each call's wall-clock
+time, and restores the original function in a `finally` block. Zero
+lines of `ftc/match.py` changed; zero risk to any existing benchmark.
+
+The sanity check this needed before trusting any of its numbers: does
+the captured total actually match what `run_match` itself measured and
+returned (`MatchResult.planning_time_s`)? The first version of this
+check used a tight, fixed tolerance and failed partway through the real
+sweep -- not because the mechanism was wrong, but for two compounding,
+genuinely small reasons worth naming rather than papering over. First,
+once `ftc.match.astar` is patched, `run_match`'s OWN internal timer is
+now bracketing a call to the wrapper, not the raw function -- so
+`run_match`'s measured interval includes the wrapper's own overhead (a
+second `perf_counter()` pair, a list append) on top of the real
+`astar()` time, while the wrapper's own recorded latency excludes that.
+Second, wall-clock timing on a real, shared machine has genuine noise
+(OS scheduling, GC pauses) that doesn't scale cleanly with call count.
+The fix was a tolerance that scales with the measured value itself
+(`max(2e-4, 0.05 * planning_time_s)`) rather than a fixed guess per
+call -- loose enough to absorb real timing noise, tight enough that an
+actual instrumentation bug (timing a different set of calls entirely)
+would still fail it by orders of magnitude, not a few percent.
+
+### Grid size, and the constraint discovered while designing the sweep
+
+The brief asked for a grid-size sweep reusing `ftc/field.py`'s existing
+layouts rather than inventing new ones. The first instinct was to vary
+`build_grid`'s `cell_size_in` parameter -- same physical field, finer
+resolution, which `build_grid` already accepts. Prototyping that
+revealed a real problem before it could contaminate any data: every
+`*_CELLS` sensor-range constant in `ftc/config.py`
+(`APRILTAG_RANGE_CELLS`, `DISTANCE_SENSOR_RANGE_CELLS`, ...) is computed
+ONCE at import time from the module-level, native `CELL_SIZE_IN` --
+none of them read whatever `cell_size_in` a particular `build_grid()`
+call actually used. Varying `cell_size_in` would have silently made
+every sensor's range wrong relative to the grid it was actually driving
+on, at every resolution except the native one -- exactly the kind of
+confound that would have made every suite-comparison number in this
+specific study quietly meaningless without an obvious symptom pointing
+back to the cause. The fix was reframing what "grid size" means for
+this study: vary `size` alone, holding `cell_size_in` fixed at its
+native value -- a bigger physical field, same real 6-inch cells,
+identical to how `nav/scale_benchmark.py` already scales `nav/`'s own
+domain-neutral grid. This is now flagged explicitly in both the
+benchmark's own writeup and README.md's limitations entry as a real
+constraint on `ftc/field.py`'s `cell_size_in` parameter that this
+study surfaced, not something already known and simply being avoided.
+
+### The result was flatter than expected, and that needed checking too
+
+The full sweep (5 grid sizes from 24 to 384 cells/side, 3 layouts, 5
+suites, 12 trials each, 900 matches) found zero outcome flips, at every
+single size tested -- not just at native scale. That's a stronger
+negative result than expected going in, and a flat result across every
+condition is exactly the kind of thing worth doubting before writing
+up, not the kind of thing to take at face value because it's
+convenient.
+
+The check: does latency actually grow with grid size at all in this
+setup, or does something about the experimental design suppress it? A
+quick, separate, unbounded-path comparison (uniform random start/goal
+across the whole grid, the same sampling the very first timing
+prototype for this study used, before the bounded sampler was written)
+at the same three grid sizes showed the real mechanism directly: at
+size=384, unbounded sampling produces path lengths up to 315 cells and
+a max latency of 174.5ms -- more than 3x `PLANNING_OVERHEAD_S`, and
+nothing close to what the bounded sweep ever produces at that same grid
+size (2.38ms). Path LENGTH drives A*'s cost here, not raw cell count --
+and this study's own scenario sampler deliberately bounds path length
+at every grid size, specifically to keep DRIVE time from swamping the
+budget before planning latency could matter (a match on a 384-cell grid
+with an unbounded, possibly-huge path would fail from drive time long
+before its planning cost became the interesting variable). That design
+choice, made for a good and necessary reason, also suppresses the very
+effect the grid-size sweep was built to look for. Both facts are true
+at once, and the writeup says so plainly rather than picking the
+flattering half: the "zero flips, at any size" finding is real GIVEN
+bounded path lengths, and it would not necessarily hold for a
+genuinely long-distance replan, which this study didn't separately
+measure. Reporting a clean, structural "planning latency's tail doesn't
+matter" finding without that caveat would have been reporting a
+narrower result than what was actually found.

@@ -741,6 +741,41 @@ alone.
   speed alone predicts (cornering, robot mass, floor traction). A real
   robot's actual time-to-goal will still differ from this model's
   prediction by some amount this repo doesn't measure.
+- Planning-time model validated at the scale this repo actually
+  publishes at, not beyond it, and not on real hardware -- BOUNDED.
+  `ftc/match.py`'s `elapsed_s`/`over_budget` accounting never reads the
+  wall-clock time it measures around each `astar()` call
+  (`MatchResult.planning_time_s`) -- only a flat `PLANNING_OVERHEAD_S`
+  (50ms, a documented estimate of real onboard-compute cost, not raw
+  Python search time) is charged, on every replan after the first.
+  Structurally, this means no measured planning latency, however
+  large, can change a match outcome under the model as implemented --
+  confirmed directly in `ftc/scratch/planning_latency_test.py` by
+  artificially delaying every `astar()` call and checking `elapsed_s`
+  comes out byte-for-byte identical either way. `ftc/planning_
+  latency_benchmark.py` measures the real per-call latency distribution
+  (median/p99/max) this repo had never looked at, across 5 grid sizes
+  (24 through 384 cells/side) x 3 layouts x 5 suites, and asks the
+  question that actually matters: would a match currently reported as
+  under budget flip to over budget if `elapsed_s` used each match's own
+  REAL measured planning time instead of the flat constant? At this
+  project's native, published grid scale, no -- 0 of 900 matches tested
+  flip under that counterfactual (`benchmark_results/planning_
+  latency_writeup.md`), and none do at any synthetic size tested either,
+  because a bounded-path-length scenario design (deliberate, to keep
+  drive time from confounding the grid-size axis) keeps A*'s own search
+  cost small regardless of total grid size -- a supplementary,
+  unbounded-path check in that same writeup shows latency growing to
+  175ms (>3x PLANNING_OVERHEAD_S) once path length itself is allowed to
+  grow, confirming path length, not raw cell count, is what actually
+  drives this cost. This BOUNDS the question, it does not CLOSE it: it
+  says tail latency doesn't matter at the scale and path lengths this
+  repo's own published numbers were measured at, on one developer
+  laptop (Apple M1, macOS -- see the writeup for exact versions), not
+  that it could never matter on slower, FTC-legal onboard hardware (a
+  REV Control Hub) or at longer path lengths -- only real onboard
+  timing data run through `ftc/calibration.py` could calibrate
+  `PLANNING_OVERHEAD_S` itself, which this study does not attempt.
 - No mecanum-specific strafing advantage -- CLOSED for the drivetrain
   model itself, still open on which heading policy a real team should
   use. `ftc/field.py` defaulted to 8-directional movement "on the
@@ -920,6 +955,10 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
   coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot? -> CSV + plot + writeup
   newsuites_benchmark.py IMU / AprilTag+IMU / dual-camera AprilTag x fidelity tier -> CSV + plot + writeup
   gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
+  planning_latency_benchmark.py Does planning-time TAIL latency (not just average) ever change a match
+                     outcome? Non-invasively times every astar() call run_match makes (patches
+                     ftc.match.astar for the duration of one call, restores it after) across 5 grid
+                     sizes x 3 layouts x 5 suites -> CSV + plot + writeup
   calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
   recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
   bundle.py          Composes 2+ suites into one working suite -- part-level costing (shared hardware counted
