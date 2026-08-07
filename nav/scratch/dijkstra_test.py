@@ -82,6 +82,21 @@ def print_grid(path):
         print(row_str)
 
 
+# --- pytest entry points --------------------------------------------------
+# Same reasoning as nav/scratch/astar_test.py: an obstacle-free grid has a
+# known-optimal path length, Manhattan(START, GOAL) + 1.
+
+def test_finds_the_optimal_path_on_an_open_grid():
+    path, explored = dijkstra(START, GOAL)
+    assert path is not None
+    assert path[0] == START
+    assert path[-1] == GOAL
+    assert len(path) == 19  # Manhattan(START, GOAL) + 1
+    for (r1, c1), (r2, c2) in zip(path, path[1:]):
+        assert abs(r1 - r2) + abs(c1 - c2) == 1, f"non-cardinal step {(r1, c1)}->{(r2, c2)}"
+    assert 0 < explored <= ROWS * COLS
+
+
 if __name__ == "__main__":
     path, explored = dijkstra(START, GOAL)
     if path:

@@ -216,6 +216,28 @@ def check_no_gearing_option_rescues_a_tight_budget():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_stock_default_reproduces_legacy_exactly():
+    assert check_stock_default_reproduces_legacy_exactly()
+
+
+def test_faster_gearing_is_slower_per_cell_not_faster():
+    assert check_faster_gearing_is_slower_per_cell_not_faster()
+
+
+def test_faster_gearing_increases_drift():
+    assert check_faster_gearing_increases_drift()
+
+
+def test_no_gearing_option_rescues_a_tight_budget():
+    assert check_no_gearing_option_rescues_a_tight_budget()
+
+
 if __name__ == "__main__":
     checks = [
         check_stock_default_reproduces_legacy_exactly(),

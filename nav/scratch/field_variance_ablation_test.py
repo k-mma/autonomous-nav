@@ -110,6 +110,24 @@ def check_default_scales_match_unscaled_bound():
     return violations == 0
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_zeroing_one_scale_isolates_the_others():
+    assert check_zeroing_one_scale_isolates_the_others()
+
+
+def test_all_scales_zero_is_identity():
+    assert check_all_scales_zero_is_identity()
+
+
+def test_default_scales_match_unscaled_bound():
+    assert check_default_scales_match_unscaled_bound()
+
+
 if __name__ == "__main__":
     checks = [
         check_zeroing_one_scale_isolates_the_others(),

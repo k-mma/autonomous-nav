@@ -15,7 +15,12 @@ TOTAL_FRAMES = 40
 SEED = 0
 
 
-if __name__ == "__main__":
+def run_demo():
+    """Same replan-on-block loop the old __main__ block ran directly, now
+    returning what happened instead of just printing it. `violations`
+    counts any replan that produced a path still passing through the
+    obstacle's current cell -- the one outcome that would mean the
+    replanning policy described in this module's docstring is broken."""
     grid = Grid()
     grid.place_start(*START)
     grid.place_goal(*GOAL)
@@ -30,6 +35,8 @@ if __name__ == "__main__":
     path, _, reason, _ = find_path(grid, "astar", START, GOAL)
     print(f"initial path ({reason}): {path}\n")
 
+    replans = 0
+    violations = 0
     for frame in range(TOTAL_FRAMES):
         prev_pos = obstacle.position
         if not obstacle.tick(grid, frame):
@@ -46,9 +53,29 @@ if __name__ == "__main__":
 
         print(f"  path blocked, replanning from {START}...")
         path, _, reason, _ = find_path(grid, "astar", START, GOAL)
+        replans += 1
         if path is None:
             print(f"  no path found (reason={reason})")
         else:
             print(f"  new path: {path}")
+            if obstacle.position in path:
+                violations += 1
 
     print(f"\nfinal path: {path}")
+    return {"final_path": path, "replans": replans, "violations": violations}
+
+
+# --- pytest entry points --------------------------------------------------
+
+def test_replanning_never_routes_through_the_obstacles_current_cell():
+    result = run_demo()
+    assert result["violations"] == 0
+
+
+def test_the_obstacle_starting_on_the_route_forces_at_least_one_replan():
+    result = run_demo()
+    assert result["replans"] >= 1
+
+
+if __name__ == "__main__":
+    run_demo()

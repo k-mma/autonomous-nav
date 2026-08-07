@@ -57,6 +57,41 @@ def run_trial(seed, verbose):
     return suboptimal_by_name
 
 
+# --- pytest entry points --------------------------------------------------
+# octile is admissible for 8-directional movement (never overestimates true
+# cost) so it must find the optimal path on every trial -- 0/N suboptimal
+# isn't a statistical target, it's a correctness guarantee. manhattan is
+# NOT admissible here (it overestimates a diagonal step's true cost), so
+# unlike octile, seeing it actually produce a suboptimal path (not just
+# "could in theory") is the point of this file -- confirmed empirically at
+# TRIALS=30, seeds 0..29: manhattan was suboptimal on 2 of them.
+
+def test_octile_is_always_optimal_being_admissible():
+    counts = {name: 0 for name, _ in HEURISTICS}
+    trial_count = 0
+    for seed in range(TRIALS):
+        result = run_trial(seed, verbose=False)
+        if not result:
+            continue
+        trial_count += 1
+        for name, was_suboptimal in result.items():
+            counts[name] += was_suboptimal
+    assert trial_count > 0
+    assert counts["octile"] == 0
+
+
+def test_manhattan_is_sometimes_suboptimal_being_inadmissible():
+    counts = {name: 0 for name, _ in HEURISTICS}
+    for seed in range(TRIALS):
+        result = run_trial(seed, verbose=False)
+        for name, was_suboptimal in result.items():
+            counts[name] += was_suboptimal
+    assert counts["manhattan"] > 0, (
+        "manhattan produced zero suboptimal paths over TRIALS trials -- either the grid/density "
+        "changed enough to stop exercising the inadmissible case, or heuristics.manhattan itself changed"
+    )
+
+
 if __name__ == "__main__":
     counts = {name: 0 for name, _ in HEURISTICS}
     trial_count = 0

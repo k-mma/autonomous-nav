@@ -1,0 +1,8 @@
+# Deps for running the test suite (ftc/, nav/, pygame_app/, and
+# pybullet_app/'s scratch/ dirs). Both pygame and pybullet run headless in
+# CI (SDL_VIDEODRIVER=dummy, p.DIRECT) -- confirmed prebuilt manylinux
+# wheels exist for both on Python 3.11/x86_64, so CI never has to build
+# pybullet from source the way a local machine sometimes does (see "A
+# build problem worth documenting" in WRITEUPS.md).
+-r requirements.txt
+pytest==9.1.1

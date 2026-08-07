@@ -78,6 +78,32 @@ def check_conflicting_observation_recovers():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_never_observed():
+    assert check_never_observed()
+
+
+def test_repeated_occupied():
+    assert check_repeated_occupied()
+
+
+def test_repeated_free():
+    assert check_repeated_free()
+
+
+def test_monotonic_climb():
+    assert check_monotonic_climb()
+
+
+def test_conflicting_observation_recovers():
+    assert check_conflicting_observation_recovers()
+
+
 if __name__ == "__main__":
     checks = [
         check_never_observed(),

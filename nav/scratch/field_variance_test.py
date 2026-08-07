@@ -88,6 +88,24 @@ def check_deterministic():
     return mismatches == 0
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_zero_variance_is_identity():
+    assert check_zero_variance_is_identity()
+
+
+def test_max_variance_within_bound():
+    assert check_max_variance_within_bound()
+
+
+def test_deterministic():
+    assert check_deterministic()
+
+
 if __name__ == "__main__":
     checks = [check_zero_variance_is_identity(), check_max_variance_within_bound(), check_deterministic()]
     print("\nALL PASS" if all(checks) else "\nSOME CHECKS FAILED")

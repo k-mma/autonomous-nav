@@ -165,6 +165,28 @@ def check_non_sensing_suite_can_still_recover():
     return False
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_halt_is_unchanged():
+    assert check_halt_is_unchanged()
+
+
+def test_replan_recovers_and_reaches_goal():
+    assert check_replan_recovers_and_reaches_goal()
+
+
+def test_replan_gives_up_when_truly_boxed_in():
+    assert check_replan_gives_up_when_truly_boxed_in()
+
+
+def test_non_sensing_suite_can_still_recover():
+    assert check_non_sensing_suite_can_still_recover()
+
+
 if __name__ == "__main__":
     checks = [
         check_halt_is_unchanged(),

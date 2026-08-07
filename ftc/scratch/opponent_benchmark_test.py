@@ -175,6 +175,28 @@ def check_deterministic_given_same_seed():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_empty_moving_obstacles_is_a_true_no_op():
+    assert check_empty_moving_obstacles_is_a_true_no_op()
+
+
+def test_candidate_cell_selection_matches_static():
+    assert check_candidate_cell_selection_matches_static()
+
+
+def test_run_match_ticks_on_simulated_time():
+    assert check_run_match_ticks_on_simulated_time()
+
+
+def test_deterministic_given_same_seed():
+    assert check_deterministic_given_same_seed()
+
+
 if __name__ == "__main__":
     checks = [
         check_empty_moving_obstacles_is_a_true_no_op(),

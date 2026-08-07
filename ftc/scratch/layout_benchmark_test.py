@@ -101,6 +101,28 @@ def check_value_ranking_excludes_baseline():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_layout_order():
+    assert check_layout_order()
+
+
+def test_run_layout_tags_rows():
+    assert check_run_layout_tags_rows()
+
+
+def test_cluttered_seed_formula_matches_suite_benchmark():
+    assert check_cluttered_seed_formula_matches_suite_benchmark()
+
+
+def test_value_ranking_excludes_baseline():
+    assert check_value_ranking_excludes_baseline()
+
+
 if __name__ == "__main__":
     checks = [
         check_layout_order(),

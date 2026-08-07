@@ -50,7 +50,9 @@ def plan_cost(known_obstacles, grid):
     return path_cost(grid, path), None
 
 
-if __name__ == "__main__":
+def run_demo(seed=7):
+    """Same measurement the old __main__ block printed, now returning the
+    numbers instead of only printing them."""
     grid = build_grid()
     true_path, _, _ = astar(grid, START, GOAL)
     true_cost = path_cost(grid, true_path)
@@ -58,11 +60,11 @@ if __name__ == "__main__":
 
     print("--- 1. perfect sensor (noisy=False), single scan ---")
     clean = LidarSensor(RADIUS)
-    seen = clean.sense(grid, SCAN_POSITION)
-    print(f"detected: {sorted(seen)} (expect exactly the hidden obstacles within range, no more, no less)\n")
+    clean_seen = clean.sense(grid, SCAN_POSITION)
+    print(f"detected: {sorted(clean_seen)} (expect exactly the hidden obstacles within range, no more, no less)\n")
 
     print(f"--- 2. noisy sensor, {NUM_SCANS} repeated scans from the same position ---")
-    rng = random.Random(7)
+    rng = random.Random(seed)
     noisy = LidarSensor(RADIUS, noisy=True, rng=rng)
     first_scan_seen = noisy.sense(grid, SCAN_POSITION)
     print(f"first scan alone: {sorted(first_scan_seen)} "
@@ -91,10 +93,12 @@ if __name__ == "__main__":
 
     print("\n--- 3. does confirming before replanning actually help? ---")
     print(f"(sweeping min_detections from 1 [= raw known_obstacles] upward)\n")
+    by_threshold = {}
     for threshold in range(1, 6):
         view = noisy.confirmed_obstacles(threshold)
         fake = view - HIDDEN_OBSTACLES
         cost, reason = plan_cost(view, grid)
+        by_threshold[threshold] = {"cells": len(view), "fake": len(fake), "cost": cost, "reason": reason}
         outcome = f"cost {cost:.2f}" + (" (= true optimal)" if cost == true_cost else
                                           f" ({100 * (cost - true_cost) / true_cost:+.0f}% vs optimal)") \
             if cost else f"FAILED to find any path ({reason})"
@@ -111,3 +115,43 @@ if __name__ == "__main__":
         "obvious cost of needing more scans (more time near an obstacle) before\n"
         "trusting it enough to route around."
     )
+    return {"true_cost": true_cost, "clean_seen": clean_seen, "by_threshold": by_threshold}
+
+
+# --- pytest entry points --------------------------------------------------
+# The module docstring's own framing is "measured, not asserted" -- these
+# don't turn that into exact-value assertions on the noise itself (that
+# really would be fragile), but they do lock in the two things the module
+# docstring claims as findings, at the same seed=7 the demo above already
+# uses for reproducibility: (1) a perfect sensor is exact, deterministically,
+# and (2) confirming a detection before trusting it is not just directionally
+# better but actually closes the gap to the true optimum at this noise rate.
+
+def test_clean_sensor_sees_exactly_the_in_range_hidden_obstacles():
+    result = run_demo()
+    assert result["clean_seen"] == HIDDEN_OBSTACLES
+
+
+def test_raw_known_obstacles_can_fail_outright_on_a_false_positive():
+    """The specific failure this module's docstring describes: at seed=7,
+    a false positive lands on the robot's own start cell, so trusting a
+    single detection (min_detections=1, i.e. raw known_obstacles) doesn't
+    just cost path quality -- it finds no path at all."""
+    result = run_demo()
+    assert result["by_threshold"][1]["cost"] is None
+    assert result["by_threshold"][1]["reason"] == "start_blocked"
+
+
+def test_requiring_enough_repeats_recovers_the_true_optimum():
+    result = run_demo()
+    assert result["by_threshold"][3]["cost"] == result["true_cost"]
+
+
+def test_false_positive_count_never_increases_as_the_threshold_rises():
+    result = run_demo()
+    fake_counts = [result["by_threshold"][t]["fake"] for t in range(1, 6)]
+    assert all(a >= b for a, b in zip(fake_counts, fake_counts[1:])), fake_counts
+
+
+if __name__ == "__main__":
+    run_demo()

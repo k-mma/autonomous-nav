@@ -196,6 +196,40 @@ def check_budget_and_objective_are_respected():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_candidates_share_identical_scenarios():
+    assert check_candidates_share_identical_scenarios()
+
+
+def test_paired_bootstrap_beats_independent_cis():
+    assert check_paired_bootstrap_beats_independent_cis()
+
+
+def test_paired_bootstrap_rejects_a_wash():
+    assert check_paired_bootstrap_rejects_a_wash()
+
+
+def test_no_synergy_when_bundling_a_no_op():
+    assert check_no_synergy_when_bundling_a_no_op()
+
+
+def test_pareto_frontier_is_actually_undominated():
+    assert check_pareto_frontier_is_actually_undominated()
+
+
+def test_evaluation_cache_is_by_hardware():
+    assert check_evaluation_cache_is_by_hardware()
+
+
+def test_budget_and_objective_are_respected():
+    assert check_budget_and_objective_are_respected()
+
+
 if __name__ == "__main__":
     checks = [
         check_candidates_share_identical_scenarios(),

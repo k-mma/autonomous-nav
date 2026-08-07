@@ -70,6 +70,29 @@ def check_solution(label, grid, agents):
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# check_solution takes (label, grid, agents), so unlike ftc/scratch's
+# zero-arg checks this needs one wrapper per agent-count case rather than
+# a single `assert check_x()` -- same three cases __main__ below runs.
+
+def test_2_agent_crossing_is_conflict_free():
+    grid = build_intersection_grid()
+    agents = {name: ARMS[name] for name in ["N->S", "W->E"]}
+    assert check_solution("2-agent", grid, agents)
+
+
+def test_3_agent_crossing_is_conflict_free():
+    grid = build_intersection_grid()
+    agents = {name: ARMS[name] for name in ["N->S", "W->E", "S->N"]}
+    assert check_solution("3-agent", grid, agents)
+
+
+def test_4_agent_crossing_is_conflict_free():
+    grid = build_intersection_grid()
+    agents = {name: ARMS[name] for name in list(ARMS)}
+    assert check_solution("4-agent", grid, agents)
+
+
 if __name__ == "__main__":
     grid = build_intersection_grid()
 

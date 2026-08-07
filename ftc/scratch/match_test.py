@@ -131,6 +131,20 @@ def check_replanning_costs_real_time():
     return False
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_slow_success_is_recorded_as_failure_then_succeeds_at_real_budget():
+    assert check_slow_success_is_recorded_as_failure_then_succeeds_at_real_budget()
+
+
+def test_replanning_costs_real_time():
+    assert check_replanning_costs_real_time()
+
+
 if __name__ == "__main__":
     checks = [
         check_slow_success_is_recorded_as_failure_then_succeeds_at_real_budget(),

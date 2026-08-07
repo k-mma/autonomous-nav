@@ -16,6 +16,8 @@ nav/uncertainty_benchmark.py's headline finding depends on?
 """
 import random
 
+import pytest
+
 from nav.field_variance import generate_ground_truth
 from nav.policies import BeliefPolicy, OpenLoopPolicy, ReactivePolicy
 from nav.uncertainty_benchmark import _solvable_scenario, execute_trial
@@ -85,6 +87,36 @@ def check_belief_beats_open_loop(open_loop_rates, belief_rates):
                   f"by more than the {NOISE_TOLERANCE:.0%} noise tolerance")
     print(f"BeliefPolicy never meaningfully worse than OpenLoopPolicy: {'OK' if ok else 'FAIL'}")
     return ok
+
+
+# --- pytest entry points --------------------------------------------------
+# run_sweep() is the expensive part (5 levels x 25 trials x 3 policies) --
+# a module-scoped fixture runs it once and the three checks below all read
+# from that single result, instead of each re-running the sweep.
+
+@pytest.fixture(scope="module")
+def sweep():
+    return run_sweep()
+
+
+def test_open_loop_never_replans(sweep):
+    _, replans_ok = sweep
+    assert replans_ok
+
+
+def test_reactive_success_rate_roughly_non_increasing(sweep):
+    success_rates, _ = sweep
+    assert check_monotonic_non_increasing("reactive", success_rates["reactive"])
+
+
+def test_belief_success_rate_roughly_non_increasing(sweep):
+    success_rates, _ = sweep
+    assert check_monotonic_non_increasing("belief", success_rates["belief"])
+
+
+def test_belief_never_meaningfully_worse_than_open_loop(sweep):
+    success_rates, _ = sweep
+    assert check_belief_beats_open_loop(success_rates["open_loop"], success_rates["belief"])
 
 
 if __name__ == "__main__":

@@ -134,6 +134,28 @@ def check_apriltag_imu_combines_both_corrections():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_imu_corrects_heading_without_replanning():
+    assert check_imu_corrects_heading_without_replanning()
+
+
+def test_imu_is_free():
+    assert check_imu_is_free()
+
+
+def test_dual_camera_helps_under_realistic_fov_but_not_optimistic():
+    assert check_dual_camera_helps_under_realistic_fov_but_not_optimistic()
+
+
+def test_apriltag_imu_combines_both_corrections():
+    assert check_apriltag_imu_combines_both_corrections()
+
+
 if __name__ == "__main__":
     checks = [
         check_imu_corrects_heading_without_replanning(),

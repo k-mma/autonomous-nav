@@ -141,6 +141,28 @@ def check_on_tick_none_is_the_default():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_trace_reproduces_plain_run_match_exactly():
+    assert check_trace_reproduces_plain_run_match_exactly()
+
+
+def test_tick_count_matches_steps():
+    assert check_tick_count_matches_steps()
+
+
+def test_trace_covers_collision_and_success():
+    assert check_trace_covers_collision_and_success()
+
+
+def test_on_tick_none_is_the_default():
+    assert check_on_tick_none_is_the_default()
+
+
 if __name__ == "__main__":
     checks = [
         check_trace_reproduces_plain_run_match_exactly(),

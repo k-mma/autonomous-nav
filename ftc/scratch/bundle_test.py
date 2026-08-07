@@ -186,6 +186,36 @@ def check_composite_sensor_unions_coverage():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_part_costs_reproduce_suite_costs():
+    assert check_part_costs_reproduce_suite_costs()
+
+
+def test_single_component_bundle_is_identical():
+    assert check_single_component_bundle_is_identical()
+
+
+def test_bundle_reproduces_full_suite():
+    assert check_bundle_reproduces_full_suite()
+
+
+def test_shared_hardware_is_not_double_counted():
+    assert check_shared_hardware_is_not_double_counted()
+
+
+def test_conflicting_parts_rejected():
+    assert check_conflicting_parts_rejected()
+
+
+def test_composite_sensor_unions_coverage():
+    assert check_composite_sensor_unions_coverage()
+
+
 if __name__ == "__main__":
     checks = [
         check_part_costs_reproduce_suite_costs(),

@@ -96,6 +96,32 @@ def check_default_tag_sites():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_grid_shape():
+    assert check_grid_shape()
+
+
+def test_inflation_grows_obstacles():
+    assert check_inflation_grows_obstacles()
+
+
+def test_corridor_stays_passable():
+    assert check_corridor_stays_passable()
+
+
+def test_narrow_gap_gets_sealed():
+    assert check_narrow_gap_gets_sealed()
+
+
+def test_default_tag_sites():
+    assert check_default_tag_sites()
+
+
 if __name__ == "__main__":
     checks = [
         check_grid_shape(),

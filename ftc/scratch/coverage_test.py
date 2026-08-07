@@ -114,6 +114,25 @@ def check_lidar_suite_sees_the_full_ring():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_suite_override_takes_effect():
+    assert check_suite_override_takes_effect()
+
+
+def test_more_sensors_see_more_of_a_ring():
+    ok, _, _ = check_more_sensors_see_more_of_a_ring()
+    assert ok
+
+
+def test_lidar_suite_sees_the_full_ring():
+    assert check_lidar_suite_sees_the_full_ring()
+
+
 if __name__ == "__main__":
     ring_ok, _, _ = check_more_sensors_see_more_of_a_ring()
     checks = [

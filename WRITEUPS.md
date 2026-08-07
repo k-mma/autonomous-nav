@@ -2098,3 +2098,55 @@ detections, the best localization hardware sets the drift rate -- so
 two sensors *disagreeing* about where the robot is, and the filter work
 of resolving that, costs nothing here. Every bundle number is therefore
 an upper bound on what combining actually buys.
+
+## Giving bundles their own visualizer, not a mode of the suite one
+
+The first pass at watching bundles run put the feature inside
+`scenario_ftc_suites.py` -- a `"+"`-join syntax in `--suites` for a
+bundle panel, plus a `--live-bundle` panel toggled with number keys.
+It worked, but it was the wrong home for it. That file's whole design
+-- fixed panel count decided once at startup, a keybinding scheme built
+around scrubbing one scenario across a handful of named suites -- is
+right for "compare these specific suites side by side" and wrong for
+"browse a combinatorial space," which has a different natural
+interaction (page through an ordered list) and a different natural
+constraint (the thing you're looking at can be a different size on
+every step). Bolting the second onto the first meant reserving a
+number-key range that had nothing to do with the file's existing
+controls and a live-bundle panel whose presence/absence the rest of the
+layout code had to special-case. Separating them into
+`scenario_ftc_bundles.py` isn't just tidiness: it let the browsing UI
+be *shaped* around what it's actually for, particularly the one thing
+the old design couldn't do at all -- resize the window to fit however
+many components the currently-selected combination has, from a 2-suite
+pair (3 panels: two ingredients + the bundle) up to the one 5-suite
+combination (6 panels), just by pressing Left/Right.
+
+The result is 42 buildable 2+-suite combinations (from the 7 candidate
+suites `ftc/optimizer.py`'s `DEFAULT_COMPONENTS` offers, minus
+dead-reckoning, which never changes a bundle's drift rate or
+capabilities) at the default candidate pool -- the exact same
+enumeration `ftc/bundle.py`'s `enumerate_bundles` and
+`ftc/optimizer_benchmark.py`'s study already use, so the visualizer's
+list and the writeup's numbers are provably talking about the same
+robots, not two independently-maintained catalogs. Left/Right steps to
+the previous/next one; PageUp/PageDown jump 5; Home/End jump to the
+cheapest/priciest. There's no other control needed to see all of them
+-- which was the actual ask -- and the status bar always says which one
+you're on ("BUNDLE 7/42") so paging through never loses its place.
+
+One correctness fix fell out of building this that had nothing to do
+with bundles per se: the single-suite visualizer's sensor-visual
+drawing only ever showed ONE sensor kind per panel (cone, camera, or
+lidar -- whichever the code checked first), which meant `FullSuite` --
+distance sensors AND AprilTag together, senses obstacles AND fixes pose
+-- never drew its camera FOV wedge, even in the original single-suite
+tool. A bundle can combine arbitrarily many sensor types, so
+`field_view.py`'s `sensor_kind`/`draw_sensor_visual` had to generalize
+into `suite_sensor_visuals`/`draw_sensor_visual` accepting a LIST of
+active visuals rather than picking one -- and since that's a strict
+generalization (a suite with one active sensor type still gets a
+one-element list, drawn identically to before), it's shared by both
+visualizers and fixes the FullSuite gap in the original one too, for
+free. Cosmetic only -- nothing in `ftc/match.py` or any published
+number depends on what gets drawn.

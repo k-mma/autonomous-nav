@@ -490,9 +490,9 @@ def draw_panel(screen, font, hud_font, x0, y0, cell_px, grid_size, obstacle_cell
     field_view.draw_planned_path(screen, gx0, gy0, cell_px, snap["path"])
     field_view.draw_trail(screen, gx0, gy0, cell_px, trail_up_to(trace, match_time_s))
 
-    kind = field_view.sensor_kind(trace.suite)
-    field_view.draw_sensor_visual(screen, gx0, gy0, cell_px, kind, snap["true_position"], snap["heading_deg"],
-                                    trace.suite, fidelity)
+    visuals = field_view.suite_sensor_visuals(trace.suite)
+    field_view.draw_sensor_visual(screen, gx0, gy0, cell_px, visuals, snap["true_position"],
+                                    snap["heading_deg"], fidelity)
     if snap["newly_seen_believed"]:
         field_view.draw_newly_seen(screen, gx0, gy0, cell_px, snap["newly_seen_believed"])
     if opponent_reference is not None:

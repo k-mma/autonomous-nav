@@ -100,6 +100,32 @@ def check_zero_distance_is_zero_time():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_triangular_branch_matches_closed_form():
+    assert check_triangular_branch_matches_closed_form()
+
+
+def test_trapezoidal_branch_decomposes_correctly():
+    assert check_trapezoidal_branch_decomposes_correctly()
+
+
+def test_single_cell_never_reaches_cruise():
+    assert check_single_cell_never_reaches_cruise()
+
+
+def test_strictly_slower_than_naive_formula():
+    assert check_strictly_slower_than_naive_formula()
+
+
+def test_zero_distance_is_zero_time():
+    assert check_zero_distance_is_zero_time()
+
+
 if __name__ == "__main__":
     checks = [
         check_triangular_branch_matches_closed_form(),

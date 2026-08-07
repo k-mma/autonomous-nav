@@ -119,6 +119,23 @@ def check_incremental():
     return mismatches
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_one_shot():
+    # check_one_shot() returns a mismatch COUNT, not a bool -- 0 is the
+    # passing case, so `assert check_one_shot()` would have the polarity
+    # backwards (asserting on a falsy 0 for success).
+    assert check_one_shot() == 0
+
+
+def test_incremental():
+    assert check_incremental() == 0
+
+
 if __name__ == "__main__":
     print(f"Checking {ONE_SHOT_TRIALS} random {GRID_SIZE}x{GRID_SIZE} grids (one-shot)...")
     m1 = check_one_shot()

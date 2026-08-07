@@ -160,6 +160,32 @@ def check_obstacle_blocks_line_of_sight():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_cone_sensor_stays_in_cone():
+    assert check_cone_sensor_stays_in_cone()
+
+
+def test_cone_sensor_respects_range():
+    assert check_cone_sensor_respects_range()
+
+
+def test_no_correction_without_a_tag_in_view():
+    assert check_no_correction_without_a_tag_in_view()
+
+
+def test_correction_when_tag_is_in_view():
+    assert check_correction_when_tag_is_in_view()
+
+
+def test_obstacle_blocks_line_of_sight():
+    assert check_obstacle_blocks_line_of_sight()
+
+
 if __name__ == "__main__":
     checks = [
         check_cone_sensor_stays_in_cone(),

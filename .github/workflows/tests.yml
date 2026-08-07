@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system libraries pybullet's compiled extension links against
+        # `import pybullet` dynamically loads libGL/libX11 even when only ever
+        # connecting via p.DIRECT (no GUI, no rendering) -- ubuntu-latest runners
+        # don't ship these by default the way a desktop Linux install would.
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libx11-6
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python3 -m pytest -v

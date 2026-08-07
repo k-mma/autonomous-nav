@@ -89,6 +89,23 @@ def print_grid(path):
         print(row_str)
 
 
+# --- pytest entry points --------------------------------------------------
+# This file's astar() is a standalone, from-scratch reimplementation (the
+# earliest exploratory work in this project, predating nav/algorithms.py)
+# on an obstacle-free grid, so its shortest path has a known closed form:
+# Manhattan distance (|11-0| + |7-0| = 18) + 1 for the start cell itself.
+
+def test_finds_the_optimal_path_on_an_open_grid():
+    path, explored = astar(START, GOAL)
+    assert path is not None
+    assert path[0] == START
+    assert path[-1] == GOAL
+    assert len(path) == 19  # Manhattan(START, GOAL) + 1
+    for (r1, c1), (r2, c2) in zip(path, path[1:]):
+        assert abs(r1 - r2) + abs(c1 - c2) == 1, f"non-cardinal step {(r1, c1)}->{(r2, c2)}"
+    assert 0 < explored <= ROWS * COLS
+
+
 if __name__ == "__main__":
     path, explored = astar(START, GOAL)
     if path:

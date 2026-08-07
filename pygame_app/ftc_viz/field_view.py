@@ -36,10 +36,10 @@ import pygame
 from nav.sensor import LidarSensor
 
 from ftc.config import (
-    APRILTAG_RANGE_CELLS, CELL_SIZE_IN, DISTANCE_SENSOR_HALF_ANGLE_DEG,
-    DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_RANGE_CELLS, FIDELITY_TIERS, FTC_GRID_SIZE,
-    ROBOT_RADIUS_CELLS, ROBOT_SIZE_IN,
+    APRILTAG_RANGE_CELLS, CELL_SIZE_IN, DISTANCE_SENSOR_HALF_ANGLE_DEG, DISTANCE_SENSOR_RANGE_CELLS,
+    FIDELITY_TIERS, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS, ROBOT_SIZE_IN,
 )
+from ftc.bundle import CompositeObstacleSensor
 from ftc.field import in_to_cell
 from ftc.sensors import ConeSensor, angular_diff
 
@@ -92,22 +92,43 @@ FLASH_WINDOW_S = 0.35
 STUCK_WINDOW_S = 0.6
 
 
-def sensor_kind(suite):
-    """"cone" (ConeSensor -- DistanceSensorSuite/FullSuite/the coverage-
-    sweep variants), "lidar" (a full 360-degree disc scan -- LidarSuite),
-    "camera" (a suite whose tag_correction gates on the robot's own
-    camera FOV -- every AprilTag-family suite), or "none" (dead
-    reckoning, odometry pods, ImuSuite -- nothing exteroceptive to
-    draw)."""
+def suite_sensor_visuals(suite):
+    """Every active sensor visual `suite` has, as a list of ("cone",
+    mount_headings_deg) / ("lidar", None) / ("camera", mount_headings_deg)
+    tuples -- ONE per physical sensor TYPE the robot carries, not one
+    per suite it was built from. A ftc/bundle.py BundleSuite's obstacle
+    sensor is a CompositeObstacleSensor (a union of its components'
+    sensors, e.g. distance-sensor cones AND a lidar disc together); this
+    walks its `.sensors` rather than treating the whole composite as one
+    opaque kind, so a bundle draws every sensor it actually has instead
+    of only the first one found. A suite that both senses obstacles AND
+    fixes pose (ftc/sensors.py's FullSuite, or any pose+obstacle bundle)
+    draws both -- the single-suite `sensor_kind` this replaces picked
+    only one of the two even for FullSuite, a pre-existing gap this
+    generalization also closes (cosmetic only, see this module's own
+    docstring on why the field skin/visuals are allowed to differ from
+    what's simulated: nothing here feeds back into ftc/match.py).
+
+    Two suites in a bundle that both carry a camera don't produce two
+    camera entries: ftc/bundle.py's BundleSuite already unions
+    camera_mount_headings_deg onto ONE detection pipeline (see its own
+    docstring for why -- a second independent pipeline would consume
+    extra rng draws and break the byte-exact single-suite reproduction
+    ftc/scratch/bundle_test.py checks), so `suite.fixes_pose` here is
+    already exactly one robot, one camera visual, at every mount it
+    actually has."""
+    visuals = []
     if suite.senses_obstacles:
         sensor = suite.make_obstacle_sensor()
-        if isinstance(sensor, ConeSensor):
-            return "cone"
-        if isinstance(sensor, LidarSensor):
-            return "lidar"
+        sub_sensors = sensor.sensors if isinstance(sensor, CompositeObstacleSensor) else [sensor]
+        for sub in sub_sensors:
+            if isinstance(sub, ConeSensor):
+                visuals.append(("cone", sub.mount_headings_deg))
+            elif isinstance(sub, LidarSensor):
+                visuals.append(("lidar", None))
     if suite.fixes_pose:
-        return "camera"
-    return "none"
+        visuals.append(("camera", getattr(suite, "camera_mount_headings_deg", [0.0])))
+    return visuals
 
 
 def interp_snapshot(trace, match_time_s, grid_size=None):
@@ -322,40 +343,44 @@ def _wedge_points(cx, cy, heading_deg_now, half_angle_deg, range_px, steps=10):
     return points
 
 
-def draw_sensor_visual(screen, x0, y0, cell_px, kind, true_position, heading_deg_now, suite, fidelity):
-    """Drawn on a full-screen-sized transparent overlay blitted at
+def draw_sensor_visual(screen, x0, y0, cell_px, visuals, true_position, heading_deg_now, fidelity):
+    """Draws every entry in `visuals` (suite_sensor_visuals(suite)'s
+    output) on its own full-screen-sized transparent overlay blitted at
     (0, 0) -- a cone's real range can extend well past this panel's own
     grid when the robot is near an edge, and the caller already clips
-    drawing to this panel's rect."""
+    drawing to this panel's rect. A bundle with several active sensor
+    types draws several overlays in one call, each already color-coded
+    by kind (CONE_COLOR/CAMERA_COLOR/LIDAR_COLOR), so e.g. odometry pods
+    + AprilTag + lidar reads at a glance as "blue wedge + purple disc,"
+    not one merged, ambiguous shape."""
     cx = x0 + true_position[1] * cell_px + cell_px / 2
     cy = y0 + true_position[0] * cell_px + cell_px / 2
     screen_size = screen.get_size()
 
-    if kind == "cone":
-        mount_headings = getattr(suite, "mount_headings_deg", DISTANCE_SENSOR_MOUNT_HEADINGS_DEG)
-        range_px = DISTANCE_SENSOR_RANGE_CELLS * cell_px
-        overlay = _alpha_surface(screen_size)
-        for mount in mount_headings:
-            pts = _wedge_points(cx, cy, heading_deg_now + mount, DISTANCE_SENSOR_HALF_ANGLE_DEG, range_px)
-            pygame.draw.polygon(overlay, CONE_COLOR, pts)
-        screen.blit(overlay, (0, 0))
-    elif kind == "camera":
-        tier = FIDELITY_TIERS[fidelity]
-        fov = tier["camera_fov_deg"]
-        if fov >= 360.0:
-            return
-        mount_headings = getattr(suite, "camera_mount_headings_deg", [0.0])
-        range_px = APRILTAG_RANGE_CELLS * cell_px
-        overlay = _alpha_surface(screen_size)
-        for mount in mount_headings:
-            pts = _wedge_points(cx, cy, heading_deg_now + mount, fov / 2, range_px)
-            pygame.draw.polygon(overlay, CAMERA_COLOR, pts)
-        screen.blit(overlay, (0, 0))
-    elif kind == "lidar":
-        radius_px = 22 * cell_px
-        overlay = _alpha_surface(screen_size)
-        pygame.draw.circle(overlay, LIDAR_COLOR, (cx, cy), radius_px)
-        screen.blit(overlay, (0, 0))
+    for kind, mount_headings in visuals:
+        if kind == "cone":
+            range_px = DISTANCE_SENSOR_RANGE_CELLS * cell_px
+            overlay = _alpha_surface(screen_size)
+            for mount in mount_headings:
+                pts = _wedge_points(cx, cy, heading_deg_now + mount, DISTANCE_SENSOR_HALF_ANGLE_DEG, range_px)
+                pygame.draw.polygon(overlay, CONE_COLOR, pts)
+            screen.blit(overlay, (0, 0))
+        elif kind == "camera":
+            tier = FIDELITY_TIERS[fidelity]
+            fov = tier["camera_fov_deg"]
+            if fov >= 360.0:
+                continue
+            range_px = APRILTAG_RANGE_CELLS * cell_px
+            overlay = _alpha_surface(screen_size)
+            for mount in mount_headings:
+                pts = _wedge_points(cx, cy, heading_deg_now + mount, fov / 2, range_px)
+                pygame.draw.polygon(overlay, CAMERA_COLOR, pts)
+            screen.blit(overlay, (0, 0))
+        elif kind == "lidar":
+            radius_px = 22 * cell_px
+            overlay = _alpha_surface(screen_size)
+            pygame.draw.circle(overlay, LIDAR_COLOR, (cx, cy), radius_px)
+            screen.blit(overlay, (0, 0))
 
 
 def draw_newly_seen(screen, x0, y0, cell_px, cells):

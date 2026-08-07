@@ -27,28 +27,34 @@ def build_test_grid():
     return grid
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--headless", action="store_true")
-    args = parser.parse_args()
+EXPECTED_WALL = {(row, 12) for row in range(8, 15)}
 
-    connect(gui=not args.headless)
+
+def run_scan(headless):
+    connect(gui=not headless)
     grid = build_test_grid()
     build_obstacles(grid)
 
     scan_row, scan_col = 10, 8
     x, y, _ = grid_to_world(scan_row, scan_col)
     lidar = Lidar3D(num_rays=36, max_range=6.0)
-    hits = lidar.scan((x, y), gui=not args.headless)
+    hits = lidar.scan((x, y), gui=not headless)
 
     print(f"scanning from grid cell ({scan_row}, {scan_col}) / world ({x}, {y})")
     print(f"rays cast: {lidar.num_rays}, max range: {lidar.max_range}m")
     print(f"newly discovered obstacle cells: {sorted(hits)}")
     print(f"total known_obstacles: {sorted(lidar.known_obstacles)}")
+    return hits
 
-    expected = {(row, 12) for row in range(8, 15)}
-    within_range = {(r, c) for r, c in expected}  # all within 6m of (10, 8): |12-8|=4 <= 6
-    found_expected = hits & within_range
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--headless", action="store_true")
+    args = parser.parse_args()
+
+    hits = run_scan(args.headless)
+    # all of EXPECTED_WALL is within 6m of (10, 8): |12-8|=4 <= 6
+    found_expected = hits & EXPECTED_WALL
     print(f"expected wall cells within range that were actually found: {sorted(found_expected)}")
     assert found_expected, "lidar found none of the known wall cells -- raycast setup is broken"
     print("raycast sanity check passed.")
@@ -56,6 +62,16 @@ def main():
     if not args.headless:
         input("Press Enter to close...")
     p.disconnect()
+
+
+# --- pytest entry points --------------------------------------------------
+
+def test_raycast_finds_the_known_wall():
+    try:
+        hits = run_scan(headless=True)
+        assert hits == EXPECTED_WALL, f"expected exactly {sorted(EXPECTED_WALL)}, got {sorted(hits)}"
+    finally:
+        p.disconnect()
 
 
 if __name__ == "__main__":

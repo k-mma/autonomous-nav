@@ -38,13 +38,8 @@ def plan_waypoints(grid, start, goal):
     return build_drive_waypoints(path, "spline")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--headless", action="store_true")
-    parser.add_argument("--max-seconds", type=float, default=30.0)
-    args = parser.parse_args()
-
-    connect(gui=not args.headless)
+def run_simulation(headless, max_seconds=30.0):
+    connect(gui=not headless)
     grid = Grid()
     # A modest obstacle far from both lanes, just so this isn't a
     # trivially empty world -- neither robot's route goes near it.
@@ -69,7 +64,7 @@ def main():
     arrived_a = arrived_b = False
     min_separation = float("inf")
     steps = 0
-    max_steps = int(args.max_seconds * SIM_HZ)
+    max_steps = int(max_seconds * SIM_HZ)
 
     while steps < max_steps and not (arrived_a and arrived_b):
         if not arrived_a:
@@ -86,7 +81,7 @@ def main():
                     robot_b.stop()
 
         p.stepSimulation()
-        if not args.headless:
+        if not headless:
             time.sleep(1 / SIM_HZ)
         steps += 1
 
@@ -95,13 +90,34 @@ def main():
 
     print(f"robot A arrived: {arrived_a}, robot B arrived: {arrived_b}")
     print(f"minimum separation observed between the two robots: {min_separation:.2f}m")
-    assert arrived_a and arrived_b, "both robots should reach their goals with no conflict"
-    assert min_separation > 2.0, "these paths were supposed to be non-conflicting"
+    return {"arrived_a": arrived_a, "arrived_b": arrived_b, "min_separation": min_separation}
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--max-seconds", type=float, default=30.0)
+    args = parser.parse_args()
+
+    result = run_simulation(args.headless, args.max_seconds)
+    assert result["arrived_a"] and result["arrived_b"], "both robots should reach their goals with no conflict"
+    assert result["min_separation"] > 2.0, "these paths were supposed to be non-conflicting"
     print("both robots navigated simultaneously with no interference -- sanity check passed.")
 
     if not args.headless:
         input("Press Enter to close...")
     p.disconnect()
+
+
+# --- pytest entry points --------------------------------------------------
+
+def test_both_robots_arrive_without_interfering():
+    try:
+        result = run_simulation(headless=True)
+        assert result["arrived_a"] and result["arrived_b"], "both robots should reach their goals with no conflict"
+        assert result["min_separation"] > 2.0, "these paths were supposed to be non-conflicting"
+    finally:
+        p.disconnect()
 
 
 if __name__ == "__main__":

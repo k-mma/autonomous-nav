@@ -115,6 +115,24 @@ def check_unknown_suite_name_raises_a_clear_error():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_headless_run_completes_all_suites():
+    assert check_headless_run_completes_all_suites()
+
+
+def test_headless_run_completes_single_suite():
+    assert check_headless_run_completes_single_suite()
+
+
+def test_unknown_suite_name_raises_a_clear_error():
+    assert check_unknown_suite_name_raises_a_clear_error()
+
+
 if __name__ == "__main__":
     checks = [
         check_headless_run_completes_all_suites(),

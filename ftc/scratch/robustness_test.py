@@ -99,6 +99,28 @@ def check_run_sweep_point_override_survives_end_to_end():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_config_patch_does_nothing():
+    assert check_config_patch_does_nothing()
+
+
+def test_instance_override_works():
+    assert check_instance_override_works()
+
+
+def test_apriltag_sensors_module_override_works():
+    assert check_apriltag_sensors_module_override_works()
+
+
+def test_run_sweep_point_override_survives_end_to_end():
+    assert check_run_sweep_point_override_survives_end_to_end()
+
+
 if __name__ == "__main__":
     checks = [
         check_config_patch_does_nothing(),

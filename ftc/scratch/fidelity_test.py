@@ -199,6 +199,28 @@ def check_heading_error_rotates_execution():
     return ok and end_to_end_ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_optimistic_tier_reproduces_headline_exactly():
+    assert check_optimistic_tier_reproduces_headline_exactly()
+
+
+def test_camera_fov_gate_rejects_tags_behind_the_robot():
+    assert check_camera_fov_gate_rejects_tags_behind_the_robot()
+
+
+def test_camera_fov_gate_is_a_noop_at_optimistic_tier():
+    assert check_camera_fov_gate_is_a_noop_at_optimistic_tier()
+
+
+def test_heading_error_rotates_execution():
+    assert check_heading_error_rotates_execution()
+
+
 if __name__ == "__main__":
     checks = [
         check_optimistic_tier_reproduces_headline_exactly(),

@@ -139,6 +139,28 @@ def check_mecanum_holds_a_fixed_heading():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_tank_matches_legacy_default():
+    assert check_tank_matches_legacy_default()
+
+
+def test_mecanum_never_pays_turn_cost():
+    assert check_mecanum_never_pays_turn_cost()
+
+
+def test_mecanum_pays_strafe_penalty():
+    assert check_mecanum_pays_strafe_penalty()
+
+
+def test_mecanum_holds_a_fixed_heading():
+    assert check_mecanum_holds_a_fixed_heading()
+
+
 if __name__ == "__main__":
     checks = [
         check_tank_matches_legacy_default(),

@@ -100,6 +100,28 @@ def check_collisions_are_real():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_dead_reckoning_never_replans():
+    assert check_dead_reckoning_never_replans()
+
+
+def test_odometry_beats_dead_reckoning():
+    assert check_odometry_beats_dead_reckoning()
+
+
+def test_apriltag_beats_dead_reckoning():
+    assert check_apriltag_beats_dead_reckoning()
+
+
+def test_collisions_are_real():
+    assert check_collisions_are_real()
+
+
 if __name__ == "__main__":
     checks = [
         check_dead_reckoning_never_replans(),

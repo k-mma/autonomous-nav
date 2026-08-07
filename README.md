@@ -1,5 +1,7 @@
 # autonomous-nav
 
+[![tests](https://github.com/k-mma/autonomous-nav/actions/workflows/tests.yml/badge.svg)](https://github.com/k-mma/autonomous-nav/actions/workflows/tests.yml)
+
 Research question: which sensing investment actually buys reliability
 in a 30-second FTC (*FIRST* Tech Challenge) autonomous period, and at
 what level of field/reality deviation does each one become necessary?
@@ -166,6 +168,9 @@ python3 -m venv nav-env
 source nav-env/bin/activate
 pip install -r requirements.txt
 
+pip install -r requirements-dev.txt              # adds pytest (requirements-dev.txt already includes requirements.txt)
+python3 -m pytest                                # run the test suite (ftc/, nav/, pygame_app/, pybullet_app/'s scratch/ dirs); CI runs this on every push
+
 python3 pygame_app/main.py                       # the pygame visualizer
 python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
 python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner/MeepMeep-style), real-time playback, all 5 headline suites side by side
@@ -173,6 +178,8 @@ python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag            
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite         # an arbitrary side-by-side comparison
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suites all --fidelity pessimistic  # every suite ftc/sensors.py defines, at the pessimistic tier
 python3 pygame_app/scenarios/scenario_ftc_suites.py --opponent moving                    # a second, wandering robot on the field
+python3 pygame_app/scenarios/scenario_ftc_bundles.py                                     # SEPARATE visualizer: browse all 42 buildable 2+-suite combinations (ftc/bundle.py) -- press Left/Right to step through every one, each shown as its own components running alone next to the combined BUNDLE panel
+python3 pygame_app/scenarios/scenario_ftc_bundles.py --sort parts --candidates odometry_pods,apriltag,imu,lidar --max-size 2  # a smaller candidate pool, pairs only
 python3 -m nav.benchmark                         # regenerate benchmark_results/
 python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
 python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
@@ -873,10 +880,17 @@ pygame_app/        Everything that touches pygame
                       (maze, cost map, bottleneck, noisy sensor, step replay, uncertainty comparison,
                       scenario_ftc_suites.py's RoadRunner/MeepMeep-style FTC suite-comparison replay --
                       robots drawn at true 18in scale, real-time (not tick-stepped) playback via
-                      field_view.interp_snapshot, an opponent-robot option, and on_collision="replan"
-                      stuck/recovery behavior local to this visualizer only (see ftc/match.py), ...)
-  ftc_viz/           Drawing primitives for scenario_ftc_suites.py's animated field panels (field_view.py) --
-                      pure functions of an ftc/trace.py MatchTrace + tick index, no simulation of its own
+                      field_view.interp_snapshot, an opponent-robot option, on_collision="replan"
+                      stuck/recovery behavior local to this visualizer only (see ftc/match.py); a SEPARATE
+                      scenario_ftc_bundles.py browses every buildable 2+-suite combination (ftc/bundle.py) --
+                      Left/Right (PageUp/PageDown to jump 5, Home/End for first/last) steps through all 42
+                      at the default candidate set, each shown as its own components running alone next to
+                      the combined BUNDLE panel, window resizing to fit whichever combination's size is
+                      currently selected, ...)
+  ftc_viz/           Drawing primitives BOTH scenario_ftc_suites.py's and scenario_ftc_bundles.py's animated
+                      field panels share (field_view.py) -- pure functions of an ftc/trace.py MatchTrace +
+                      tick index, no simulation of its own; suite_sensor_visuals draws every active sensor
+                      type a suite or bundle has (cone/camera/lidar together, not just one)
   scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths
 
 pybullet_app/      Everything that touches PyBullet

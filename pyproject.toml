@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+# Every scratch/ dir (ftc, nav, pygame_app, pybullet_app) has pytest
+# entry points now -- the original check_*()-and-print functions (and, for
+# nav/scratch, the even older bare-script demos) are untouched, since
+# WRITEUPS.md cites plenty of them by exact name/path; pytest just runs
+# them via thin `test_*` wrappers added alongside.
+testpaths = ["ftc/scratch", "nav/scratch", "pygame_app/scratch", "pybullet_app/scratch"]
+pythonpath = ["."]

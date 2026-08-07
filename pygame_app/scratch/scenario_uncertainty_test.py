@@ -84,6 +84,16 @@ def check_headless_run_completes():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_headless_run_completes():
+    assert check_headless_run_completes()
+
+
 if __name__ == "__main__":
     checks = [check_headless_run_completes()]
     print("\nALL PASS" if all(checks) else "\nSOME CHECKS FAILED")

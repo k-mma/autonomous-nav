@@ -52,12 +52,8 @@ def plan_cost(known_obstacles, grid):
     return path_cost(grid, path), None
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--headless", action="store_true")
-    args = parser.parse_args()
-
-    connect(gui=not args.headless)
+def run_demo(headless, seed=3):
+    connect(gui=not headless)
     grid = build_grid()
     build_obstacles(grid)
 
@@ -69,11 +65,11 @@ def main():
 
     print("--- 1. perfect sensor (noisy=False), single scan ---")
     clean = Lidar3D(num_rays=48, max_range=RADIUS)
-    seen = clean.scan((scan_x, scan_y), gui=False)
-    print(f"detected: {sorted(seen)} (expect exactly the wall cells within range, no more, no less)\n")
+    clean_seen = clean.scan((scan_x, scan_y), gui=False)
+    print(f"detected: {sorted(clean_seen)} (expect exactly the wall cells within range, no more, no less)\n")
 
     print(f"--- 2. noisy sensor, {NUM_SCANS} repeated scans from the same position ---")
-    rng = random.Random(3)
+    rng = random.Random(seed)
     noisy = Lidar3D(num_rays=48, max_range=RADIUS, noisy=True, rng=rng)
     first_scan_seen = noisy.scan((scan_x, scan_y), gui=False)
     print(f"first scan alone: {sorted(first_scan_seen)} "
@@ -87,10 +83,12 @@ def main():
 
     print(f"\n--- 3. does confirming before replanning actually help? ---")
     print(f"(sweeping min_detections from 1 [= raw known_obstacles] upward)\n")
+    by_threshold = {}
     for threshold in range(1, 6):
         view = noisy.confirmed_obstacles(threshold)
         fake = view - WALL
         cost, reason = plan_cost(view, grid)
+        by_threshold[threshold] = {"cells": len(view), "fake": len(fake), "cost": cost, "reason": reason}
         if cost is None:
             outcome = f"FAILED to find any path ({reason})"
         elif cost == true_cost:
@@ -101,10 +99,61 @@ def main():
         print(f"  {label:28s}: {len(view):3d} cells ({len(fake):2d} fake) -> {outcome}")
     print(f"\ntrue optimal cost (perfect information): {true_cost:.2f}")
     print(f"(default CONFIRMATION_THRESHOLD in nav/config.py is {CONFIRMATION_THRESHOLD})")
+    return {"true_cost": true_cost, "clean_seen": clean_seen, "by_threshold": by_threshold}
 
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--headless", action="store_true")
+    args = parser.parse_args()
+
+    run_demo(args.headless)
     if not args.headless:
         input("Press Enter to close...")
     p.disconnect()
+
+
+# --- pytest entry points --------------------------------------------------
+# Mirrors nav/scratch/lidar_noise_test.py's pytest entry points: the module
+# docstring's own framing is "measured, not asserted" for the noise itself,
+# but the seed is fixed (seed=3, same as the demo above), so the two
+# findings it's actually here to demonstrate -- a clean scan is exact, and
+# confirming a detection before trusting it recovers the true-optimal path
+# cost -- are fully reproducible and worth locking in as real regressions.
+
+def test_clean_scan_sees_exactly_the_wall_within_range():
+    try:
+        result = run_demo(headless=True)
+        assert result["clean_seen"] == WALL
+    finally:
+        p.disconnect()
+
+
+def test_raw_known_obstacles_finds_a_path_but_pays_a_cost_penalty():
+    try:
+        result = run_demo(headless=True)
+        raw = result["by_threshold"][1]
+        assert raw["cost"] is not None
+        assert raw["cost"] > result["true_cost"]
+    finally:
+        p.disconnect()
+
+
+def test_confirming_detections_recovers_the_true_optimum():
+    try:
+        result = run_demo(headless=True)
+        assert result["by_threshold"][2]["cost"] == result["true_cost"]
+    finally:
+        p.disconnect()
+
+
+def test_false_positive_count_never_increases_as_the_threshold_rises():
+    try:
+        result = run_demo(headless=True)
+        fake_counts = [result["by_threshold"][t]["fake"] for t in range(1, 6)]
+        assert all(a >= b for a, b in zip(fake_counts, fake_counts[1:])), fake_counts
+    finally:
+        p.disconnect()
 
 
 if __name__ == "__main__":

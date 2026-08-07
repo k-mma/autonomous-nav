@@ -146,6 +146,28 @@ def check_example_budgets_now_bind():
     return ok
 
 
+# --- pytest entry points --------------------------------------------------
+# Thin wrappers so `pytest` collects and runs the checks above as real
+# tests; the checks themselves (and the standalone `python3 <this file>`
+# run below) are unchanged.
+
+
+def test_budget_patch_changes_outcome_end_to_end():
+    assert check_budget_patch_changes_outcome_end_to_end()
+
+
+def test_run_budget_tags_rows():
+    assert check_run_budget_tags_rows()
+
+
+def test_summarize_sane_at_extremes():
+    assert check_summarize_sane_at_extremes()
+
+
+def test_example_budgets_now_bind():
+    assert check_example_budgets_now_bind()
+
+
 if __name__ == "__main__":
     checks = [
         check_budget_patch_changes_outcome_end_to_end(),
