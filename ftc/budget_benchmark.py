@@ -76,7 +76,7 @@ from ftc.field import build_grid, tag_sites_for
 from ftc.sensors import SUITE_LABELS, SUITE_ORDER
 from ftc.suite_benchmark import (
     DEVIATION_TYPE_ORDER, LAYOUT, SUITE_COLORS, SUMMARY_MIN_LEVEL, TRIALS_PER_COMBO, VARIANCE_LEVELS,
-    aggregate, overall_success_rate, run_combo,
+    aggregate, overall_success_rate, run_sweep,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
@@ -106,12 +106,22 @@ def run_budget(budget_s):
     original_budget = match_module.AUTONOMOUS_PERIOD_S
     try:
         match_module.AUTONOMOUS_PERIOD_S = budget_s
-        rows = []
-        for deviation_type in DEVIATION_TYPE_ORDER:
-            for level in VARIANCE_LEVELS:
-                base_seed = 6_000_000 + DEVIATION_TYPE_ORDER.index(deviation_type) * 1_000_000 + round(level * 100)
-                rows.extend(run_combo(deviation_type, level, TRIALS_PER_COMBO, base_seed, grid, free_cells,
-                                       tag_sites))
+        # max_workers=1 (forced, not the default) is deliberate: this
+        # function's whole trick is monkeypatching ftc.match's module
+        # global before calling run_combo, and a worker process under
+        # ProcessPoolExecutor gets its OWN fresh copy of ftc.match on
+        # `spawn` (macOS/Windows's default) -- the patch made in this
+        # process would never reach it. `fork` (Linux/CI's default)
+        # would happen to copy the patched value, but relying on that
+        # divergence between platforms is exactly the kind of thing that
+        # passes locally and breaks in CI. max_workers=1 runs every
+        # combo in-process instead, so the patch applies correctly and
+        # identically everywhere. Parallelizing this specific benchmark
+        # would mean threading budget_s through run_combo/run_match as
+        # an explicit argument instead of a monkeypatched global --
+        # not done here to keep this change small.
+        rows = run_sweep(DEVIATION_TYPE_ORDER, VARIANCE_LEVELS, TRIALS_PER_COMBO, grid, free_cells, tag_sites,
+                          max_workers=1)
     finally:
         match_module.AUTONOMOUS_PERIOD_S = original_budget
 

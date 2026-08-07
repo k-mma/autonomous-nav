@@ -798,6 +798,39 @@ alone.
   FullSuite at 2s), though the headline 30s budget itself still never
   binds in the actual headline sweep.
 
+## Running the sweeps in parallel
+
+Every full-rigor sweep (`ftc/suite_benchmark.py`, `ftc/layout_
+benchmark.py`, `ftc/fidelity_benchmark.py`, and `nav/uncertainty_
+benchmark.py`) runs its independent trial batches across worker
+processes via `run_sweep()`/`ProcessPoolExecutor` instead of a plain
+sequential loop, roughly 1.9x faster on the 8-core machine this was
+measured on (11.8s median down to 6.2s for the 4,125-row headline
+sweep; scaling is sublinear -- 2 workers already gets to 8.4s, 8
+workers only to 6.2s -- because each of the 33 (deviation_type,
+variance_level) combos is a different amount of work, and 33 combos
+split unevenly across many workers leaves some idle while the biggest
+combo finishes). Every seed a trial uses was already derived from that
+trial's own `(deviation_type, variance_level, trial_index)` coordinates
+before this change (`base_seed(deviation_type, level) + trial_index`,
+`ftc/suite_benchmark.py`), so no state is shared between combos and
+running them out of order or on different workers cannot change a
+single result: `ftc/scratch/suite_sweep_parallel_test.py` and `nav/
+scratch/uncertainty_sweep_parallel_test.py` prove this by running the
+same reduced sweep at 1, 2, and 3 workers and diffing every non-timing
+column of the output, and a full parallel run of the actual headline
+sweep reproduces `ftc_suite_results.csv` with zero mismatches across
+all 4,125 rows. `ftc/budget_benchmark.py` is a deliberate exception --
+it works by monkeypatching `ftc.match.AUTONOMOUS_PERIOD_S` before
+calling into the sweep, which only reaches a subprocess's own copy of
+that module under `fork` (Linux), not `spawn` (macOS/Windows's
+default), so it forces `max_workers=1` rather than depend on
+which platform happens to be running it. `ftc/opponent_benchmark.py`,
+`ftc/coverage_benchmark.py`, `ftc/newsuites_benchmark.py`, `ftc/
+gearing_benchmark.py`, and `ftc/drivetrain_benchmark.py` have their own
+separate sweep loops with different signatures and were not
+parallelized here.
+
 ## Repo layout
 
 Pygame-only and PyBullet-only code live in their own top-level

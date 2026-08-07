@@ -36,6 +36,7 @@ project's own belief-planning machinery).
 """
 import csv
 import random
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import matplotlib
@@ -137,6 +138,66 @@ def run_combo(deviation_type, variance_level, num_trials, base_seed, grid, free_
                 "steps": result.steps,
                 "cost_usd": suite.cost_usd,
             })
+    return rows
+
+
+def base_seed(deviation_type, level):
+    """The one seed formula every full-rigor sweep in this repo shares
+    -- ftc/suite_benchmark.py's own __main__, plus ftc/layout_benchmark.py,
+    ftc/budget_benchmark.py, and ftc/fidelity_benchmark.py, which all
+    inlined this exact expression before this function existed (grep
+    the old commit for `6_000_000 +` to see it duplicated four times).
+    Pulling it out doesn't change a single seed -- it's the same
+    literal formula, just named -- and it's what lets run_sweep below
+    reconstruct any caller's base_seed from just (deviation_type, level)
+    without that caller having to pass its own seed dict across a
+    process boundary."""
+    return 6_000_000 + DEVIATION_TYPE_ORDER.index(deviation_type) * 1_000_000 + round(level * 100)
+
+
+def run_sweep(deviation_types, levels, num_trials, grid, free_cells, tag_sites, fidelity=None,
+              max_workers=None):
+    """Runs run_combo for every (deviation_type, level) pair using
+    base_seed() above, and returns every row concatenated in the same
+    order a plain `for deviation_type: for level:` loop would produce --
+    so this is a drop-in replacement for that loop, not a new sweep.
+
+    Each (deviation_type, level) combo is one independent unit of work:
+    run_combo's own trial loop already derives every trial's seed from
+    base_seed + t, so no state is shared between combos, and nothing
+    about which combo runs on which worker (or in what order workers
+    finish) can change a single seed. That's what makes farming combos
+    out to separate processes safe -- see
+    ftc/scratch/parallel_determinism_test.py, which proves it by diffing
+    CSVs, not just asserting it in a docstring.
+
+    max_workers=1 skips ProcessPoolExecutor entirely and runs every
+    combo serially in this process -- no subprocess startup cost, and
+    it's the baseline parallel_determinism_test.py compares against.
+    max_workers=None hands off to ProcessPoolExecutor's own default."""
+    combos = [(dt, lvl) for dt in deviation_types for lvl in levels]
+
+    if max_workers == 1:
+        results = {
+            combo: run_combo(combo[0], combo[1], num_trials, base_seed(*combo), grid, free_cells, tag_sites,
+                              fidelity=fidelity)
+            for combo in combos
+        }
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                combo: executor.submit(run_combo, combo[0], combo[1], num_trials, base_seed(*combo), grid,
+                                        free_cells, tag_sites, fidelity)
+                for combo in combos
+            }
+            results = {combo: future.result() for combo, future in futures.items()}
+
+    # Reassembled in `combos`' fixed order (not completion order, which
+    # ProcessPoolExecutor makes no promises about) -- this is the line
+    # that makes the output order independent of worker count.
+    rows = []
+    for combo in combos:
+        rows.extend(results[combo])
     return rows
 
 
@@ -422,13 +483,9 @@ if __name__ == "__main__":
     free_cells = [(r, c) for r in range(grid.size) for c in range(grid.size) if grid.cells[r][c] == 0]
     tag_sites = tag_sites_for(LAYOUT)
 
-    all_rows = []
-    for deviation_type in DEVIATION_TYPE_ORDER:
-        for level in VARIANCE_LEVELS:
-            base_seed = 6_000_000 + DEVIATION_TYPE_ORDER.index(deviation_type) * 1_000_000 + round(level * 100)
-            print(f"deviation_type={deviation_type} variance_level={level} ...")
-            all_rows.extend(run_combo(deviation_type, level, TRIALS_PER_COMBO, base_seed, grid, free_cells,
-                                        tag_sites))
+    print(f"Running {len(DEVIATION_TYPE_ORDER)}x{len(VARIANCE_LEVELS)} combos "
+          f"({TRIALS_PER_COMBO} trials each) in parallel...")
+    all_rows = run_sweep(DEVIATION_TYPE_ORDER, VARIANCE_LEVELS, TRIALS_PER_COMBO, grid, free_cells, tag_sites)
 
     write_csv(all_rows, OUTPUT_DIR / "ftc_suite_results.csv")
     stats = aggregate(all_rows)

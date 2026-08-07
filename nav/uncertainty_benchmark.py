@@ -22,6 +22,7 @@ benchmark_results/uncertainty_writeup.md (the crossover finding).
 import csv
 import math
 import random
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,6 +157,48 @@ def run_variance_level(variance_level, num_trials, base_seed, density=DENSITY, s
                 "replans": policy.replans,
                 "collisions": outcome.collisions,
             })
+    return rows
+
+
+def base_seed(level):
+    """The headline sweep's own seed formula (ftc/suite_benchmark.py's
+    base_seed() is the same idea, one sweep axis instead of two) --
+    pulled out unchanged from the __main__ loop below so run_sweep can
+    reconstruct it per level without threading a seed dict across a
+    process boundary. Not used by run_sensitivity, which has its own
+    per-sweep-index formula and stays out of scope for this change."""
+    return 1_000_000 + round(level * 100)
+
+
+def run_sweep(levels, num_trials, density=DENSITY, sensor_radius=LIDAR_RADIUS, max_workers=None):
+    """Runs run_variance_level for every level in `levels` and returns
+    every row concatenated in `levels`' order -- a drop-in replacement
+    for the `for level in VARIANCE_LEVELS: ...` loop __main__ used to
+    run directly. Each level is an independent unit of work (same
+    reasoning as ftc/suite_benchmark.py's run_sweep: run_variance_level's
+    own trial loop derives every trial's seed from base_seed + t, so
+    nothing about which level runs on which worker, or in what order
+    workers finish, can change a single seed).
+
+    max_workers=1 skips ProcessPoolExecutor and runs every level
+    serially in this process -- see
+    nav/scratch/parallel_determinism_test.py, which diffs CSVs to prove
+    this and the parallel path produce identical rows."""
+    if max_workers == 1:
+        results = {level: run_variance_level(level, num_trials, base_seed(level), density, sensor_radius)
+                   for level in levels}
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                level: executor.submit(run_variance_level, level, num_trials, base_seed(level), density,
+                                        sensor_radius)
+                for level in levels
+            }
+            results = {level: future.result() for level, future in futures.items()}
+
+    rows = []
+    for level in levels:
+        rows.extend(results[level])
     return rows
 
 
@@ -426,11 +469,8 @@ def run_sensitivity():
 if __name__ == "__main__":
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    all_rows = []
-    for level in VARIANCE_LEVELS:
-        base_seed = 1_000_000 + round(level * 100)
-        print(f"variance_level={level} ...")
-        all_rows.extend(run_variance_level(level, TRIALS_PER_COMBO, base_seed))
+    print(f"Running {len(VARIANCE_LEVELS)} variance_level points ({TRIALS_PER_COMBO} trials each) in parallel...")
+    all_rows = run_sweep(VARIANCE_LEVELS, TRIALS_PER_COMBO)
 
     write_csv(all_rows, OUTPUT_DIR / "uncertainty_results.csv")
     stats = aggregate(all_rows)

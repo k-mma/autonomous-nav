@@ -37,7 +37,7 @@ from ftc.field import build_grid, tag_sites_for
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
 from ftc.suite_benchmark import (
     DEVIATION_TYPE_LABELS, DEVIATION_TYPE_ORDER, LAYOUT, SUITE_COLORS, SUMMARY_MIN_LEVEL,
-    TRIALS_PER_COMBO, VARIANCE_LEVELS, aggregate, overall_success_rate, run_combo,
+    TRIALS_PER_COMBO, VARIANCE_LEVELS, aggregate, overall_success_rate, run_sweep,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
@@ -56,12 +56,8 @@ def run_tier(fidelity):
     free_cells = [(r, c) for r in range(grid.size) for c in range(grid.size) if grid.cells[r][c] == 0]
     tag_sites = tag_sites_for(LAYOUT)
 
-    rows = []
-    for deviation_type in DEVIATION_TYPE_ORDER:
-        for level in VARIANCE_LEVELS:
-            base_seed = 6_000_000 + DEVIATION_TYPE_ORDER.index(deviation_type) * 1_000_000 + round(level * 100)
-            rows.extend(run_combo(deviation_type, level, TRIALS_PER_COMBO, base_seed, grid, free_cells,
-                                    tag_sites, fidelity=fidelity))
+    rows = run_sweep(DEVIATION_TYPE_ORDER, VARIANCE_LEVELS, TRIALS_PER_COMBO, grid, free_cells, tag_sites,
+                      fidelity=fidelity)
     for row in rows:
         row["fidelity"] = fidelity
     return rows

@@ -2150,3 +2150,139 @@ one-element list, drawn identically to before), it's shared by both
 visualizers and fixes the FullSuite gap in the original one too, for
 free. Cosmetic only -- nothing in `ftc/match.py` or any published
 number depends on what gets drawn.
+
+## Parallelizing the sweeps
+
+Every full-rigor sweep in `ftc/` and `nav/uncertainty_benchmark.py`
+loops over the same shape: a grid of independent points (deviation
+type x variance level, or just variance level), each running
+`TRIALS_PER_COMBO` trials for every suite/policy, all written into one
+CSV at the end. Nothing about one combo depends on another finishing
+first -- the obvious next question is whether that means they can run
+at the same time.
+
+### The thing that had to be checked before touching anything
+
+Running trials in a different order, or on different workers, is only
+safe if nothing in the sweep depends on order. The risk is a single
+shared `random.Random()` instance consumed once per trial in a fixed
+loop -- trial 40 would then depend on trials 1 through 39 having
+already drawn from it in exactly that sequence, and parallelizing would
+silently change every trial after the first.
+
+That's not what this repo does, and it was worth actually reading the
+code to confirm rather than assuming it either way.
+`ftc/suite_benchmark.py`'s `run_combo` computes `trial_seed = base_seed
++ t` and hands each trial its own fresh `random.Random(trial_seed)` --
+`base_seed` itself comes from `6_000_000 +
+DEVIATION_TYPE_ORDER.index(deviation_type) * 1_000_000 + round(level *
+100)`, a pure function of the combo's own coordinates, not a running
+counter. Every trial's random state is fully determined by
+`(deviation_type, variance_level, trial_index)` alone. `nav/
+uncertainty_benchmark.py`'s `run_variance_level` does the same thing
+one axis simpler (`1_000_000 + round(level * 100)`). Both were already
+safe to parallelize before any of this work started -- which meant this
+task really was mostly "write the runner, and write the test that
+proves it," exactly as it looked going in.
+
+### The runner
+
+`ftc/suite_benchmark.py` gets `run_sweep(deviation_types, levels,
+num_trials, grid, free_cells, tag_sites, fidelity=None,
+max_workers=None)`: it builds the full list of `(deviation_type,
+level)` combos, submits each as its own `run_combo(...)` call to a
+`ProcessPoolExecutor`, and reassembles the results back into the fixed
+`combos` order before returning -- not completion order, which
+`ProcessPoolExecutor` makes no promise about, and which running the
+same sweep twice could easily return in a different sequence purely
+from OS scheduling noise. Reassembling into a fixed order is what makes
+the output order independent of how many workers ran it or how fast
+each one happened to finish. `max_workers=1` skips the process pool
+entirely and runs every combo serially in-process -- this is the
+baseline the determinism tests compare against, and it exists so
+proving "parallel gives the same answer as serial" doesn't also have to
+account for subprocess startup noise on the serial side.
+
+`nav/uncertainty_benchmark.py` gets the same shape, one axis simpler
+(`run_sweep(levels, num_trials, ...)` over `run_variance_level`
+instead of over `run_combo`).
+
+Three of `ftc/suite_benchmark.py`'s siblings --
+`ftc/layout_benchmark.py`, `ftc/fidelity_benchmark.py`, and (with one
+exception, below) `ftc/budget_benchmark.py` -- already imported
+`run_combo` directly from `ftc/suite_benchmark.py` and looped over it
+themselves with the identical seed formula copy-pasted in each file.
+Pulling that formula out into a named `base_seed()` function and
+routing all three through the shared `run_sweep()` instead of their own
+copy of the loop wasn't scope creep -- it was three duplicate copies of
+the same nine-line loop collapsing into zero once the shared version
+existed, which is a smaller diff than adding a fourth copy for
+`run_sweep` to sit next to would have been.
+
+### The one sweep that couldn't just switch over
+
+`ftc/budget_benchmark.py` runs its sweep once per candidate
+`AUTONOMOUS_PERIOD_S` value by monkeypatching
+`ftc.match.AUTONOMOUS_PERIOD_S` -- a plain module-level global --
+before calling into the sweep, then restoring it in a `finally` block.
+That works when everything runs in one process, because `run_match`
+looks the global up fresh on every call from the same patched module.
+It does not obviously work once combos start running in separate
+processes: a `ProcessPoolExecutor` worker under Python's `spawn` start
+method (the default on macOS and Windows) gets its own fresh import of
+`ftc.match`, with the *original*, unpatched value of
+`AUTONOMOUS_PERIOD_S` -- the parent process's monkeypatch never crosses
+the process boundary. `fork` (Linux's default, and so CI's) would
+happen to copy the patched value into each worker, because forking
+duplicates the whole process's memory including the patch already
+applied. That divergence -- correct by accident under `fork`, silently
+wrong under `spawn` -- is exactly the kind of platform-dependent bug
+that passes on a Linux CI runner and breaks the moment someone runs it
+locally on a Mac, which made it worth catching in review rather than
+finding out about it that way. `ftc/budget_benchmark.py` calls
+`run_sweep(..., max_workers=1)`, forcing every combo to run in-process
+where the monkeypatch is guaranteed to apply, on every platform,
+without relying on which start method happens to be in effect.
+Parallelizing this particular sweep properly would mean threading
+`budget_s` through `run_combo`/`run_match` as an explicit argument
+instead of a patched global -- a real refactor, not done here, to keep
+this change to its intended scope.
+
+### Proving it, not just arguing it
+
+`ftc/scratch/suite_sweep_parallel_test.py` and `nav/scratch/
+uncertainty_sweep_parallel_test.py` each run a small sweep (a few
+combos, few trials -- fast enough for every `pytest` run) three ways:
+serial (`max_workers=1`), the default parallel worker count, and two
+different explicit worker counts against each other. All comparisons
+are row-for-row over every column except the wall-clock timing one
+(`planning_time_ms`/`planning_time_s`) -- excluded for the same reason
+`ftc/scratch/fidelity_test.py`'s `COMPARE_COLUMNS` already excludes it:
+it measures how long the trial actually took to execute on this
+machine, this run, and was never reproducible run-to-run even before
+any of this, parallel or not. Beyond the reduced test sweeps, the real
+check that mattered most was rerunning the *actual* 4,125-row headline
+sweep (all 3 deviation types, all 11 variance levels, all 25 trials, in
+parallel) and diffing it against the checked-in
+`benchmark_results/ftc_suite_results.csv` -- zero mismatches across
+every row, which is the thing every number in this README's "FTC
+sensor-suite study" section actually depends on staying true.
+
+### What it bought, honestly
+
+On the 8-core machine this was measured on, the headline sweep dropped
+from an 11.8s median (3 repeats, serial) to 6.2s (3 repeats, default
+worker count) -- about 1.9x, not 8x. Scaling isn't linear with worker
+count: 2 workers already reaches 8.4s, 4 workers 7.2s, 8 workers only
+6.2s. The reason is combo size, not process overhead -- the 33
+`(deviation_type, variance_level)` combos are not equal-sized work
+units (higher variance levels trigger more replanning, more
+collisions, more retried scenarios before a solvable one is found), so
+splitting 33 uneven jobs across 8 workers leaves some workers idle
+waiting on whichever worker drew the biggest combo. A finer-grained
+split (per-trial rather than per-combo) would likely scale better, at
+the cost of more process-pool overhead per unit of work and a bigger
+change to `run_combo`'s own structure -- not done here, both because
+1.9x already meaningfully speeds up local iteration on every sweep in
+this repo and because the smaller, easier-to-verify change was the
+right tradeoff for what this addition needed to prove.

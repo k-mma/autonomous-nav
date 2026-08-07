@@ -50,7 +50,7 @@ from ftc.field import LAYOUTS, build_grid, tag_sites_for
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
 from ftc.suite_benchmark import (
     DEVIATION_TYPE_ORDER, SUITE_COLORS, SUMMARY_MIN_LEVEL, TRIALS_PER_COMBO, VARIANCE_LEVELS,
-    aggregate, overall_success_rate, run_combo,
+    aggregate, overall_success_rate, run_sweep,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
@@ -70,18 +70,14 @@ LAYOUT_LABELS = {
 
 def run_layout(layout_name):
     """Full-rigor sweep on one layout, using ftc/suite_benchmark.py's own
-    seed formula unmodified -- so a "cluttered" pass through this
-    function reproduces ftc_suite_results.csv's rows trial-for-trial
-    (see module docstring)."""
+    seed formula unmodified (run_sweep's base_seed()) -- so a "cluttered"
+    pass through this function reproduces ftc_suite_results.csv's rows
+    trial-for-trial (see module docstring)."""
     grid = build_grid(layout_name)
     free_cells = [(r, c) for r in range(grid.size) for c in range(grid.size) if grid.cells[r][c] == 0]
     tag_sites = tag_sites_for(layout_name)
 
-    rows = []
-    for deviation_type in DEVIATION_TYPE_ORDER:
-        for level in VARIANCE_LEVELS:
-            base_seed = 6_000_000 + DEVIATION_TYPE_ORDER.index(deviation_type) * 1_000_000 + round(level * 100)
-            rows.extend(run_combo(deviation_type, level, TRIALS_PER_COMBO, base_seed, grid, free_cells, tag_sites))
+    rows = run_sweep(DEVIATION_TYPE_ORDER, VARIANCE_LEVELS, TRIALS_PER_COMBO, grid, free_cells, tag_sites)
     for row in rows:
         row["layout"] = layout_name
     return rows
