@@ -272,6 +272,80 @@ APRILTAG_RANGE_DEGRADATION = 0.5
 # degrades corner localization faster than distance alone does.
 APRILTAG_ANGLE_DEGRADATION = 0.6
 
+# === Sensor fusion: AprilTag vs. odometry pose disagreement (ftc/fusion.py) ===
+# Opt-in only (run_match's fusion=None default never reads these -- see
+# ftc/match.py). ftc/bundle.py merges a bundle's sensors optimistically:
+# a tag detection is applied at face value, with no way for it to
+# actively disagree with what odometry already believes. These
+# constants feed nav/estimation.py's confidence-weighted fuse() for
+# exactly that one pairing, closing README.md's "No sensor-fusion
+# conflict" limitation. Every value below is an engineering estimate
+# with no real measurement behind it -- same status as every other
+# constant in this file -- until real AprilTag-vs-odometry disagreement
+# data exists to run through ftc/calibration.py.
+#
+# Odometry's confidence in its own continuously-tracked position, as a
+# weight to combine against AprilTag's (below) -- deliberately LOW
+# relative to a clean detection's, since odometry's whole value
+# proposition is a low DRIFT RATE (ODOMETRY_DRIFT_PER_CELL above), not
+# an absolute check on itself; it has no way to know it's wrong between
+# corrections.
+ODOMETRY_FUSION_CONFIDENCE = 0.1
+# AprilTag's confidence in an ideal (frac == 1.0) detection. Actual
+# per-detection confidence is this times `frac` -- AprilTagSuite.
+# tag_correction's own range/angle-degraded correction fraction,
+# reused directly as the fusion confidence signal rather than inventing
+# a second geometry-quality metric that would have to agree with the
+# first one. At a clean, close, dead-on detection (frac near
+# APRILTAG_CORRECTION_FACTOR_MAX), the tag ends up weighted roughly
+# 9:1 over odometry's prior -- close to how strongly the old flat
+# `error * (1 - frac)` model trusted it, before any bias/bad-detection
+# noise is added on top.
+APRILTAG_FUSION_CONFIDENCE = 1.0
+# A small, CONSTANT offset added to every ordinary (non-bad) detection
+# -- an uncorrected camera/mount calibration error, which nudges every
+# reading the same direction rather than adding noise around the right
+# answer. The plain frac-based model (error * (1 - frac), frac in
+# [0, 1]) has no way to express this at all: it can only shrink error
+# toward exactly zero, never introduce a small constant miss. Chosen to
+# be clearly smaller than FUSION_DISAGREEMENT_THRESHOLD_CELLS below, so
+# a biased-but-otherwise-normal detection gets damped by confidence
+# weighting rather than flagged as an outright bad reading.
+APRILTAG_SYSTEMATIC_BIAS_CELLS = 0.3
+# Per-detection probability this tick's reading is an outright BAD one
+# -- a misidentified, occluded, or reflection-corrupted tag -- rather
+# than an ordinary detection with the small bias above. 1 in 20
+# detections; no FTC-specific failure-rate data exists for this, it is
+# an order-of-magnitude guess at "rare, but not negligible."
+APRILTAG_BAD_DETECTION_PROBABILITY = 0.05
+# A bad detection's implied position is drawn from a WIDE spread around
+# the current estimate, deliberately unrelated to the true correction
+# (a misread tag doesn't fail by being a slightly-worse normal reading
+# -- it reports a position with no relationship to where the robot
+# actually is). Chosen well above FUSION_DISAGREEMENT_THRESHOLD_CELLS
+# so a bad detection is usually (not always -- it's drawn from a
+# distribution, not clamped) far enough from the current estimate to
+# trigger the distrust cut.
+APRILTAG_BAD_DETECTION_SIGMA_CELLS = 4.0
+# How far apart (in grid cells) two position estimates have to be
+# before fuse() treats the newer one as suspicious rather than just a
+# normal correction -- see nav/estimation.py's fuse() docstring for why
+# this is a fixed distance, not scaled by the prior's own uncertainty
+# (a documented simplification, not an oversight). Set above the
+# typical few-cells scale of a real correction at this project's grid
+# size (README.md: "several cells... by the end of a long path") and
+# below APRILTAG_BAD_DETECTION_SIGMA_CELLS, so it separates the two
+# cases most of the time without claiming to separate them perfectly --
+# see benchmark_results/ftc_fusion_writeup.md for how often each case
+# actually crosses it.
+FUSION_DISAGREEMENT_THRESHOLD_CELLS = 2.5
+# How much a disagreeing observation's confidence is cut before
+# blending -- 0.2 means a flagged reading still contributes a fifth of
+# its nominal weight, not zero: a detection that disagrees once could
+# still be right, and zeroing it out would throw away real information
+# alongside a genuinely bad reading.
+FUSION_DISTRUST_FACTOR = 0.2
+
 # Opponent-robot repositioning cadence for the "moving_blocker" deviation
 # type (ftc/opponent_benchmark.py's nav/obstacles.py MovingObstacle
 # integration) -- how often, in simulated match milliseconds, an

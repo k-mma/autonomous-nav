@@ -2286,3 +2286,144 @@ change to `run_combo`'s own structure -- not done here, both because
 1.9x already meaningfully speeds up local iteration on every sweep in
 this repo and because the smaller, easier-to-verify change was the
 right tradeoff for what this addition needed to prove.
+
+## Sensor fusion: does AprilTag+odometry's advantage survive disagreement?
+
+`ftc/bundle.py`'s own module docstring already says the honest thing
+about how it combines suites: capabilities merge "the physically
+honest way," but a tag detection is applied at face value, with no
+concept of it conflicting with what odometry already believes. README.md's
+"Threats to validity" named the consequence -- the optimizer's bundle
+results are an upper bound, size unknown -- without measuring it. This
+is the addition that measures it, for exactly one pairing (AprilTag vs.
+odometry pods) rather than building a general multi-sensor filter.
+
+### Why a plain weighted average, not a Kalman filter or a particle filter
+
+The obvious "correct" answer here is a Kalman filter: it's the standard
+tool for fusing two Gaussian estimates of the same quantity, and this
+project already tracks pose error as a 2D vector, which is exactly the
+state a Kalman filter wants. It was deliberately not used, for a reason
+that's really about honesty rather than difficulty: this project has no
+actual covariance model. `error`'s uncertainty is never tracked as a
+number anywhere in `ftc/match.py` -- there's a *value* (the accumulated
+drift vector) but no *variance* attached to it. A real Kalman filter's
+gain comes from comparing the prior's variance to the observation's
+variance; faking a variance number just to plug it into a Kalman
+update would be inventing precision this project doesn't have and
+dressing it up in the right equations. A plain confidence-weighted
+average makes the same honesty visible instead of hiding it: the
+weights (`ODOMETRY_FUSION_CONFIDENCE`, `APRILTAG_FUSION_CONFIDENCE`)
+are named as what they are -- engineering estimates -- not disguised as
+a covariance this project never computed.
+
+A particle filter was the second option seriously considered, mostly
+because it's the more "correct" answer for representing a genuinely
+multi-modal belief (two sources that disagree could both be
+independently right, at two different unresolved candidate positions,
+until later evidence sorts it out). It was rejected for scope reasons
+that turned out to matter more the more the tradeoff was considered:
+`nav/` has zero numpy anywhere in it (`nav/stats.py`'s own docstring
+says so explicitly, hand-rolling bootstrap CIs in stdlib instead), and
+a particle filter without vectorized array operations means hundreds of
+Python-object particles, resampled every tick, in a simulation that
+already runs the full headline sweep in a few seconds. That's a real
+performance regression for a feature whose entire point was supposed
+to be answering ONE question well, not becoming the next thing the
+project has to keep fast. The deeper reason, though, is that a
+multi-modal belief is the right tool for "the robot might genuinely be
+in one of two places," and that's not actually the question being
+asked here -- the question is "does a reading disagree with what's
+already believed enough to be distrusted," which a single point
+estimate with a confidence attached answers perfectly well.
+
+### How the confidence values were actually chosen
+
+Not tuned to produce a particular result -- chosen first, from numbers
+already in the codebase, before ever running the benchmark. AprilTag's
+per-detection confidence reuses `frac` -- `AprilTagSuite.tag_correction`
+already computes a range/angle-degraded correction fraction for every
+detection, and building a SECOND geometry-quality signal that would
+have to agree with the first one seemed like exactly the kind of
+duplicated, driftable logic this project's own conventions (`ftc/
+robustness.py`'s warnings about class-attribute traps, `ftc/bundle.py`'s
+`part_cost_mismatches` check) exist to avoid. `APRILTAG_FUSION_
+CONFIDENCE = 1.0` was picked so that a clean, ideal detection
+(`frac` near `APRILTAG_CORRECTION_FACTOR_MAX = 0.90`) ends up weighted
+roughly 9:1 against `ODOMETRY_FUSION_CONFIDENCE = 0.1` -- close to how
+strongly the OLD, un-fused model trusted a clean detection (`error *
+(1 - 0.9)` already discards 90% of the prior). The goal was for fusion
+to behave like the old model in the easy case and only diverge from it
+where the old model had no way to represent something at all (a
+biased-but-working detection, an outright wrong one) -- not to build a
+system that disagrees with the established baseline everywhere just to
+look more sophisticated.
+
+### The bug the disagreement threshold caught before it shipped
+
+The first design for the disagreement check compared the incoming
+observation directly against the raw prior (`error`, the full
+accumulated drift). That's wrong, and it's wrong in a way that would
+have been very easy to ship without noticing: a large, perfectly
+LEGITIMATE correction naturally looks like a big disagreement under
+that comparison, purely because a good detection is SUPPOSED to differ
+a lot from a badly-drifted prior -- that's what correcting pose means.
+Comparing against the raw prior would have flagged confident, correct
+detections as suspicious purely because a lot of drift had accumulated
+first, which has nothing to do with whether the detection itself was
+trustworthy.
+
+The fix was reframing what gets compared: `ftc/fusion.py` computes
+`plain_corrected = error * (1 - frac)` -- the geometry model's own
+prediction of what a well-functioning detection of this quality should
+report -- and constructs the actual observation as a deviation FROM
+that prediction (a small constant bias, or a wide-sigma random jump for
+a bad reading), not as an independent value compared against the raw
+prior. This is a simplified version of what Kalman-style filters call
+innovation gating: gate on the residual from the PREDICTED observation,
+not on raw distance from the state. Before finalizing the constants, a
+5,000-sample sanity script (typical error magnitudes 0-4 cells, typical
+`frac` 0.1-0.9) confirmed the fix actually worked: about 6.5% of
+ordinary detections still cross `FUSION_DISAGREEMENT_THRESHOLD_CELLS`
+purely from correction magnitude, against about 87% of genuinely bad
+ones. Real separation, not perfect separation -- reported as exactly
+that in `benchmark_results/ftc_fusion_writeup.md`, not rounded up to
+"solved."
+
+### What the study found, and checking it wasn't a bug before believing it
+
+The result was more dramatic than expected: pooled across `ftc/
+optimizer.py`'s 5 scenario profiles, the AprilTag+odometry bundle
+succeeds in 63% of trials under the existing optimistic merge and 26%
+under confidence-weighted fusion -- a statistically significant drop
+(paired 95% CI [-43.5%, -29.5%]) that doesn't just shrink the bundle's
+advantage over buying AprilTag alone, it inverts it: the fused bundle
+(26%) ends up BELOW AprilTag alone (46%).
+
+A result that large is exactly the kind that deserves a second look for
+a bug before being written up as a finding, so before trusting it: is
+`is_bad` (the per-detection bad-reading roll) only drawn when a
+detection actually happens, or could it be drawn every tick regardless?
+Checked directly -- `fused_tag_correction` is only ever called from
+inside `ftc/match.py`'s `if frac is not None:` branch, which only
+executes once `suite.tag_correction` has already passed its own range/
+FOV/line-of-sight/dropout gates. So the mechanism behind the size of
+the drop is real, not a bug: this project's own `ftc/budget_
+benchmark.py` docstring already establishes that AprilTag replans (and
+therefore corrects pose) unusually often in this simulation's matches,
+which means the PER-MATCH chance of at least one bad detection compounds
+well above the 5% per-detection rate (roughly 40% over 10 detections),
+and this project's match model has no recovery from a single badly
+wrong correction by default (`on_collision="halt"` -- a corrupted
+`error` can point the robot's next commanded step straight at an
+obstacle it never sees coming, ending the match on the spot).
+
+The honest framing, and the one actually written into `ftc/config.py`'s
+comments and the benchmark's own writeup: this is what these SPECIFIC,
+never-measured constants produce, not a calibrated claim about real
+AprilTag hardware. The constants were fixed before the benchmark ran,
+the result wasn't adjusted afterward to look more moderate, and the
+magnitude is reported exactly as computed -- consistent with this
+project's own rule that a finding that doesn't flatter its own
+machinery (DistanceSensorSuite's blind spot, mecanum's unpaid premium)
+gets reported with the same confidence as one that does.

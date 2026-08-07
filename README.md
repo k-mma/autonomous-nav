@@ -660,15 +660,43 @@ alone.
   a real field. The perturbation model (start drift, obstacle drift,
   an unplanned blocker) is a hypothesis about what kinds of deviation
   matter, not a validated model of what FTC fields actually do.
-- No sensor-fusion conflict. `ftc/bundle.py` merges a bundle's
-  capabilities optimistically: obstacle sensors union their detections,
-  the best localization hardware sets the drift rate, and multiple
-  cameras feed one detection pipeline. Two sensors *disagreeing* about
-  where the robot is -- and the filter/fusion work of resolving that --
-  is not modeled at all, so the optimizer's bundle results are an upper
-  bound on what combining buys. Real fusion also costs integration
-  effort this project's dollar model can't price; the `parts` count is
-  the only proxy for it.
+- No sensor-fusion conflict -- BOUNDED for one pairing (AprilTag vs.
+  odometry pods), still open for every other. `ftc/bundle.py` merges a
+  bundle's capabilities optimistically: obstacle sensors union their
+  detections, the best localization hardware sets the drift rate, and
+  multiple cameras feed one detection pipeline. Two sensors
+  *disagreeing* about where the robot is -- and the filter/fusion work
+  of resolving that -- was not modeled at all, so the optimizer's
+  bundle results were an upper bound on what combining buys, size
+  unknown. `nav/estimation.py` (domain-neutral confidence-weighted
+  fusion of two position estimates) and `ftc/fusion.py` (the wiring
+  that applies it to a tag detection disagreeing with odometry's own
+  tracked position, opt-in via `run_match`'s `fusion=None` default --
+  see `ftc/scratch/fusion_test.py` for the byte-for-byte no-op
+  guarantee) measure that size for the one bundle this project's own
+  research question centers on. `benchmark_results/
+  ftc_fusion_writeup.md`'s finding: at this project's estimated fusion
+  constants, the AprilTag+odometry bundle's advantage over its best
+  single component doesn't just shrink, it inverts -- 63% success under
+  optimistic merging vs. 26% under confidence-weighted fusion (paired
+  95% CI [-43.5%, -29.5%], a statistically significant drop), which
+  puts the fused bundle *below* AprilTag alone (46%). The mechanism:
+  AprilTag corrects pose often enough in this project's matches that a
+  5%-per-detection chance of an outright bad reading (a misidentified
+  or occluded tag, `APRILTAG_BAD_DETECTION_PROBABILITY`) compounds to a
+  real chance of at least one happening per match, and this project's
+  match model has no recovery from a single badly wrong correction by
+  default (`on_collision="halt"`). Every fusion constant is an
+  engineering estimate with no real AprilTag-vs-odometry disagreement
+  measurement behind it -- the same uncalibrated status as every other
+  constant in this file -- so this bounds how loose the optimistic-
+  merge upper bound *could* be at a plausible bad-detection rate, it
+  does not calibrate how loose it *actually* is, and it says nothing
+  about any other bundle pairing (a bundle with obstacle-sensing
+  suites, or two pose-fixing suites other than this one, is untouched
+  by any of this). Real fusion also costs integration effort this
+  project's dollar model can't price; the `parts` count is the only
+  proxy for it.
 - Uncalibrated variance -- BOUNDED, not closed, until real
   measurements are supplied. `variance_level` and `ftc/sensors.py`'s
   drift-rate constants are order-of-magnitude engineering estimates
@@ -864,6 +892,8 @@ nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ i
   uncertainty_benchmark.py  Open-loop vs reactive vs belief under swept map/reality deviation -> CSV + plot + statistical crossover
   stats.py            Pure-stdlib bootstrap confidence intervals, plus a PAIRED difference bootstrap
                        (shared-scenario comparisons: resamples trial indices, not each list separately)
+  estimation.py       Confidence-weighted fusion of two 2D position estimates that might disagree --
+                       domain-neutral (no FTC identifiers); ftc/fusion.py is the one consumer today
   scratch/         Standalone throwaway scripts used to prove each piece
                     works before it was wired into the visualizer/pybullet_main
                     (framework-agnostic tests only -- pygame/PyBullet-specific
@@ -897,6 +927,11 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
                      that suite, and distance+AprilTag+odometry IS FullSuite (ftc/scratch/bundle_test.py)
   optimizer.py       Searches the bundle space: scenario profiles, PAIRED significance testing of bundle vs.
                      best single sensor, Pareto frontier, best-under-budget, exhaustive + greedy search
+  fusion.py          Wires nav/estimation.py's fuse() into a tag-detection event for the AprilTag+odometry
+                     pairing -- a small systematic bias and an outright bad detection, opt-in via
+                     run_match's fusion=None default (byte-for-byte no-op otherwise)
+  fusion_benchmark.py Does the AprilTag+odometry bundle's advantage over its best single component survive
+                     confidence-weighted fusion, or was optimistic merging doing the work? -> CSV + plot + writeup
   optimizer_benchmark.py The bundle study -- every buildable combination x 5 scenario profiles -> CSV + 2 plots + writeup
   trace.py           record_match() -- runs run_match() once and additionally captures a full tick-by-tick
                      replay trace via its on_tick hook (purely additive, doesn't change the simulation) --

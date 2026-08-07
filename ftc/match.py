@@ -87,6 +87,7 @@ from ftc.config import (
     MAX_DRIVE_SPEED_MPS, MAX_STALL_RETRIES, PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
 )
 from ftc.field import in_to_cell
+from ftc.fusion import fused_tag_correction
 from ftc.sensors import angular_diff, heading_deg
 
 MAX_TICKS = 500
@@ -145,7 +146,7 @@ class MatchResult:
 
 
 def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_sites, rng,
-              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None, on_tick=None,
+              moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None, fusion=None, on_tick=None,
               on_collision="halt"):
     """Drive `suite` from `actual_start` (ground truth) to `goal`,
     planning against `assumed_grid`'s layout (the suite's only source of
@@ -173,6 +174,17 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     time for more wheel slip, not a free win. "stock" is exactly
     MAX_DRIVE_SPEED_MPS/MAX_ACCEL_MPS2/no slip penalty, so the default
     is a byte-for-byte no-op.
+
+    `fusion` (defaulting to None -- every existing caller unaffected)
+    switches a tag-detection event from the plain `error = error *
+    (1 - frac)` shrink to ftc/fusion.py's confidence-weighted fusion
+    against odometry's own tracked position, which can introduce a
+    small systematic bias or an outright bad reading that a plain frac
+    (bounded to [0, 1], only ever shrinking error toward zero) cannot
+    express. None takes a different code path entirely rather than
+    merely computing the same result a different way, so it consumes
+    no extra `rng` draws and is a structural, not numerical, no-op --
+    see ftc/scratch/fusion_test.py.
 
     `on_tick` (optional, None by default) is a read-only side channel
     for animation/visualization (see ftc/trace.py, pygame_app/ftc_viz/)
@@ -326,7 +338,10 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         if suite.fixes_pose:
             frac = suite.tag_correction(ground_truth, true_position, heading, tag_sites, rng, fidelity=fidelity)
             if frac is not None:
-                error = (error[0] * (1 - frac), error[1] * (1 - frac))
+                if fusion:
+                    error = fused_tag_correction(error, frac, rng)
+                else:
+                    error = (error[0] * (1 - frac), error[1] * (1 - frac))
                 tag_corrected = True
                 heading_factor = tier["apriltag_heading_correction_factor"]
                 if heading_factor > 0:
