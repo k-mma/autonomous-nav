@@ -346,6 +346,40 @@ FUSION_DISAGREEMENT_THRESHOLD_CELLS = 2.5
 # alongside a genuinely bad reading.
 FUSION_DISTRUST_FACTOR = 0.2
 
+# === Sensor fusion, Kalman path (opt-in via run_match(fusion="kalman"),
+# ftc/fusion.py's fused_tag_correction_kalman / nav/kalman.py) =========
+# A real Kalman filter needs a real variance, not an invented one --
+# see nav/kalman.py's module docstring and ftc/calibration.py, which is
+# where APRILTAG_RANGE_DEGRADATION/APRILTAG_ANGLE_DEGRADATION above (an
+# ASSUMED correction-quality shape) gets replaced by a variance model
+# actually fit to detection scatter. The two constants below are the
+# only genuinely new engineering estimates this path adds -- everything
+# else it needs (process variance, AprilTag observation variance) comes
+# from ftc/calibration.py's fitted output (falling back to its labeled
+# synthetic placeholder), not a fresh guess here.
+#
+# Starting uncertainty about the robot's own position, before any
+# motion or detection has happened -- one grid cell of variance is a
+# plausible "we trust the pre-match placement to within about a cell"
+# starting point, not a measured quantity (there's nothing to measure
+# it against at t=0).
+KALMAN_INITIAL_POSITION_VARIANCE_CELLS2 = 1.0
+# How many standard deviations of combined uncertainty an AprilTag
+# reading may disagree with the current estimate before nav/kalman.py's
+# gated_update treats it as suspicious -- 3-sigma is the standard
+# outlier-gating convention in filtering generally (see nav/kalman.py's
+# gated_update docstring), not a number fit to this project's own data,
+# unlike FUSION_DISAGREEMENT_THRESHOLD_CELLS above (a flat distance,
+# the simplification this gate replaces for the Kalman path only).
+KALMAN_GATE_SIGMA = 3.0
+# Surprised readings on the Kalman path reuse FUSION_DISTRUST_FACTOR
+# above (dividing observation variance by it, which inflates R and
+# therefore lowers the Kalman gain) rather than introducing a second,
+# disconnected "how much do we discount a disagreeing reading" knob --
+# both paths are answering the same question, just applied to the
+# correct half of each path's own math (a confidence multiplier on the
+# fixed-threshold path, a variance divisor on the gated one).
+
 # Opponent-robot repositioning cadence for the "moving_blocker" deviation
 # type (ftc/opponent_benchmark.py's nav/obstacles.py MovingObstacle
 # integration) -- how often, in simulated match milliseconds, an

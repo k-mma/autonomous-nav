@@ -344,6 +344,63 @@ class AprilTagSuite(SensorSuite):
         return None
 
 
+def diagnose_tag_detections(true_grid, true_position, heading_deg_now, tag_sites, camera_mount_headings_deg,
+                              fidelity=None):
+    """A per-tag-site, per-gate breakdown of AprilTagSuite.tag_correction's
+    own geometry -- purely diagnostic, built for ftc/trace.py's on_tick
+    snapshot (see ftc/match.py's _emit) so a real detection timeline can
+    be OBSERVED, not just inferred from whether a correction happened to
+    fire. Deliberately takes NO `rng` and evaluates EVERY tag_sites
+    entry (tag_correction itself stops at the first tag that clears
+    every gate, and additionally rolls dropout with `rng`) -- both
+    choices are what make this safe to call from `on_tick` at all:
+    zero rng draws means it cannot perturb the real simulation's own rng
+    stream (the same "purely a dead end" safety argument run_match's own
+    docstring already makes for on_tick generally), and evaluating every
+    tag rather than stopping at the first hit is what makes "which tags
+    were even in play" answerable, not just "which one won."
+
+    Returns one dict per tag_sites entry, in the same order, each with:
+      tag_index, range_cells, incidence_deg (the same two quantities
+        tag_correction's own correction-quality formula uses),
+      in_range, in_tag_fov, in_camera_fov, in_line_of_sight (one bool
+        per individual gate, in the exact order tag_correction checks
+        them),
+      geometrically_eligible (all four True -- would produce a
+        correction if dropout didn't exist; tag_correction's own
+        dropout roll, being stochastic, is deliberately NOT modeled
+        here, so this can read as slightly more permissive than one
+        single real tick's outcome at the "pessimistic" fidelity tier).
+    """
+    fidelity = fidelity or config_module.MODEL_FIDELITY
+    tier = config_module.FIDELITY_TIERS[fidelity]
+    diagnostics = []
+    for i, tag in enumerate(tag_sites):
+        tag_cell = in_to_cell(tag.x_in, tag.y_in)
+        dist = math.hypot(tag_cell[0] - true_position[0], tag_cell[1] - true_position[1])
+        in_range = dist <= APRILTAG_RANGE_CELLS
+
+        angle_tag_to_robot = heading_deg(tag_cell, true_position)
+        incidence = abs(angular_diff(angle_tag_to_robot, tag.heading_deg))
+        in_tag_fov = incidence <= APRILTAG_FOV_DEG / 2
+
+        in_camera_fov = _tag_in_camera_fov(true_position, tag_cell, heading_deg_now, camera_mount_headings_deg,
+                                             tier["camera_fov_deg"])
+        in_los = line_of_sight(true_grid, tag_cell, true_position)
+
+        diagnostics.append({
+            "tag_index": i,
+            "range_cells": dist,
+            "incidence_deg": incidence,
+            "in_range": in_range,
+            "in_tag_fov": in_tag_fov,
+            "in_camera_fov": in_camera_fov,
+            "in_line_of_sight": in_los,
+            "geometrically_eligible": in_range and in_tag_fov and in_camera_fov and in_los,
+        })
+    return diagnostics
+
+
 class FullSuite(SensorSuite):
     """Distance sensors + AprilTag + odometry pods together: fixes both
     OBSTACLE error (reactive replanning off the cone sensors) and POSE

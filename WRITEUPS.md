@@ -1859,6 +1859,65 @@ records this as CLOSED for "does the drivetrain model itself account
 for strafing" and open for "which heading policy should a real team
 actually run."
 
+### Closing the loop: two alternative heading policies, actually tested
+
+The paragraph above names its own untested alternative explicitly --
+that was the brief for this addition: build the policy it names, and
+report whatever it actually does, favorable or not.
+
+`heading_policy` became a real field on `Drivetrain` (`ftc/
+drivetrain.py`, default `"fixed_at_start"` -- the exact original
+behavior, verified byte-for-byte: `resolve_held_heading_deg` computes
+the SAME nearest-tag-from-`actual_start` formula the original code
+computed once, just called fresh every tick instead of cached, which
+for a pure function of an unchanging input is a no-op, not a
+refactor-and-hope). Two new policies sit alongside it: `nearest_tag_
+current` re-aims toward whichever tag is nearest wherever the robot
+ACTUALLY is right now, recomputed every tick; `route_dominant` aims
+along the currently-planned route's own circular mean travel
+direction -- a unit vector per remaining leg, summed, converted back to
+an angle (the standard way to average angles without wraparound error:
+averaging 359deg and 1deg has to give 0deg, not 180deg) -- which
+directly targets the quantity `speed_and_drift_factor` actually
+penalizes (total strafe against the route this robot is actually
+driving), rather than targeting tag visibility as a proxy for it.
+
+Wiring this in meant moving the heading computation from a ONE-TIME
+pre-loop calculation to something `ftc/match.py` re-resolves every
+tick, from the current position and the current plan -- not a large
+change, but one that had to preserve the original default exactly
+while making the other two policies live. `ftc/scratch/
+heading_policy_test.py` proves the pieces in isolation before trusting
+any of this end-to-end: an exact hand-computed circular-mean case
+(one east step plus one north step averages to precisely -45deg, not
+"something between the two"), a check that `fixed_at_start` genuinely
+ignores the robot's current position while `nearest_tag_current`
+genuinely tracks it, and a byte-for-byte regression check reproducing
+the OLD inline formula independently and diffing against the new
+resolver's output on a real scenario.
+
+The result, from `ftc/drivetrain_benchmark.py`'s second sweep
+(`benchmark_results/ftc_drivetrain_heading_policy_writeup.md` --
+deliberately a SEPARATE study with its own output files and its own
+base seed, so the original `ftc_drivetrain_writeup.md` numbers already
+cited above and in README.md stay byte-for-byte untouched): `route_
+dominant` is a real, paired-bootstrap-significant improvement over
+`fixed_at_start` (25% -> 30% pooled success rate at the `realistic`
+fidelity tier) -- re-aiming genuinely helps, confirming the mechanism
+the original writeup predicted but had no policy to demonstrate.
+`nearest_tag_current`, on the other hand, is NOT a significant
+improvement (24% -- indistinguishable from the 25% baseline):
+optimizing for tag visibility doesn't reliably reduce strafe against
+wherever the robot is actually trying to go, which is a different
+target than `route_dominant` optimizes for. Neither policy closes the
+gap to tank (38%), and neither changes which sensor suite is the best
+buy on mecanum -- Odometry pods stays the best-value suite under every
+heading policy tested, AprilTag never recovers the lead it holds on
+tank. Re-aiming helps; it does not flip either headline verdict.
+Reported at that strength, not rounded up to "mecanum's problem is
+solved" or down to "re-aiming doesn't matter" -- both would have been
+wrong.
+
 ### Sensor coverage: can you buy out the distance-sensor blind spot? (`ftc/coverage_benchmark.py`)
 
 `ftc_suite_writeup.md`'s strongest negative finding never answered the
@@ -2428,6 +2487,93 @@ project's own rule that a finding that doesn't flatter its own
 machinery (DistanceSensorSuite's blind spot, mecanum's unpaid premium)
 gets reported with the same confidence as one that does.
 
+### Closing the loop: real variance tracking, and a Kalman path after all
+
+The reasoning above ("Why a plain weighted average, not a Kalman
+filter") was correct as far as it went, but it left a specific,
+nameable gap: this project had never tracked a real variance anywhere,
+so a Kalman filter was properly out of reach, not permanently ruled
+out. Closing that gap meant doing the actual work the earlier decision
+deferred, in the order that matters -- fit real variances FIRST, only
+then write the filter -- rather than jumping straight to "add a Kalman
+filter" and quietly inventing the numbers it needs, which would have
+been the exact mistake the original decision was written to avoid.
+
+`ftc/calibration.py` gained two new fits. `fit_process_variance_per_cell`
+needed no new data or new math at all -- it's the existing `fit_pose_
+drift_rate` (itself derived from the random-walk relation `Var(total) =
+n_cells * sigma^2`) squared into the shape a Kalman predict step
+actually consumes, since that random-walk assumption already IS
+"variance grows linearly with cells traveled." `fit_apriltag_
+measurement_variance` needed a genuinely new dataset this project never
+had before: real AprilTag detection SCATTER (range, incidence angle,
+measured position error), independent of any assumed correction-quality
+formula, fit by ordinary least squares -- `squared_error = b0 +
+b1*range_in + b2*incidence_deg` -- solved with a hand-written 3x3
+Gaussian elimination (`_solve_3x3`) rather than adding a NumPy
+dependency this project has deliberately never had (`nav/stats.py`'s
+own hand-written bootstrap is the same choice, for the same reason).
+Proven against a synthetic dataset built from a KNOWN exact linear
+relationship first (`ftc/scratch/calibration_test.py`'s `check_solver_
+recovers_exact_linear_relationship`) -- the only way to actually verify
+a hand-rolled linear-algebra solver is solving the right system, not
+just returning *something*.
+
+`nav/kalman.py` is the estimator itself, domain-neutral like every
+other `nav/` module -- `predict`/`update`/`gated_update`, the standard
+scalar Kalman math, isotropic (one variance for both axes) the same way
+`nav/estimation.py`'s `PositionEstimate` is already one confidence for
+both axes. `fuse()` was deliberately left completely untouched rather
+than retrofitted to accept a variance: its whole contract is a plain,
+honestly-labeled `confidence` weight, and blurring that into "sometimes
+a real variance, sometimes an invented one" would have undone the exact
+honesty the original design was protecting. `nav/scratch/kalman_test.py`
+proves the estimator standalone -- including a deliberate cross-check
+against `fuse()` itself (`check_degenerates_to_confidence_weighted_
+fuse_at_equal_uncertainty`): fed EQUAL variances/confidences, the two
+independently-implemented tools produce the exact same 50/50 blend,
+which is either a coincidence or a sign both are computing something
+real. It isn't a coincidence.
+
+Wiring it in (`ftc/fusion.py`'s `fused_tag_correction_kalman`, `ftc/
+match.py`'s `fusion="kalman"`) needed one honest approximation, stated
+plainly rather than hidden: `AprilTagSuite.tag_correction` collapses a
+detection's raw range/incidence into a single scalar `frac` before
+`ftc/fusion.py` ever sees it, and changing that public method's
+signature to plumb raw geometry through would have meant touching every
+override (`FullSuite`, `DualCameraAprilTagSuite`, ...) for a change
+scoped to one fusion path. Instead, `_apriltag_observation_variance_
+cells2` evaluates the fitted variance model once at its own best case
+(range=0, incidence=0) and scales it by how far `frac` sits below its
+own achievable maximum -- physically sound (worse `frac` really does
+mean a worse detection) but coarser than the fitted model could be:
+two geometrically different detections that happen to produce the same
+`frac` get treated as equally uncertain, even though real range/
+incidence data would tell them apart. `_apriltag_observation_variance_
+cells2`'s own docstring says this every time it's read, not just once
+at the top -- the same discipline this project applies to every other
+documented simplification.
+
+The result, in `ftc/fusion_kalman_benchmark.py` (deliberately a
+SEPARATE study writing SEPARATE output files, not a rewrite of `ftc_
+fusion_writeup.md` in place -- that file's 63%-to-26% finding is
+already published and cited elsewhere, and forcing every one of its
+sentences to carry a "this part is on synthetic variance" caveat that
+has nothing to do with what it's actually about would have made it
+worse, not more honest): at this project's SYNTHETIC placeholder
+variance (the pipeline is built and proven; the real measurement still
+doesn't exist), Kalman fusion succeeds in 32% of trials, a real,
+paired-bootstrap-significant improvement over confidence-weighted
+fusion's 26% -- the properly gated, variance-aware update genuinely
+does recover some of what a fixed confidence weight throws away. It
+does NOT recover the bundle's advantage, though: 32% is still well
+below AprilTag alone (46%) and nowhere near the 63% optimistic-merge
+figure the whole disagreement-modeling investigation set out to check.
+The headline finding from the plain-weighted-average study survives
+in weakened form, not overturned -- exactly the kind of result this
+project reports at full strength either way, not adjusted toward
+whichever answer would look better for the fancier tool.
+
 ## Planning latency at the tail
 
 The brief for this addition was explicit about order of operations:
@@ -2579,3 +2725,110 @@ genuinely long-distance replan, which this study didn't separately
 measure. Reporting a clean, structural "planning latency's tail doesn't
 matter" finding without that caveat would have been reporting a
 narrower result than what was actually found.
+
+## Scripted auto: what if the robot never replans at all?
+
+Every study in this repo up to this point shares one unstated
+assumption: the robot plans with A* and keeps replanning throughout the
+match. Real FTC teams mostly don't do that -- a season's actual
+autonomous program is usually a fixed, hand-tuned sequence of moves a
+team worked out ahead of time and never reconsiders live, closer to
+`nav/policies.py`'s `OpenLoopPolicy` (whose own docstring already says
+so: "This is what a standard FTC autonomous routine does today") than
+to `ftc/match.py`'s own live-replanning loop. That gap sat unstated in
+this project until it was asked about directly.
+
+### Why OpenLoopPolicy itself couldn't just be reused
+
+The honest first instinct was to reuse `OpenLoopPolicy` outright --
+it's already the right CONCEPT, already implemented, already proven.
+It doesn't fit as code, though: `Policy.step(true_grid, current_cell)`
+is `nav/`'s minimal grid-cell abstraction, built for `nav/
+uncertainty_benchmark.py`'s comparison of open-loop/reactive/belief
+strategies over a bare grid with no drivetrain, no real elapsed-time
+accounting, no sensor suites, no pose/heading error, no fusion, no
+collision recovery. `ftc/match.py`'s `run_match` already owns all of
+that for the live-replanning case; wrapping a second, parallel FTC-
+aware loop around `OpenLoopPolicy` would have meant either duplicating
+all of it a second time or bolting `run_match`'s machinery onto
+`OpenLoopPolicy` from the outside, neither of which is smaller or
+cleaner than what actually shipped: `scripted_auto=True`, a single new
+`run_match` parameter that narrows the function's OWN existing replan
+trigger (already computed every tick, already named `replan_needed`)
+down to `not planned_once`, unconditionally. Same concept as
+`OpenLoopPolicy`, expressed as the smallest possible change to
+machinery that already existed, rather than new machinery duplicating
+it.
+
+### The bug a first pass at this would have shipped
+
+The first version of `scripted_auto` didn't touch WHICH grid the one
+allowed plan gets computed against -- it just forced `replan_needed =
+not planned_once` and left the existing `source_grid` selection alone
+(`KnownGrid(known_obstacles_believed, ...)` for an obstacle-sensing
+suite, `assumed_grid` otherwise). That's wrong in a way a quick scratch
+test caught immediately: at tick 0, `known_obstacles_believed` is
+still EMPTY (nothing has been sensed yet), so an obstacle-sensing
+suite's one-and-only plan under that first version was computed against
+a nearly blank map, treating every not-yet-seen obstacle as free --
+structurally WORSE than a non-sensing suite's plan against the full
+assumed map, for a reason that has nothing to do with the actual
+question ("does obstacle sensing help without ever rerouting?"). The
+scratch check exposed it concretely: DistanceSensorSuite scored 2%
+under that first version, ten points BELOW DeadReckoningSuite's 13% on
+the identical scenarios -- a suite that senses obstacles doing worse
+than one that doesn't, purely from where its one plan happened to be
+computed against. The fix: `scripted_auto=True` always plans against
+`assumed_grid`, regardless of `suite.senses_obstacles` -- a stand-in
+for a team authoring a routine against the field's known/CAD layout
+ahead of time, not against one instant of live sensor data. After the
+fix, the same scenarios came back exactly tied (13% vs. 13%) -- neutral,
+which is what "no avenue to act on what it senses" should actually
+look like, not a hidden penalty.
+
+### The result, and the one place pooling the wrong data would have hidden it
+
+`ftc/scripted_auto_benchmark.py` crosses `scripted_auto` against the 5
+headline suites and this project's usual 3 deviation types. The
+headline comparison (DistanceSensorSuite vs. DeadReckoningSuite) is
+computed over `obstacle_drift`/`unplanned_blocker` only, not pooled
+across all three deviation types the way most other studies in this
+repo pool their axes: `start_drift` is PURE pose error (`ftc/
+suite_benchmark.py`'s own `DEVIATION_TYPES` sets `obstacle_drift_scale=
+0, blocker_scale=0` for it), so an obstacle sensor has structurally
+nothing to detect differently from the assumed map under that
+deviation type alone -- pooling it in would have diluted the exact
+mechanism the question is about, the same trap `fit_apriltag_
+measurement_variance` in the Kalman work above was careful to avoid
+in a different form.
+
+Even restricted to the two deviation types where it could matter,
+distance sensing's live-replanning advantage over dead reckoning turned
+out to already be too small to separate from noise at this trial
+count -- consistent with, not contradicting, this project's own
+earlier finding (the DistanceSensorSuite blind-spot result, `ftc_
+suite_writeup.md`) that the three modeled distance sensors only cover
+about 75 degrees of the full 360 around the robot and collide in
+roughly half their trials even at zero deviation. A first draft of
+this writeup asserted the live-replanning advantage "IS significant"
+without actually checking it, then printed the correct "not
+significant" conclusion for the SCRIPTED row right next to that false
+claim about the REACTIVE row -- caught by reading the two paired-CI
+numbers the code had already computed, not by assumption, and fixed by
+writing out all four reactive/scripted x significant/not-significant
+cases explicitly instead of assuming only one shape of result was
+possible.
+
+What the pooled comparison couldn't cleanly show, the STRUCTURAL
+comparison confirms directly: both pose-fixing suites (AprilTag,
+Odometry pods) stay measurably ahead of dead reckoning even under
+`scripted_auto` -- pose correction still helps the exact same fixed
+route land closer to where it was planned, since that needs no reroute
+at all, only a better estimate of where the robot actually is relative
+to a route it's already committed to. FullSuite (the only suite
+combining both capabilities) loses roughly the obstacle-sensing half of
+its advantage under `scripted_auto` and keeps the pose-fixing half --
+the same mechanism, visible in one suite at once. Pose error and
+obstacle error remain, under yet another lens, genuinely different
+failure modes with genuinely different dependence on live replanning --
+not a matter of degree, a matter of mechanism.

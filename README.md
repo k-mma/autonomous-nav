@@ -696,7 +696,11 @@ alone.
   suites, or two pose-fixing suites other than this one, is untouched
   by any of this). Real fusion also costs integration effort this
   project's dollar model can't price; the `parts` count is the only
-  proxy for it.
+  proxy for it. A THIRD fusion strategy -- `nav/kalman.py`'s
+  variance-aware Kalman update, `run_match(fusion="kalman")` -- narrows
+  this further; see "Uncalibrated variance" below and
+  `benchmark_results/ftc_fusion_kalman_writeup.md` for what it changes
+  and, just as importantly, what it still doesn't.
 - Uncalibrated variance -- BOUNDED, not closed, until real
   measurements are supplied. `variance_level` and `ftc/sensors.py`'s
   drift-rate constants are order-of-magnitude engineering estimates
@@ -714,6 +718,42 @@ alone.
   checked against a real field or robot; the synthetic placeholder
   dataset exists to make the pipeline runnable, not to make its output
   trustworthy.
+
+  What changed: this project deliberately never used a Kalman filter
+  for AprilTag/odometry fusion, for exactly this reason -- a Kalman
+  filter's whole mechanism compares the VARIANCE of a prior estimate
+  against the variance of a new observation, and there was no real
+  variance anywhere in this project to compare, only a single scalar
+  drift value (see `ftc/fusion.py`'s original module docstring, still
+  true of the confidence-weighted default). `ftc/calibration.py` now
+  fits BOTH halves a real Kalman filter needs: `fit_apriltag_
+  measurement_variance` (an OLS fit of position-error variance against
+  real detection range/incidence scatter, replacing `APRILTAG_RANGE_
+  DEGRADATION`/`APRILTAG_ANGLE_DEGRADATION`'s ASSUMED linear shape) and
+  `fit_process_variance_per_cell` (the odometry drift-rate fit already
+  in this file, squared into the variance a Kalman predict step
+  actually consumes). `nav/kalman.py` is the estimator itself (proven
+  standalone in `nav/scratch/kalman_test.py`); `ftc/fusion.py`'s
+  `fused_tag_correction_kalman` wires it into `ftc/match.py` as a THIRD
+  opt-in fusion mode (`run_match(fusion="kalman")`, alongside the
+  existing `None`/confidence-weighted paths, which are unaffected --
+  see `ftc/scratch/fusion_kalman_test.py`'s cross-call-interference
+  check). `benchmark_results/ftc_fusion_kalman_writeup.md` is the
+  fusion-strategy comparison this unlocks: at this project's SYNTHETIC
+  placeholder variance (the machinery is built, the real measurement
+  still is not), Kalman fusion (32%) beats confidence-weighted fusion
+  (26%) by a statistically real margin, but the AprilTag+odometry
+  bundle's advantage over its best single component still does not
+  recover -- it stays inverted (63% optimistic merge -> 32% Kalman,
+  vs. 46% for AprilTag alone), just less severely than under confidence
+  weighting alone. This BOUNDS the "would a real Kalman filter have
+  fixed the inversion" question -- the math genuinely helps, but not
+  enough to flip the verdict at this project's own estimated fusion
+  constants -- it does not CLOSE it, since "this project's own
+  estimated fusion constants" is still the load-bearing uncertainty:
+  real AprilTag detection scatter run through `ftc/calibration.py`
+  (`--apriltag`, `fit_apriltag_measurement_variance`) is the only thing
+  that would.
 - Simplified kinematics -- BOUNDED. `ftc/match.py` now charges
   drive time via a trapezoidal (accelerate/cruise/decelerate) velocity
   profile bounded by `MAX_ACCEL_MPS2` (`ftc/match.py`'s
@@ -776,26 +816,51 @@ alone.
   REV Control Hub) or at longer path lengths -- only real onboard
   timing data run through `ftc/calibration.py` could calibrate
   `PLANNING_OVERHEAD_S` itself, which this study does not attempt.
-- No mecanum-specific strafing advantage -- CLOSED for the drivetrain
-  model itself, still open on which heading policy a real team should
-  use. `ftc/field.py` defaulted to 8-directional movement "on the
+- No mecanum-specific strafing advantage -- BOUNDED across three
+  documented heading policies now, still not a universally closed
+  question. `ftc/field.py` defaulted to 8-directional movement "on the
   assumption of a holonomic drivetrain" without ever actually modeling
   one; `ftc/drivetrain.py` adds TANK/MECANUM as an axis orthogonal to
   sensor suite (TANK pays the existing flat per-90-degree turn cost on
   every direction change; MECANUM pays none, but a speed/drift penalty
-  on any step that isn't roughly forward relative to a fixed heading it
-  holds all match). `ftc/drivetrain_benchmark.py`'s finding: mecanum's
-  $130 premium (`MECANUM_WHEEL_COST_USD - TANK_WHEEL_COST_USD`) is NOT
-  repaid under the one heading policy this repo implements and tested
-  (hold heading toward the nearest AprilTag wall from match start) --
-  a route's travel direction changes far more often than that one fixed
-  heading does, so most steps end up strafing, and the resulting drift
-  penalty swamps the camera-stays-aimed-at-tags benefit the policy was
-  chosen to demonstrate. See `benchmark_results/
-  ftc_drivetrain_writeup.md` for the full diagnosis -- this is a
-  measured limitation of the specific heading policy implemented, not a
-  closed question about mecanum drivetrains in general; a policy that
-  re-picks its held heading periodically isn't tested here.
+  on any step that isn't roughly forward relative to whatever heading
+  it currently holds). `ftc/drivetrain_benchmark.py`'s original
+  finding: mecanum's $130 premium (`MECANUM_WHEEL_COST_USD -
+  TANK_WHEEL_COST_USD`) is NOT repaid under the one heading policy that
+  study tested (hold heading toward the nearest AprilTag wall FIXED
+  from match start) -- a route's travel direction changes far more
+  often than that one fixed heading does, so most steps end up
+  strafing, and the resulting drift penalty swamps the camera-stays-
+  aimed-at-tags benefit the policy was chosen to demonstrate. See
+  `benchmark_results/ftc_drivetrain_writeup.md` for the full diagnosis
+  -- unchanged by everything below, since that study and its numbers
+  are already cited elsewhere in this repo.
+
+  What changed: `heading_policy` (`ftc/drivetrain.py`) is now a
+  swappable field on `Drivetrain`, not a single hardcoded shape --
+  `fixed_at_start` (the original, unchanged default), `nearest_tag_
+  current` (re-aim toward whichever tag is nearest wherever the robot
+  actually is right now), and `route_dominant` (aim along the
+  currently-planned route's own circular-mean travel direction, which
+  minimizes total strafe against that specific route rather than
+  against any tag at all). `ftc/drivetrain_benchmark.py`'s SECOND,
+  separate sweep (`benchmark_results/
+  ftc_drivetrain_heading_policy_writeup.md`, own output files, own base
+  seed, doesn't touch the original study's numbers) measures what
+  re-aiming actually buys: `route_dominant` is a real, paired-
+  bootstrap-significant improvement over `fixed_at_start` (25% -> 30%
+  pooled success rate at the `realistic` fidelity tier), while
+  `nearest_tag_current` is not distinguishable from the fixed baseline
+  at this trial count. Neither alternative closes the gap to tank
+  (38%), and neither changes which sensor suite is the best value on
+  mecanum (still Odometry pods, not AprilTag, under every heading
+  policy tested) -- re-aiming genuinely helps, exactly the mechanism
+  the original study predicted but had no policy to demonstrate with,
+  it just doesn't help enough to flip either headline verdict. A
+  policy that minimizes strafe against the route's own IMMEDIATE next
+  leg (rather than the route's average direction, or a fixed tag)
+  remains untested -- see `ftc_drivetrain_heading_policy_writeup.md`'s
+  own closing section.
 - Camera field of view and heading error -- previously UNSTATED,
   now BOUNDED via `ftc/config.py`'s `MODEL_FIDELITY` tiers, not
   calibrated. Every number in this README before this addition assumed
@@ -860,6 +925,46 @@ alone.
   which suite wins by raw success rate (DistanceSensorSuite overtakes
   FullSuite at 2s), though the headline 30s budget itself still never
   binds in the actual headline sweep.
+- Every match in this repo assumes a live, onboard A* replanner --
+  BOUNDED. Real FTC teams overwhelmingly run a fixed, hand-tuned
+  sequence of moves worked out before the match, not a pathfinder
+  running live during it; this repo's entire match model assumed the
+  opposite, unstated, until now. `ftc/match.py`'s `run_match(
+  scripted_auto=True)` plans exactly once, from the assumed map, then
+  drives that route with zero reconsideration -- no reroute for a
+  sensed obstacle, a tag correction, or a stall (nav/policies.py's
+  `OpenLoopPolicy` already names this exact concept -- "what a
+  standard FTC autonomous routine does today" -- but its minimal
+  grid-only interface couldn't carry this project's kinematics/sensor/
+  fusion machinery, so the concept was reused and the code wasn't).
+  `ftc/scripted_auto_benchmark.py`'s finding, restricted to the two
+  deviation types an obstacle sensor has any mechanism to react to
+  (`obstacle_drift`, `unplanned_blocker` -- pooling in `start_drift`,
+  pure pose error, would dilute the exact question being asked):
+  DistanceSensorSuite's live-replanning advantage over dead reckoning
+  was already too small to separate from noise at this trial count
+  (consistent with the blind-spot finding two bullets up), so this
+  particular comparison can't cleanly show the predicted collapse --
+  but the STRUCTURAL argument is confirmed directly regardless: a
+  pose-fixing suite (AprilTag, Odometry pods) stays measurably ahead of
+  dead reckoning even under scripted auto (correcting the believed-to-
+  true position mapping still helps the SAME fixed route land closer
+  to plan, no reroute required), while an obstacle-sensing suite's own
+  `senses_obstacles` flag keeps sensing (harmlessly) with no avenue
+  left to ever act on what it finds -- pose error and obstacle error
+  really are different failure modes with different dependence on live
+  replanning, not just different in degree. See `benchmark_results/
+  ftc_scripted_auto_writeup.md` for the full breakdown, including the
+  one modeling choice actually load-bearing here: the single plan
+  `scripted_auto` makes is computed against the full assumed map
+  regardless of sensor suite (a stand-in for a team planning by hand
+  against the field's known layout), not against whatever a live
+  sensor cone would have seen in the match's first instant -- getting
+  that backwards would have penalized an obstacle-sensing suite's one
+  plan for a reason unrelated to the actual question. Still open: a
+  real hand-tuned routine can include contingency branches a team
+  scripts by hand ("if blocked here, try this instead") -- a form of
+  scripting with SOME reactivity this binary flag can't represent.
 
 ## Running the sweeps in parallel
 
@@ -929,6 +1034,8 @@ nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ i
                        (shared-scenario comparisons: resamples trial indices, not each list separately)
   estimation.py       Confidence-weighted fusion of two 2D position estimates that might disagree --
                        domain-neutral (no FTC identifiers); ftc/fusion.py is the one consumer today
+  kalman.py            predict()/update()/gated_update() -- a real, variance-aware Kalman estimator,
+                       domain-neutral; needs a real variance (ftc/calibration.py), never invents one
   scratch/         Standalone throwaway scripts used to prove each piece
                     works before it was wired into the visualizer/pybullet_main
                     (framework-agnostic tests only -- pygame/PyBullet-specific
@@ -951,7 +1058,10 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
   budget_benchmark.py Sweeps AUTONOMOUS_PERIOD_S downward -- when does the budget start to bind, and does it change the ranking? -> CSV + plot + writeup
   opponent_benchmark.py Static vs. moving (nav/obstacles.py MovingObstacle) opponent -- does a real-ish opponent change which suite wins? -> CSV + plot + writeup
   fidelity_benchmark.py The headline sweep rerun at all 3 MODEL_FIDELITY tiers -> CSV + plot + writeup
-  drivetrain_benchmark.py Tank vs. mecanum x fidelity tier -- does holding heading toward a tag wall pay off? -> CSV + plot + writeup
+  drivetrain_benchmark.py Tank vs. mecanum x fidelity tier -- does holding heading toward a tag wall pay off?
+                     -> CSV + plot + writeup; a SECOND sweep in the same module crosses tank against all
+                     3 MECANUM heading policies (fixed_at_start/nearest_tag_current/route_dominant) ->
+                     own CSV + plot + writeup, doesn't touch the first sweep's numbers
   coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot? -> CSV + plot + writeup
   newsuites_benchmark.py IMU / AprilTag+IMU / dual-camera AprilTag x fidelity tier -> CSV + plot + writeup
   gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
@@ -959,7 +1069,9 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
                      outcome? Non-invasively times every astar() call run_match makes (patches
                      ftc.match.astar for the duration of one call, restores it after) across 5 grid
                      sizes x 3 layouts x 5 suites -> CSV + plot + writeup
-  calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled synthetic placeholder)
+  calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled
+                     synthetic placeholder) -- including AprilTag measurement variance (range/incidence
+                     scatter -> OLS fit) and odometry process variance, the two inputs nav/kalman.py needs
   recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
   bundle.py          Composes 2+ suites into one working suite -- part-level costing (shared hardware counted
                      once), capability merging, duplicate-robot detection; a 1-suite bundle is byte-for-byte
@@ -968,16 +1080,25 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
                      best single sensor, Pareto frontier, best-under-budget, exhaustive + greedy search
   fusion.py          Wires nav/estimation.py's fuse() into a tag-detection event for the AprilTag+odometry
                      pairing -- a small systematic bias and an outright bad detection, opt-in via
-                     run_match's fusion=None default (byte-for-byte no-op otherwise)
+                     run_match's fusion=None default (byte-for-byte no-op otherwise); also holds
+                     fused_tag_correction_kalman, the nav/kalman.py-backed alternative (fusion="kalman")
   fusion_benchmark.py Does the AprilTag+odometry bundle's advantage over its best single component survive
                      confidence-weighted fusion, or was optimistic merging doing the work? -> CSV + plot + writeup
+  fusion_kalman_benchmark.py A THIRD fusion condition (Kalman, on ftc/calibration.py's synthetic placeholder
+                     variance) added to fusion_benchmark.py's comparison -- separate output files, doesn't
+                     touch fusion_benchmark.py's own numbers -> CSV + plot + writeup
   optimizer_benchmark.py The bundle study -- every buildable combination x 5 scenario profiles -> CSV + 2 plots + writeup
+  scripted_auto_benchmark.py Live A* replanning vs. a fixed, never-reconsidered "scripted auto" route
+                     (run_match's scripted_auto=True) x 5 suites x 3 deviation types -- does an
+                     obstacle-sensing suite's advantage depend on being able to act on what it senses?
+                     -> CSV + plot + writeup
   trace.py           record_match() -- runs run_match() once and additionally captures a full tick-by-tick
                      replay trace via its on_tick hook (purely additive, doesn't change the simulation) --
                      what pygame_app/ftc_viz/'s animated visualizer is built on
   scratch/         Same role as nav/scratch/, for the FTC-specific pieces (includes fidelity_test.py,
                      drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py, trace_test.py,
-                     bundle_test.py and optimizer_test.py for this addition)
+                     bundle_test.py, optimizer_test.py, calibration_test.py, fusion_kalman_test.py,
+                     heading_policy_test.py, and scripted_auto_test.py for this addition)
 
 pygame_app/        Everything that touches pygame
   main.py            Entry point: opens the interactive visualizer

@@ -79,16 +79,18 @@ from dataclasses import dataclass
 
 from nav.algorithms import astar
 from nav.grid import Grid
+from nav.kalman import KalmanEstimate, predict as kalman_predict
 from nav.sensor import KnownGrid, blocks_remaining_path
 
 import ftc.config as config_module
 from ftc.config import (
-    AUTONOMOUS_PERIOD_S, CELL_SIZE_IN, COLLISION_RECOVERY_S, INCHES_PER_METER, MAX_ACCEL_MPS2,
-    MAX_DRIVE_SPEED_MPS, MAX_STALL_RETRIES, PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
+    AUTONOMOUS_PERIOD_S, CELL_SIZE_IN, COLLISION_RECOVERY_S, INCHES_PER_METER,
+    KALMAN_INITIAL_POSITION_VARIANCE_CELLS2, MAX_ACCEL_MPS2, MAX_DRIVE_SPEED_MPS, MAX_STALL_RETRIES,
+    PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
 )
-from ftc.field import in_to_cell
-from ftc.fusion import fused_tag_correction
-from ftc.sensors import angular_diff, heading_deg
+from ftc.drivetrain import resolve_held_heading_deg
+from ftc.fusion import fused_tag_correction, fused_tag_correction_kalman
+from ftc.sensors import angular_diff, diagnose_tag_detections, heading_deg
 
 MAX_TICKS = 500
 
@@ -147,7 +149,7 @@ class MatchResult:
 
 def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_sites, rng,
               moving_obstacles=(), fidelity=None, drivetrain=None, gearing=None, fusion=None, on_tick=None,
-              on_collision="halt"):
+              on_collision="halt", scripted_auto=False):
     """Drive `suite` from `actual_start` (ground truth) to `goal`,
     planning against `assumed_grid`'s layout (the suite's only source of
     obstacle knowledge unless it senses otherwise) until it succeeds,
@@ -155,6 +157,46 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     docstring for the believed-frame planning / true-frame execution
     split, and for `fidelity`/`drivetrain`/`gearing`'s defaults
     reproducing every pre-Priority-1/2/5 caller's behavior exactly.
+
+    `scripted_auto` (defaulting to False -- every existing caller
+    unaffected) models the OTHER thing "FTC autonomous" commonly means:
+    not this project's own live-replanning A* policy, but a single
+    fixed sequence of moves a team worked out and hand-tuned ahead of
+    time, then runs with no onboard reconsideration at all -- the same
+    concept nav/policies.py's OpenLoopPolicy already names ("This is
+    what a standard FTC autonomous routine does today"). Reusing that
+    class directly wasn't possible: OpenLoopPolicy's step()/Policy
+    interface is nav/'s minimal grid-cell abstraction, with none of
+    this function's FTC-specific machinery (drivetrain kinematics, real
+    elapsed-time accounting, sensor suites, pose/heading error,
+    collision recovery) -- see ftc/scratch/scripted_auto_test.py's own
+    docstring for the fuller version of this note. What's reused
+    instead is the CONCEPT, wired as narrowly as possible into this
+    function's own existing replan trigger: `scripted_auto=True` forces
+    `replan_needed = not planned_once` unconditionally -- a route is
+    planned exactly once, from the assumed map, and never touched
+    again, no matter what a sensor discovers or how a tag correction
+    shifts the believed position. A pose-fixing suite (AprilTag,
+    odometry) still measurably helps under this mode -- correcting
+    `error` changes where the SAME fixed sequence of relative moves
+    actually lands in true-frame execution, which is a real effect
+    independent of ever replanning. An obstacle-sensing suite
+    (DistanceSensorSuite) gets no such avenue: `suite.senses_obstacles`
+    still senses (feeding `known_obstacles_believed`, harmlessly inert
+    under this mode) but the only thing that knowledge could ever do --
+    trigger a reroute around what it found -- is exactly the mechanism
+    `scripted_auto=True` removes. The one-and-only plan this mode ever
+    makes is computed against `assumed_grid` regardless of
+    `suite.senses_obstacles` (a stand-in for a team's hand-authored
+    routine, worked out ahead of time against the field's known/assumed
+    layout, NOT against whatever a live sensor cone happened to see in
+    the match's first instant) -- see the `if scripted_auto:` branch
+    around this function's own replan block for why using the sensed-
+    only KnownGrid there instead would unfairly penalize an obstacle-
+    sensing suite's one plan for a reason unrelated to what this mode
+    exists to measure. See ftc/scripted_auto_benchmark.py for the study
+    that measures the size of the obstacle-sensing gap directly rather
+    than just asserting it exists.
 
     `moving_obstacles` (optional, empty by default so every existing
     caller is unaffected) is a sequence of nav.obstacles.MovingObstacle
@@ -177,14 +219,24 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
 
     `fusion` (defaulting to None -- every existing caller unaffected)
     switches a tag-detection event from the plain `error = error *
-    (1 - frac)` shrink to ftc/fusion.py's confidence-weighted fusion
-    against odometry's own tracked position, which can introduce a
-    small systematic bias or an outright bad reading that a plain frac
-    (bounded to [0, 1], only ever shrinking error toward zero) cannot
-    express. None takes a different code path entirely rather than
-    merely computing the same result a different way, so it consumes
-    no extra `rng` draws and is a structural, not numerical, no-op --
-    see ftc/scratch/fusion_test.py.
+    (1 - frac)` shrink to one of two fused alternatives, both of which
+    can introduce a small systematic bias or an outright bad reading
+    that a plain frac (bounded to [0, 1], only ever shrinking error
+    toward zero) cannot express: a truthy non-"kalman" value (including
+    the historical `fusion=True`) selects ftc/fusion.py's confidence-
+    weighted fusion against odometry's own tracked position;
+    `fusion="kalman"` selects nav/kalman.py's variance-aware fusion
+    instead (ftc/fusion.py's fused_tag_correction_kalman), which also
+    needs a running position VARIANCE, not just a position -- tracked
+    here as `position_variance`, grown by nav.kalman.predict at every
+    drift-injection step and updated by fused_tag_correction_kalman at
+    every tag-detection event, exactly mirroring how `error` itself is
+    already threaded through this same loop. None takes a different
+    code path entirely rather than merely computing the same result a
+    different way, so it consumes no extra `rng` draws and is a
+    structural, not numerical, no-op -- see ftc/scratch/fusion_test.py
+    (confidence-weighted) and ftc/scratch/fusion_kalman_test.py
+    (Kalman).
 
     `on_tick` (optional, None by default) is a read-only side channel
     for animation/visualization (see ftc/trace.py, pygame_app/ftc_viz/)
@@ -226,20 +278,28 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
     true_position = actual_start
     error = (float(actual_start[0] - start[0]), float(actual_start[1] - start[1]))
     heading_error = 0.0
+    # Only ever read/updated on the fusion="kalman" path (see run_match's
+    # own docstring); harmless, unused local otherwise -- initialized
+    # unconditionally so the two call sites below don't need a special
+    # first-tick case.
+    position_variance = KALMAN_INITIAL_POSITION_VARIANCE_CELLS2
 
-    # Mecanum holds a fixed heading for the whole match -- the natural
-    # choice for a robot investing in an AprilTag-reading camera is to
-    # aim it at the nearest tag wall and never turn away from it (see
-    # ftc/drivetrain.py's module docstring). Computed once, from the
-    # true starting position, since a real robot would pick its held
-    # heading before the match starts, not re-derive it mid-run.
-    fixed_heading_deg = None
-    if drivetrain is not None and drivetrain.holonomic and tag_sites:
-        def _tag_dist(t):
-            tc = in_to_cell(t.x_in, t.y_in)
-            return math.hypot(tc[0] - actual_start[0], tc[1] - actual_start[1])
-        nearest_tag = min(tag_sites, key=_tag_dist)
-        fixed_heading_deg = heading_deg(actual_start, in_to_cell(nearest_tag.x_in, nearest_tag.y_in))
+    # A holonomic drivetrain holds a heading according to its own
+    # heading_policy (ftc/drivetrain.py's resolve_held_heading_deg --
+    # fixed at match start, re-aimed at the nearest tag from wherever
+    # the robot currently is, or aimed along the route's own dominant
+    # direction; see that function's docstring for why calling it fresh
+    # every tick, including this first one, is a byte-for-byte no-op
+    # for the "fixed_at_start" default and a real behavior change for
+    # the other two). `path`/`idx` don't exist yet at tick 0, so
+    # route_dominant's own fallback (nearest tag from current position)
+    # is what actually resolves the very first heading under that
+    # policy -- identical to what nearest_tag_current resolves to here,
+    # since true_position == actual_start before anything has moved.
+    fixed_heading_deg = (
+        resolve_held_heading_deg(drivetrain, actual_start, actual_start, tag_sites, None, 0)
+        if drivetrain is not None else None
+    )
 
     if drivetrain is not None and drivetrain.holonomic and fixed_heading_deg is not None:
         heading = fixed_heading_deg
@@ -286,12 +346,25 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         nonlocal tick_counter
         if on_tick is None:
             return
+        # Zero rng draws (see diagnose_tag_detections's own docstring) --
+        # purely observational, cannot perturb the real simulation, the
+        # same safety argument every other on_tick addition here relies
+        # on. Only computed for a suite that can ever call tag_
+        # correction at all (fixes_pose) and only when there's at least
+        # one tag to check against; every other suite gets an empty list
+        # rather than a wasted computation over camera_mount_headings_
+        # deg it never actually uses for anything.
+        tag_diagnostics = (
+            diagnose_tag_detections(ground_truth, true_position, heading, tag_sites,
+                                      suite.camera_mount_headings_deg, fidelity=fidelity)
+            if suite.fixes_pose and tag_sites else []
+        )
         snapshot = dict(
             tick=tick_counter, event=event, elapsed_s=elapsed_s,
             true_position=true_position, heading_deg=heading,
-            error=error, heading_error_deg=heading_error,
+            error=error, heading_error_deg=heading_error, position_variance=position_variance,
             path=list(path) if path else None,
-            collisions=collisions, replans=replans,
+            collisions=collisions, replans=replans, tag_diagnostics=tag_diagnostics,
             # (position, heading_deg_or_None) per moving obstacle --
             # heading is None for a plain nav.obstacles.MovingObstacle
             # (no orientation concept at all), and a real value for
@@ -338,7 +411,9 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         if suite.fixes_pose:
             frac = suite.tag_correction(ground_truth, true_position, heading, tag_sites, rng, fidelity=fidelity)
             if frac is not None:
-                if fusion:
+                if fusion == "kalman":
+                    error, position_variance = fused_tag_correction_kalman(error, position_variance, frac, rng)
+                elif fusion:
                     error = fused_tag_correction(error, frac, rng)
                 else:
                     error = (error[0] * (1 - frac), error[1] * (1 - frac))
@@ -352,20 +427,48 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             if hfrac:
                 heading_error *= (1 - hfrac)
 
-        replan_needed = not planned_once or tag_corrected or stalled
+        if scripted_auto:
+            # A fixed sequence of moves, committed to once and never
+            # reconsidered -- see run_match's own docstring. Neither a
+            # tag correction nor a newly-sensed obstacle (nor a stall)
+            # is allowed to trigger a reroute; `stalled` still gets
+            # reset below so a repeated collision against the same
+            # blocked cell keeps retrying (and eventually gives up via
+            # MAX_STALL_RETRIES under on_collision="replan") rather than
+            # looping some other way.
+            replan_needed = not planned_once
+        else:
+            replan_needed = not planned_once or tag_corrected or stalled
+            if suite.senses_obstacles and not replan_needed:
+                current_believed = (round(true_position[0] - error[0]), round(true_position[1] - error[1]))
+                remaining = path[idx:] if path is not None else []
+                if path is None or blocks_remaining_path(newly_seen_believed, current_believed, remaining):
+                    replan_needed = True
         stalled = False
-        if suite.senses_obstacles and not replan_needed:
-            current_believed = (round(true_position[0] - error[0]), round(true_position[1] - error[1]))
-            remaining = path[idx:] if path is not None else []
-            if path is None or blocks_remaining_path(newly_seen_believed, current_believed, remaining):
-                replan_needed = True
 
         if replan_needed:
             current_believed = (round(true_position[0] - error[0]), round(true_position[1] - error[1]))
-            source_grid = (
-                KnownGrid(known_obstacles_believed, diagonal=assumed_grid.diagonal, size=assumed_grid.size)
-                if suite.senses_obstacles else (stalled_grid if stalled_grid is not None else assumed_grid)
-            )
+            if scripted_auto:
+                # The one and only plan this mode ever makes is a stand-
+                # in for a team's hand-authored routine, worked out
+                # ahead of time against the field's known/assumed
+                # layout -- NOT against whatever a live sensor cone
+                # happened to see in the first instant of the match, the
+                # way an actually-replanning obstacle-sensing suite
+                # would. Using `assumed_grid` here regardless of
+                # `suite.senses_obstacles` is what keeps this route
+                # exactly as good/bad as any other suite's initial
+                # plan; using the sensed-only KnownGrid instead would
+                # make an obstacle-sensing suite's ONE plan structurally
+                # worse than a non-sensing suite's, for a reason that
+                # has nothing to do with the actual question this mode
+                # exists to measure.
+                source_grid = assumed_grid
+            else:
+                source_grid = (
+                    KnownGrid(known_obstacles_believed, diagonal=assumed_grid.diagonal, size=assumed_grid.size)
+                    if suite.senses_obstacles else (stalled_grid if stalled_grid is not None else assumed_grid)
+                )
             t0 = time.perf_counter()
             new_path, _, _ = astar(source_grid, current_believed, goal)
             planning_time_s += time.perf_counter() - t0
@@ -463,6 +566,16 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
                 elapsed_s += (turn_deg / 90.0) * TURN_TIME_PER_90DEG_S
                 heading = travel_heading
             else:
+                # Re-resolved every tick (see run_match's own pre-loop
+                # comment on fixed_heading_deg, and resolve_held_heading_
+                # deg's docstring) from wherever the robot actually is
+                # RIGHT NOW (`true_position`, before this step's motion
+                # is applied) and the CURRENT plan (`path`/`idx`, already
+                # advanced past `prev_believed` above) -- a byte-for-byte
+                # no-op for the "fixed_at_start" default, a real
+                # re-aiming for the other two heading policies.
+                fixed_heading_deg = resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites,
+                                                               path, idx)
                 new_heading = drivetrain.robot_heading_deg(heading, travel_heading, fixed_heading_deg)
                 elapsed_s += drivetrain.turn_cost_s(heading, new_heading)
                 speed_factor, drift_mult = drivetrain.speed_and_drift_factor(new_heading, travel_heading)
@@ -489,6 +602,17 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             # GEARING_OPTIONS).
             sigma = suite.drift_per_cell * step_dist * drift_mult * gearing_config["slip_factor"]
             error = (error[0] + rng.gauss(0, sigma), error[1] + rng.gauss(0, sigma))
+            if fusion == "kalman":
+                # The Kalman predict half of this step: the MEAN was
+                # just moved by the actual rng.gauss draw above (this
+                # project's real motion model, which nav/kalman.py's
+                # predict() deliberately leaves to its caller -- see
+                # its module docstring); this call only grows the
+                # FILTER's own belief about its uncertainty by that
+                # same step's variance (sigma**2), the real content of
+                # a Kalman predict step once the motion model lives
+                # outside nav/kalman.py.
+                position_variance = kalman_predict(KalmanEstimate(error, position_variance), sigma ** 2).variance
             heading_drift = tier["heading_drift_deg_per_cell"]
             if heading_drift > 0:
                 heading_error += rng.gauss(0, heading_drift * step_dist)
