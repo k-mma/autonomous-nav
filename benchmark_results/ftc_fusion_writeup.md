@@ -1,6 +1,6 @@
 # Does the AprilTag+odometry bundle's advantage survive sensor disagreement?
 
-40 trials x 5 scenario profiles (ftc/optimizer.py's DEFAULT_PROFILES) x 3 conditions -- the AprilTag+odometry bundle under ftc/bundle.py's existing optimistic merge (`fusion=None`) and under ftc/fusion.py's confidence-weighted fusion (`fusion=True`), plus its best single component (AprilTag) at `fusion=None` as the comparison floor. Every condition runs against identical seeded scenarios (paired), so nav/stats.py's `bootstrap_paired_diff_ci` is used for the headline comparison rather than eyeballing whether independent CIs overlap -- the same tool ftc/optimizer_benchmark.py's own synergy claims use. Raw data in `ftc_fusion_results.csv`, chart in `ftc_fusion_comparison.png`.
+40 trials x 5 scenario profiles (ftc/optimizer.py's DEFAULT_PROFILES) x 3 conditions -- the AprilTag+odometry bundle under ftc/bundle.py's existing optimistic merge (`fusion=None`) and under ftc/fusion.py's confidence-weighted fusion (`fusion=True`), plus its best single component (AprilTag (front camera)) at `fusion=None` as the comparison floor. Every condition runs against identical seeded scenarios (paired), so nav/stats.py's `bootstrap_paired_diff_ci` is used for the headline comparison rather than eyeballing whether independent CIs overlap -- the same tool ftc/optimizer_benchmark.py's own synergy claims use. Raw data in `ftc_fusion_results.csv`, chart in `ftc_fusion_comparison.png`.
 
 ## The headline number
 

@@ -1,11 +1,14 @@
 """
-Five sensor suites an FTC team could actually buy, each a consumer of
-the ground-truth grid producing observations that feed nav.sensor.
-KnownGrid (reactive replanning) for the suites that sense obstacles.
-Reuses nav/sensor.py's LidarSensor as a base where it fits (ConeSensor
-below borrows its disc-scan style, restricted to an angular mask) and
-never modifies its existing behavior -- every existing LidarSensor
-caller keeps working unchanged.
+Seven headline sensor suites an FTC team could actually buy, each a
+consumer of the ground-truth grid producing observations that feed
+nav.sensor.KnownGrid (reactive replanning) for the suites that sense
+obstacles. ConeSensor below models a fixed-mount ToF range sensor as a
+disc scan restricted to one or more narrow angular cones -- the same
+"reveal real obstacles within range" style nav/sensor.py's own
+domain-neutral disc-scan sensor uses, just angularly masked, since a
+narrow-FOV range sensor is what FTC teams can actually legally buy (no
+lidar-class hardware is modeled anywhere in this file -- see README.md's
+"Threats to validity" for why).
 
 The key modeling point this whole module exists to represent: suites 2
 and 4 (OdometryPodSuite, AprilTagSuite) fix POSE error -- how far the
@@ -26,7 +29,6 @@ ftc/match.py for the loop that actually drives this each tick.
 import math
 
 from nav.grid import Grid
-from nav.sensor import LidarSensor
 
 import ftc.config as config_module
 from ftc.field import in_to_cell
@@ -39,7 +41,6 @@ from ftc.config import (
     DEAD_RECKONING_DRIFT_PER_CELL, ODOMETRY_DRIFT_PER_CELL,
     CAMERA_MOUNT_HEADINGS_DEG, DUAL_CAMERA_APRILTAG_COST_USD,
     IMU_COST_USD, IMU_HEADING_CORRECTION_FACTOR,
-    LIDAR_COST_USD, LIDAR_RANGE_CELLS,
 )
 
 
@@ -61,8 +62,8 @@ def angular_diff(a, b):
 def line_of_sight(grid, cell_a, cell_b):
     """True if no obstacle cell sits strictly between `cell_a` and
     `cell_b` -- a coarse (sampled, not true Bresenham) check, matching
-    the level of fidelity nav/sensor.py's own LidarSensor already
-    accepts (a plain disc scan with no occlusion at all); this is only
+    the level of fidelity ConeSensor below already accepts (a plain
+    within-range check with no occlusion modeled at all); this is only
     used for the AprilTag range/FOV check below, which needs *some*
     notion of "behind a wall" but doesn't need to be exact."""
     r0, c0 = cell_a
@@ -103,11 +104,11 @@ def _tag_in_camera_fov(true_position, tag_cell, heading_deg_now, camera_mount_he
 
 
 class ConeSensor:
-    """Like nav.sensor.LidarSensor's disc scan, but restricted to one or
-    more narrow angular cones instead of the full 360-degree radius --
+    """A disc scan (see module docstring) restricted to one or more
+    narrow angular cones instead of the full 360-degree radius --
     modeling fixed-mount ToF range sensors that only see obstacles
     directly in front of wherever they're pointed. No occlusion/ray-
-    casting (same simplification LidarSensor itself makes): every
+    casting (same simplification the underlying disc scan makes): every
     obstacle within range and inside a cone is detected, walls between
     the sensor and it notwithstanding.
 
@@ -499,64 +500,44 @@ class DualCameraAprilTagSuite(SensorSuite):
         return AprilTagSuite.tag_correction(self, true_grid, true_position, heading_deg_now, tag_sites, rng, fidelity)
 
 
-class _OmniLidarSensor(LidarSensor):
-    """Adapts nav.sensor.LidarSensor's 2-arg sense(grid, position) to the
-    3-arg (grid, position, heading_deg_now) signature every obstacle
-    sensor gets called through in ftc/match.py -- a full 360-degree disc
-    scan has no heading dependence at all, so this just ignores the
-    extra argument rather than requiring nav/ (which must stay FTC-free,
-    see README.md's "nav/ vs ftc/" section) to grow an FTC-specific call
-    signature."""
-    def sense(self, grid, position, heading_deg_now):
-        return super().sense(grid, position)
-
-
-class LidarSuite(SensorSuite):
-    """An RPLidar-A1-class 2D scanner -- the direct head-to-head
-    Priority 3's coverage sweep exists to run: DistanceSensorSuite's 3
-    narrow ToF cones cover only ~75deg of 360deg for a REV-sensor-based
-    price (see ftc/config.py's DISTANCE_SENSOR_COST_USD); this is a
-    full 360-degree disc scan (nav/sensor.py's LidarSensor, already
-    exactly this sensing model -- see module docstring) for a
-    comparable price (ftc/config.py's LIDAR_COST_USD)."""
-    name = "lidar"
-    cost_usd = LIDAR_COST_USD
-    integration_notes = ("A single 2D lidar scanner + mount -- one sensor instead of N, no I2C "
-                          "multiplexing to wire up. CHECK THE CURRENT SEASON'S FTC GAME MANUAL's "
-                          "laser/rules section before treating this as a legal component for a real "
-                          "robot -- not asserted here, only priced and simulated.")
-    senses_obstacles = True
-    fixes_pose = False
-    drift_per_cell = DEAD_RECKONING_DRIFT_PER_CELL
-
-    def make_obstacle_sensor(self):
-        return _OmniLidarSensor(LIDAR_RANGE_CELLS)
-
-
 SUITES = {
     "dead_reckoning": DeadReckoningSuite,
     "odometry_pods": OdometryPodSuite,
     "distance_sensors": DistanceSensorSuite,
     "apriltag": AprilTagSuite,
-    "full_suite": FullSuite,
-    # Not part of SUITE_ORDER / the headline sweep -- Priority 3/4
-    # additions, exercised by their own studies (ftc/coverage_
-    # benchmark.py, ftc/newsuites_benchmark.py) so the published
-    # headline numbers above stay untouched by their presence here.
     "imu": ImuSuite,
-    "apriltag_imu": AprilTagImuSuite,
     "dual_camera_apriltag": DualCameraAprilTagSuite,
-    "lidar": LidarSuite,
+    "full_suite": FullSuite,
+    # Not part of SUITE_ORDER / the headline sweep -- AprilTag+IMU
+    # stacked is the one remaining Priority-4 addition still exercised
+    # only by its own study (ftc/newsuites_benchmark.py), since imu and
+    # dual_camera_apriltag above were promoted into SUITE_ORDER and are
+    # now headline-studied at full rigor by ftc/suite_benchmark.py
+    # itself.
+    "apriltag_imu": AprilTagImuSuite,
 }
-SUITE_ORDER = ["dead_reckoning", "odometry_pods", "distance_sensors", "apriltag", "full_suite"]
+# Dead reckoning (free baseline) -> odometry pods / distance sensors /
+# AprilTag (pose / obstacle / pose again, the three original purchasable
+# upgrades) -> IMU (heading only, $0 hardware) -> Rear camera (AprilTag's
+# second, rear-facing camera) -> Full suite (all three obstacle+pose
+# suites combined). IMU and Rear camera were promoted here from
+# Priority-3/4 side studies -- see README.md's "FTC sensor-suite study"
+# section for why.
+SUITE_ORDER = ["dead_reckoning", "odometry_pods", "distance_sensors", "apriltag", "imu",
+               "dual_camera_apriltag", "full_suite"]
 SUITE_LABELS = {
     "dead_reckoning": "Dead reckoning",
     "odometry_pods": "Odometry pods",
     "distance_sensors": "Distance sensors",
-    "apriltag": "AprilTag",
+    "apriltag": "AprilTag (front camera)",
     "full_suite": "Full suite",
     "imu": "IMU",
     "apriltag_imu": "AprilTag + IMU",
-    "dual_camera_apriltag": "Dual-camera AprilTag",
-    "lidar": "Lidar",
+    # DualCameraAprilTagSuite (front + rear camera) -- labeled "Rear
+    # camera" as a headline suite to read as the natural pair with
+    # "AprilTag (front camera)" above: what buying the SECOND camera
+    # gets you. Suite key/class name are unchanged (see ftc/bundle.py's
+    # SUITE_PARTS, ftc/optimizer.py's DEFAULT_COMPONENTS, and every
+    # existing scratch test that names "dual_camera_apriltag").
+    "dual_camera_apriltag": "Rear camera",
 }

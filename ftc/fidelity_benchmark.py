@@ -73,7 +73,7 @@ def write_csv(all_rows, path):
 def plot_fidelity_comparison(stats_by_tier, path):
     """One panel per deviation type, one line per tier -- AVERAGED across
     every suite (unlike ftc_suite_comparison.png's per-suite lines) so
-    three tiers x five suites x three deviation types doesn't collapse
+    three tiers x seven suites x three deviation types doesn't collapse
     into an unreadable 15-line-per-panel chart. The point of this
     figure is "how much does the tier itself move the curve," not
     re-litigating which suite wins (ftc_suite_writeup.md's per-tier
@@ -89,7 +89,7 @@ def plot_fidelity_comparison(stats_by_tier, path):
             ax.plot(VARIANCE_LEVELS, avg_success, FIDELITY_LINESTYLES[fidelity], marker="o", markersize=3,
                      label=fidelity, color="tab:blue" if fidelity == "optimistic" else
                      ("tab:orange" if fidelity == "realistic" else "tab:red"))
-        ax.set_ylabel("Mean success rate\n(averaged across all 5 suites)")
+        ax.set_ylabel("Mean success rate\n(averaged across all 7 suites)")
         ax.set_ylim(-0.05, 1.05)
         ax.set_title(DEVIATION_TYPE_LABELS[deviation_type])
     axes[0].legend(loc="lower left", fontsize=8)
@@ -101,6 +101,10 @@ def plot_fidelity_comparison(stats_by_tier, path):
 
 
 def _value_ranking(stats):
+    """per_100 is None (NOT infinity) at cost_usd == 0.0 -- IMU is a
+    second $0 headline suite besides the dead-reckoning baseline itself
+    now; `best` is picked only among suites with a defined per_100, same
+    convention as ftc/suite_benchmark.py's own write_writeup."""
     baseline = overall_success_rate(stats, "dead_reckoning")
     results = {}
     for suite in SUITE_ORDER:
@@ -108,9 +112,10 @@ def _value_ranking(stats):
             continue
         rate = overall_success_rate(stats, suite)
         cost = SUITES[suite].cost_usd
-        per_100 = (rate - baseline) / (cost / 100) * 100 if cost > 0 else float("inf")
+        per_100 = None if cost == 0 else (rate - baseline) / (cost / 100) * 100
         results[suite] = {"rate": rate, "per_100": per_100}
-    best = max(results, key=lambda s: results[s]["per_100"])
+    priced = {s: v for s, v in results.items() if v["per_100"] is not None}
+    best = max(priced, key=lambda s: priced[s]["per_100"])
     return results, baseline, best
 
 

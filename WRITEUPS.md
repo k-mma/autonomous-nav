@@ -1226,7 +1226,8 @@ wheels slipped over the course of the run) or wrong about what the
 *field* looks like (obstacle error -- a game element sits somewhere
 other than the CAD says, or an opponent robot parked somewhere
 unplanned). Nothing about a sensor suite's marketing tells you which
-one it fixes. `ftc/sensors.py`'s five suites split cleanly along that
+one it fixes. `ftc/sensors.py`'s original five headline suites split
+cleanly along that
 line: `OdometryPodSuite` and `AprilTagSuite` only ever touch pose error
 (`fixes_pose = True`, `senses_obstacles = False`); `DistanceSensorSuite`
 only ever touches obstacle error (the reverse); `FullSuite` is the only
@@ -1312,10 +1313,13 @@ reported detection actually falls inside a mount's cone, so this
 blind-spot finding can never quietly become an artifact of a sensor
 model that secretly sees more than it claims to. The corrected finding
 is blunter than the original SLAM-consistency story: a sparse fixed-cone
-suite has real, geometry-driven blind spots a full lidar-style disc scan
-(`nav/sensor.py`'s `LidarSensor`, which `ReactivePolicy` never collides
-with) doesn't have, and buying distance sensors without covering enough
-of the robot's perimeter can be worse than not sensing at all.
+suite has real, geometry-driven blind spots, and buying distance
+sensors without covering enough of the robot's perimeter can be worse
+than not sensing at all. `ftc/coverage_benchmark.py` (see below) later
+found this blind spot isn't just currently unmet but structurally
+unclosable by any FTC-legal ToF sensor count -- there is no purchasable
+full-360-degree option in this project's model to compare against at
+all, lidar-class hardware not being legal FTC equipment.
 
 Calibration (`ftc/calibration.py`) and the decision tool
 (`ftc/recommend.py`) are the other half of making `variance_level`
@@ -1722,17 +1726,21 @@ the guard was applied everywhere it needed to be.
 `ftc/fidelity_benchmark.py` reruns the identical full-rigor headline
 sweep at all three tiers side by side. The finding: AprilTag stays the
 best-value suite at optimistic AND realistic, and only flips to
-Odometry pods at pessimistic -- AprilTag's overall success rate drops
+Rear camera at pessimistic -- AprilTag's overall success rate drops
 from 44% to 32% (realistic) to 24% (pessimistic) as the camera stops
 being omnidirectional and heading drift starts mattering, while
-Odometry pods (which fixes pose without ever needing a camera pointed
-anywhere) barely moves. AprilTag's per-$100 margin over FullSuite
-(the runner-up by raw success rate) still shrinks sharply across tiers
-even where it stays the nominal winner (+99.3 -> +36.7 -> pp/$100
-optimistic to realistic, before flipping negative relative to Odometry
-pods at pessimistic), so "AprilTag still wins" at realistic is a real
-finding, not a reason to ignore how much closer the race gets. Full
-table in `benchmark_results/ftc_fidelity_writeup.md`. This BOUNDS the
+Rear camera's second, rear-facing camera absorbs part of that same
+FOV-gating hit (44% -> 41% -> 30%) precisely because a second camera
+is exactly what the pessimistic tier's narrower single-camera FOV
+punishes hardest -- and Odometry pods (which fixes pose without ever
+needing a camera pointed anywhere) barely moves at all (45% at every
+tier). AprilTag's per-$100 margin still shrinks sharply across tiers
+even where it stays the nominal winner (+99.3 -> +36.7 pp/$100
+optimistic to realistic), and by pessimistic its own per-$100 value has
+fallen below Rear camera's new +14.7, so "AprilTag still wins" at
+realistic is a real finding, not a reason to ignore how much closer the
+race gets. Full table in `benchmark_results/ftc_fidelity_writeup.md`.
+This BOUNDS the
 camera-FOV/heading-error gap in README.md's "Threats to validity" -- it
 does not CALIBRATE it; every non-optimistic tier's constants are the
 same class of ballpark engineering estimate as everything else in
@@ -1902,21 +1910,41 @@ deliberately a SEPARATE study with its own output files and its own
 base seed, so the original `ftc_drivetrain_writeup.md` numbers already
 cited above and in README.md stay byte-for-byte untouched): `route_
 dominant` is a real, paired-bootstrap-significant improvement over
-`fixed_at_start` (25% -> 30% pooled success rate at the `realistic`
+`fixed_at_start` (23% -> 28% pooled success rate at the `realistic`
 fidelity tier) -- re-aiming genuinely helps, confirming the mechanism
 the original writeup predicted but had no policy to demonstrate.
 `nearest_tag_current`, on the other hand, is NOT a significant
-improvement (24% -- indistinguishable from the 25% baseline):
+improvement (22% -- indistinguishable from the 23% baseline):
 optimizing for tag visibility doesn't reliably reduce strafe against
 wherever the robot is actually trying to go, which is a different
 target than `route_dominant` optimizes for. Neither policy closes the
-gap to tank (38%), and neither changes which sensor suite is the best
+gap to tank (37%), and neither changes which sensor suite is the best
 buy on mecanum -- Odometry pods stays the best-value suite under every
 heading policy tested, AprilTag never recovers the lead it holds on
 tank. Re-aiming helps; it does not flip either headline verdict.
 Reported at that strength, not rounded up to "mecanum's problem is
 solved" or down to "re-aiming doesn't matter" -- both would have been
 wrong.
+
+A separate, full-rigor question neither sweep above is designed to
+answer: does the *headline* best-value recommendation itself (AprilTag,
+measured under the default tank-equivalent drivetrain) survive on
+mecanum, for every suite, not just AprilTag? `ftc/
+drivetrain_suite_benchmark.py` answers it the same way `ftc/
+layout_benchmark.py` answers the equivalent question for field layout
+-- rerunning `ftc_suite_writeup.md`'s exact full-rigor sweep (all 11
+levels, all 3 deviation types, 25 trials/point, nothing reduced) once
+per drivetrain, for all 7 headline suites. The "tank" pass reproduces
+`ftc_suite_results.csv` trial-for-trial (the same consistency check
+`ftc/layout_benchmark.py` runs for its own "cluttered" pass), so the
+"mecanum" pass is a genuinely paired comparison, not a separately-tuned
+guess. The answer: AprilTag stays the best-value suite under both
+drivetrains -- every suite's raw success rate drops on mecanum (Full
+suite hardest, 58% -> 24%, since it has the most steps that end up
+strafing on top of already paying the drift/speed penalty for a
+route that keeps changing direction), but the RANKING of which suite
+is worth its price doesn't change. See `benchmark_results/
+ftc_drivetrain_suite_writeup.md` for the full per-suite table.
 
 ### Sensor coverage: can you buy out the distance-sensor blind spot? (`ftc/coverage_benchmark.py`)
 
@@ -1931,10 +1959,7 @@ sweeping `DISTANCE_SENSOR_COUNT` over {3, 4, 6, 8} (`ftc/sensors.py`'s
 robustness.py`'s docstring for why this has to be instance-level, not a
 class or `ftc.config` mutation, and `ftc/scratch/coverage_test.py`'s
 `check_suite_override_takes_effect` for the test written to fail if it
-weren't) and adding `LidarSuite`, a full 360-degree disc scan
-(`nav/sensor.py`'s `LidarSensor` already IS exactly this sensing model
--- wiring it into `ftc/` cost almost nothing) priced as an RPLidar-A1-
-class scanner, ~$100.
+weren't).
 
 Mount-heading placement is documented per count in `ftc/config.py`,
 since even coverage vs. front-weighted is itself a real design choice,
@@ -1944,20 +1969,27 @@ sensor for full cardinal coverage; 6 and 8 switch to EVEN spacing
 (60deg and 45deg respectively) once there are enough sensors that
 picking a side to leave uncovered stops making sense.
 
-The result: more coverage measurably helps. Going from 3 to 8 sensors
-drops the zero-deviation collision rate from 49% to 44%; lidar's full
-360-degree coverage brings it to the same 44% for about the same money
-($100 vs. $94) as the headline 3-sensor suite. That the improvement
-tops out well above 0%, even at full 360-degree coverage, is itself
+The result: more coverage measurably helps, and there's a hard ceiling
+on how far that goes. Going from 3 to 8 sensors drops the
+zero-deviation collision rate from 49% to 44% -- confirming the
+mechanism is real -- but even 8 sensors, the largest count this project
+prices, only covers 200 of 360 degrees; a 160-degree blind arc survives
+no matter how many of these specific sensors get bought, because each
+one only ever adds its own narrow cone and never closes a gap faster
+than it opens a new one at its own edge. An earlier version of this
+study used a full-360-degree disc-scan suite (a "lidar" option) as the
+direct head-to-head this comparison originally wanted -- that comparison
+is gone, not because it stopped being interesting, but because
+lidar-class hardware isn't legal FTC equipment and this project no
+longer models it anywhere. The honest replacement question is sharper,
+not weaker: "can you buy full coverage" now has a clean NO for every
+option this project can legally price, not just an unmeasured maybe.
+That the improvement tops out well short of eliminating collisions
+even at the highest coverage tested is itself
 consistent with `ftc_suite_writeup.md`'s own controlled check, which
 already found that roughly a third of DistanceSensorSuite's collisions
 persist even with pose drift completely disabled -- coverage angle is
 the DOMINANT cause of the zero-deviation collisions, not the only one.
-`LidarSuite`'s own `integration_notes` flag the one thing this repo
-can't verify on its own: FTC's laser-class-device rules must be checked
-against the CURRENT season's game manual before treating a lidar
-recommendation as real and legal -- this study prices and simulates the
-sensing model, it does not assert legality.
 
 ### Drivetrain speed / gearing (optional, `ftc/gearing_benchmark.py`)
 
@@ -2017,9 +2049,10 @@ fails, since none of them save per-cell time at this grid scale.
 
 The result, crossed with budget (30s -- the real, non-binding budget;
 15s -- right at the binding point per `ftc/budget_benchmark.py`; 10s --
-binds hard), averaged across all 5 headline suites: faster gearing
+binds hard), averaged across all 7 headline suites: faster gearing
 loses at every budget tested, by a wide and CI-clean margin (roughly
--9 percentage points at 30s, widening to roughly -16 at 15s and 10s --
+-10 percentage points at 30s, widening to roughly -16 at 15s and -15
+at 10s --
 exact figures in `benchmark_results/ftc_gearing_writeup.md`, which
 regenerates them fresh each run). Unlike the pre-correction version of
 this finding, the mechanism is not "slip cost outweighs a real time
@@ -2040,10 +2073,10 @@ slip-vs-gearing data.
 ## The bundle optimizer: from "which suite" to "which combination"
 
 Every study above this one compares a fixed list of suites. That list
-was always the real limitation, and it took a while to see it: five
-suites is a *comparison*, not a *search*, and one of the five
+was always the real limitation, and it took a while to see it: seven
+suites is a *comparison*, not a *search*, and one of the seven
 (`FullSuite`) is a hand-written class that happens to hardcode one
-particular combination of three others. There are nine suites in
+particular combination of three others. There are eight suites in
 `ftc/sensors.py` now. Nobody was going to hand-write the other
 combinations, so nobody could ask whether any of them were worth
 buying.
@@ -2061,8 +2094,8 @@ same webcam and a free IMU) is not a $50 robot. It's a $25 robot,
 described twice. So a bundle is costed over the *union of its parts*
 (`ftc/config.py`'s `PART_COSTS_USD`), which does more than fix the
 arithmetic: it gives every bundle a part signature, and two bundles
-with the same signature are the same purchase. 92 raw combinations of
-8 suites collapse to 43 genuinely distinct robots, and the search never
+with the same signature are the same purchase. 63 raw combinations of
+7 suites collapse to 24 genuinely distinct robots, and the search never
 pays to simulate the same robot twice or offers a team two names for
 one option. A "cost model" that started as a bookkeeping fix turned
 into the deduplication key for the whole search.
@@ -2073,7 +2106,7 @@ byte-for-byte `FullSuite`, then every number the optimizer prints lives
 in a slightly different universe from the published headline results
 and the two can't be compared. `ftc/scratch/bundle_test.py` enforces
 that: a one-suite bundle reproduces that suite's `MatchResult` exactly
-(all 9 suites x 3 seeds x 2 fidelity tiers), and the three-component
+(all 8 suites x 3 seeds x 2 fidelity tiers), and the three-component
 bundle reproduces `FullSuite` match for match. That constraint is what
 forced the one genuinely non-obvious design decision in the module.
 A bundle does NOT call each pose-fixing component's `tag_correction`
@@ -2132,22 +2165,32 @@ Three results I didn't expect:
   every intermediate option is a worse buy than something cheaper. A
   budget table with an "unspent" column makes that visible in a way a
   ranking never would.
-- **The best-average robot and the most-robust robot cost $100
-  different for the same worst case.** Optimizing the mean across
-  scenarios and optimizing the *worst* scenario (minimax -- the right
-  objective when you can't predict your division) pick robots that tie
-  on worst-case success. The first draft of the writeup asserted they
-  were "different robots, which is the whole reason this study reports
-  both" -- true in general, false in this run, and it was only false
-  because `rank()` breaks worst-case ties toward the cheaper robot. The
-  prose now compares the worst-case *rates* and says plainly when the
-  two objectives agree. An artifact of a tiebreaker is not a finding.
+- **The best-average robot and the most-robust robot used to cost $100
+  different for the same worst case -- now they're literally the same
+  robot.** Optimizing the mean across scenarios and optimizing the
+  *worst* scenario (minimax -- the right objective when you can't
+  predict your division) used to pick two different robots that merely
+  tied on worst-case success. The first draft of the writeup asserted
+  they were "different robots, which is the whole reason this study
+  reports both" -- true in general, false in that run, and it was only
+  false because `rank()` breaks worst-case ties toward the cheaper
+  robot: an artifact of a tiebreaker, not a finding, and the prose was
+  fixed to compare worst-case *rates* and say plainly when the two
+  objectives merely agree rather than literally coincide. Removing
+  lidar as a candidate component (see README.md's "Threats to
+  validity") changed the situation again, further: the best-average and
+  most-robust robots now resolve to the exact same bundle (odometry
+  pods + IMU + front + rear camera, $330), not just a tied worst-case
+  rate on different hardware. Two different bugs-that-weren't, two
+  different fixes, same underlying lesson -- check whether "different"
+  claims about ranked objects are actually about identity, not just an
+  equal score.
 - **Greedy search happens to be enough here, and its steps are the more
   useful output anyway.** Forward selection lands on the same robot as
   exhaustive enumeration, but only its first addition (+odometry pods,
-  +16.8%, p<0.001) is statistically significant; a $100 lidar (+5.6%,
-  p=0.156) and a free IMU (+0.8%, p=0.367) after it are not. "Stop when
-  the mean stops going up" would have bought both. `--require-
+  +16.8%, p<0.001) is statistically significant; a free IMU (+0.8%,
+  p=0.368) after it is not. "Stop when the mean stops going up" would
+  have bought it anyway. `--require-
   significant` stops when the *evidence* stops, which is a different and
   better rule.
 
@@ -2178,13 +2221,15 @@ layout code had to special-case. Separating them into
 be *shaped* around what it's actually for, particularly the one thing
 the old design couldn't do at all -- resize the window to fit however
 many components the currently-selected combination has, from a 2-suite
-pair (3 panels: two ingredients + the bundle) up to the one 5-suite
-combination (6 panels), just by pressing Left/Right.
+pair (3 panels: two ingredients + the bundle) up to the largest
+combination the candidate pool builds, just by pressing Left/Right.
 
-The result is 42 buildable 2+-suite combinations (from the 7 candidate
+The result is 19 buildable 2+-suite combinations (from the 6 candidate
 suites `ftc/optimizer.py`'s `DEFAULT_COMPONENTS` offers, minus
 dead-reckoning, which never changes a bundle's drift rate or
-capabilities) at the default candidate pool -- the exact same
+capabilities -- down from 7 candidates/42 combinations before lidar was
+removed as a purchasable component, see README.md's "Threats to
+validity") at the default candidate pool -- the exact same
 enumeration `ftc/bundle.py`'s `enumerate_bundles` and
 `ftc/optimizer_benchmark.py`'s study already use, so the visualizer's
 list and the writeup's numbers are provably talking about the same
@@ -2192,12 +2237,12 @@ robots, not two independently-maintained catalogs. Left/Right steps to
 the previous/next one; PageUp/PageDown jump 5; Home/End jump to the
 cheapest/priciest. There's no other control needed to see all of them
 -- which was the actual ask -- and the status bar always says which one
-you're on ("BUNDLE 7/42") so paging through never loses its place.
+you're on ("BUNDLE 7/19") so paging through never loses its place.
 
 One correctness fix fell out of building this that had nothing to do
 with bundles per se: the single-suite visualizer's sensor-visual
-drawing only ever showed ONE sensor kind per panel (cone, camera, or
-lidar -- whichever the code checked first), which meant `FullSuite` --
+drawing only ever showed ONE sensor kind per panel (cone or camera --
+whichever the code checked first), which meant `FullSuite` --
 distance sensors AND AprilTag together, senses obstacles AND fixes pose
 -- never drew its camera FOV wedge, even in the original single-suite
 tool. A bundle can combine arbitrarily many sensor types, so

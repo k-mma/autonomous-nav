@@ -4,14 +4,14 @@ that ftc/match.py can drive unchanged -- the missing piece this project
 needed before it could ask "which BUNDLE of sensors is worth buying,"
 rather than only "which of these five fixed suites is."
 
-The five headline suites already answer the second question, and one of
-them (FullSuite) is itself a hand-built bundle -- distance sensors +
+The seven headline suites already answer the second question, and one
+of them (FullSuite) is itself a hand-built bundle -- distance sensors +
 AprilTag + odometry pods, hardcoded as its own class. That hardcoding is
-the limitation: there are 9 suites in SUITES now, and the interesting
-combinations (odometry pods + lidar? IMU + dual camera + 6 ToF sensors?)
-would each need a hand-written class before anything could measure them.
-BundleSuite below builds any of them on demand, and ftc/optimizer.py
-searches over the space they form.
+the limitation: there are 8 suites in SUITES now, and the interesting
+combinations (odometry pods + rear camera? IMU + dual camera + 6 ToF
+sensors?) would each need a hand-written class before anything could
+measure them. BundleSuite below builds any of them on demand, and
+ftc/optimizer.py searches over the space they form.
 
 Two things make this more than a `class Bundle(A, B)` one-liner:
 
@@ -73,7 +73,6 @@ SUITE_PARTS = {
     "imu": frozenset({"imu"}),
     "apriltag_imu": frozenset({"camera_front", "imu"}),
     "dual_camera_apriltag": frozenset({"camera_front", "camera_rear"}),
-    "lidar": frozenset({"lidar"}),
     # ftc/sensors.py's make_distance_sensor_suite(n) variants, which
     # exist only at runtime (ftc/coverage_benchmark.py's sweep) and name
     # themselves "distance_sensors_{n}" -- the same string their part is
@@ -97,19 +96,17 @@ PART_LABELS = {
     "camera_front": "front camera",
     "camera_rear": "rear camera",
     "imu": "IMU",
-    "lidar": "lidar",
 }
 PART_LABELS.update({f"distance_sensors_{n}": f"{n} ToF sensors" for n in DISTANCE_SENSOR_COUNTS_SWEPT})
 PART_LABELS[f"distance_sensors_{DISTANCE_SENSOR_COUNT}"] = f"{DISTANCE_SENSOR_COUNT} ToF sensors"
 _PART_DISPLAY_ORDER = ["odometry_pods", "imu", "camera_front", "camera_rear"] + \
-    [f"distance_sensors_{n}" for n in sorted({DISTANCE_SENSOR_COUNT, *DISTANCE_SENSOR_COUNTS_SWEPT})] + \
-    ["lidar"]
+    [f"distance_sensors_{n}" for n in sorted({DISTANCE_SENSOR_COUNT, *DISTANCE_SENSOR_COUNTS_SWEPT})]
 
 
 def parts_label(parts):
     """A parts set written out as the robot it is: "odometry pods +
-    front camera + lidar". Empty (dead reckoning) reads as "encoders
-    only", which is exactly what that robot has."""
+    front camera + rear camera". Empty (dead reckoning) reads as
+    "encoders only", which is exactly what that robot has."""
     ordered = sorted(parts, key=lambda p: (_PART_DISPLAY_ORDER.index(p)
                                             if p in _PART_DISPLAY_ORDER else len(_PART_DISPLAY_ORDER), p))
     return " + ".join(PART_LABELS.get(p, p) for p in ordered) if ordered else "encoders only"
@@ -173,16 +170,17 @@ def part_cost_mismatches(tolerance=0.005):
 class CompositeObstacleSensor:
     """Every obstacle sensor on the robot, scanned as one. Satisfies the
     same sense(grid, position, heading_deg_now) -> newly-seen-cells
-    contract ftc/sensors.py's ConeSensor and _OmniLidarSensor already do,
-    so ftc/match.py needs no knowledge that a bundle exists.
+    contract ftc/sensors.py's ConeSensor already does, so ftc/match.py
+    needs no knowledge that a bundle exists.
 
     Exactly equivalent to its single child when it wraps only one: each
     child already filters its own previously-seen cells, so with one
     child `seen - self.known_obstacles` is a no-op subtraction and the
     returned set is identical, cell for cell. With several children it
-    also dedupes ACROSS them -- a cell a lidar saw twenty ticks ago and
-    a ToF cone sees now is not "newly seen," and reporting it as such
-    would trigger replans ftc/match.py has no reason to pay for."""
+    also dedupes ACROSS them -- a cell a front-mounted cone saw twenty
+    ticks ago and a side-mounted cone sees now is not "newly seen," and
+    reporting it as such would trigger replans ftc/match.py has no
+    reason to pay for."""
 
     def __init__(self, sensors):
         self.sensors = list(sensors)

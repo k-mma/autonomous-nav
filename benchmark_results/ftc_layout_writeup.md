@@ -11,12 +11,14 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 27%
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
 | Full suite | $399 | 86% | +14.8 |
-| AprilTag | $25 | 70% | +170.7 |
+| AprilTag (front camera) | $25 | 70% | +170.7 |
+| Rear camera | $50 | 70% | +85.3 |
 | Odometry pods | $280 | 51% | +8.4 |
 | Distance sensors | $94 | 30% | +2.8 |
 | Dead reckoning | $0 | 27% | n/a (free) |
+| IMU | $0 | 27% | undefined (cost_usd == 0) |
 
-Best value on this layout: AprilTag.
+Best value on this layout: AprilTag (front camera).
 
 ### Cluttered (headline layout)
 
@@ -26,11 +28,13 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 19%
 |---|---:|---:|---:|
 | Full suite | $399 | 58% | +9.7 |
 | Odometry pods | $280 | 45% | +9.3 |
-| AprilTag | $25 | 44% | +99.3 |
+| AprilTag (front camera) | $25 | 44% | +99.3 |
+| Rear camera | $50 | 44% | +49.7 |
 | Distance sensors | $94 | 21% | +2.3 |
 | Dead reckoning | $0 | 19% | n/a (free) |
+| IMU | $0 | 19% | undefined (cost_usd == 0) |
 
-Best value on this layout: AprilTag.
+Best value on this layout: AprilTag (front camera).
 
 ### Corridor (single narrow gap)
 
@@ -39,17 +43,19 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 22%
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
 | Full suite | $399 | 67% | +11.2 |
-| AprilTag | $25 | 61% | +155.3 |
+| AprilTag (front camera) | $25 | 61% | +155.3 |
+| Rear camera | $50 | 61% | +77.7 |
 | Odometry pods | $280 | 47% | +8.9 |
 | Distance sensors | $94 | 24% | +1.4 |
 | Dead reckoning | $0 | 22% | n/a (free) |
+| IMU | $0 | 22% | undefined (cost_usd == 0) |
 
-Best value on this layout: AprilTag.
+Best value on this layout: AprilTag (front camera).
 
 ## Does the conclusion hold?
 
-AprilTag is the best-value suite on all three layouts -- sparse, cluttered, and corridor. The headline recommendation is not an artifact of testing on the one layout with the most obstacles to sense; it holds on a near-open field and a single-forced-corridor field too.
+AprilTag (front camera) is the best-value suite on all three layouts -- sparse, cluttered, and corridor. The headline recommendation is not an artifact of testing on the one layout with the most obstacles to sense; it holds on a near-open field and a single-forced-corridor field too.
 
 ## Consistency check
 
-The 'cluttered' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__`, so it reruns the identical scenarios. Overall success rate here: Dead reckoning 19%, Odometry pods 45%, Distance sensors 21%, AprilTag 44%, Full suite 58% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what 'cluttered' means rather than just adding two more layouts.
+The 'cluttered' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__`, so it reruns the identical scenarios. Overall success rate here: Dead reckoning 19%, Odometry pods 45%, Distance sensors 21%, AprilTag (front camera) 44%, IMU 19%, Rear camera 44%, Full suite 58% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what 'cluttered' means rather than just adding two more layouts.

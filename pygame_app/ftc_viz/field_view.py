@@ -33,8 +33,6 @@ import math
 
 import pygame
 
-from nav.sensor import LidarSensor
-
 from ftc.config import (
     APRILTAG_RANGE_CELLS, CELL_SIZE_IN, DISTANCE_SENSOR_HALF_ANGLE_DEG, DISTANCE_SENSOR_RANGE_CELLS,
     FIDELITY_TIERS, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS, ROBOT_SIZE_IN,
@@ -77,7 +75,6 @@ TAG_RING = (255, 255, 255)
 TAG_FILL = (25, 25, 30)
 CONE_COLOR = (255, 150, 20, 55)
 CAMERA_COLOR = (40, 170, 240, 55)
-LIDAR_COLOR = (150, 70, 230, 32)
 NEWLY_SEEN_COLOR = (255, 90, 90)
 COLLISION_COLOR = (230, 30, 30)
 TAG_FLASH_COLOR = (255, 210, 20)
@@ -94,17 +91,17 @@ STUCK_WINDOW_S = 0.6
 
 def suite_sensor_visuals(suite):
     """Every active sensor visual `suite` has, as a list of ("cone",
-    mount_headings_deg) / ("lidar", None) / ("camera", mount_headings_deg)
-    tuples -- ONE per physical sensor TYPE the robot carries, not one
-    per suite it was built from. A ftc/bundle.py BundleSuite's obstacle
-    sensor is a CompositeObstacleSensor (a union of its components'
-    sensors, e.g. distance-sensor cones AND a lidar disc together); this
-    walks its `.sensors` rather than treating the whole composite as one
-    opaque kind, so a bundle draws every sensor it actually has instead
-    of only the first one found. A suite that both senses obstacles AND
-    fixes pose (ftc/sensors.py's FullSuite, or any pose+obstacle bundle)
-    draws both -- the single-suite `sensor_kind` this replaces picked
-    only one of the two even for FullSuite, a pre-existing gap this
+    mount_headings_deg) / ("camera", mount_headings_deg) tuples -- ONE
+    per physical sensor TYPE the robot carries, not one per suite it was
+    built from. A ftc/bundle.py BundleSuite's obstacle sensor is a
+    CompositeObstacleSensor (a union of its components' sensors, e.g.
+    two differently-mounted ToF cone layouts together); this walks its
+    `.sensors` rather than treating the whole composite as one opaque
+    kind, so a bundle draws every sensor it actually has instead of only
+    the first one found. A suite that both senses obstacles AND fixes
+    pose (ftc/sensors.py's FullSuite, or any pose+obstacle bundle) draws
+    both -- the single-suite `sensor_kind` this replaces picked only one
+    of the two even for FullSuite, a pre-existing gap this
     generalization also closes (cosmetic only, see this module's own
     docstring on why the field skin/visuals are allowed to differ from
     what's simulated: nothing here feeds back into ftc/match.py).
@@ -124,8 +121,6 @@ def suite_sensor_visuals(suite):
         for sub in sub_sensors:
             if isinstance(sub, ConeSensor):
                 visuals.append(("cone", sub.mount_headings_deg))
-            elif isinstance(sub, LidarSensor):
-                visuals.append(("lidar", None))
     if suite.fixes_pose:
         visuals.append(("camera", getattr(suite, "camera_mount_headings_deg", [0.0])))
     return visuals
@@ -350,9 +345,9 @@ def draw_sensor_visual(screen, x0, y0, cell_px, visuals, true_position, heading_
     grid when the robot is near an edge, and the caller already clips
     drawing to this panel's rect. A bundle with several active sensor
     types draws several overlays in one call, each already color-coded
-    by kind (CONE_COLOR/CAMERA_COLOR/LIDAR_COLOR), so e.g. odometry pods
-    + AprilTag + lidar reads at a glance as "blue wedge + purple disc,"
-    not one merged, ambiguous shape."""
+    by kind (CONE_COLOR/CAMERA_COLOR), so e.g. odometry pods + AprilTag
+    + rear camera reads at a glance as "two blue wedges," not one
+    merged, ambiguous shape."""
     cx = x0 + true_position[1] * cell_px + cell_px / 2
     cy = y0 + true_position[0] * cell_px + cell_px / 2
     screen_size = screen.get_size()
@@ -375,11 +370,6 @@ def draw_sensor_visual(screen, x0, y0, cell_px, visuals, true_position, heading_
             for mount in mount_headings:
                 pts = _wedge_points(cx, cy, heading_deg_now + mount, fov / 2, range_px)
                 pygame.draw.polygon(overlay, CAMERA_COLOR, pts)
-            screen.blit(overlay, (0, 0))
-        elif kind == "lidar":
-            radius_px = 22 * cell_px
-            overlay = _alpha_surface(screen_size)
-            pygame.draw.circle(overlay, LIDAR_COLOR, (cx, cy), radius_px)
             screen.blit(overlay, (0, 0))
 
 

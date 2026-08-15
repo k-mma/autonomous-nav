@@ -7,6 +7,17 @@ current sourced price).
 Also includes AprilTagImuSuite (AprilTag + IMU stacked) as the
 IMU-augmented variant of an existing suite the task brief asks for.
 
+UPDATE: ImuSuite and DualCameraAprilTagSuite have since been promoted
+into ftc/sensors.py's SUITE_ORDER (labeled "IMU" and "Rear camera") and
+are now headline-studied at FULL rigor by ftc/suite_benchmark.py itself
+(25 trials x 11 variance_level steps, vs. this module's 15 trials x 4
+levels). This module's own numbers for those two suites are kept for
+internal consistency (the dual-camera-vs-fidelity comparison below
+still needs both tiers side by side) but ftc_suite_writeup.md is the
+authoritative source for their real-world headline numbers now, not
+this one. AprilTagImuSuite remains this module's own unique
+contribution -- it's still not part of SUITE_ORDER.
+
 ImuSuite is the one upgrade in this whole project where the question is
 "is the free hardware worth the code," which the success-rate-gain-
 per-$100 metric every other study in this repo uses CANNOT express at

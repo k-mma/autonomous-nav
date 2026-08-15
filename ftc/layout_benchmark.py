@@ -93,7 +93,15 @@ def value_ranking(rows, layout):
     directly on the pooled successes/n over the SUMMARY_MIN_LEVEL window
     -- equivalent to overall_success_rate's mean-of-per-cell-rates since
     every cell has the same trial count, but bootstrap_ci needs raw
-    counts rather than an already-averaged rate."""
+    counts rather than an already-averaged rate.
+
+    per_100 is None (NOT infinity) at cost_usd == 0.0 -- IMU joins
+    DeadReckoningSuite as a second $0 headline suite, and "infinite
+    value per dollar" isn't a meaningful claim about hardware that
+    costs nothing (same convention ftc/suite_benchmark.py's own
+    write_writeup uses). `best` is picked only among suites that HAVE a
+    defined per_100, so a free suite can never trivially "win" this
+    ranking regardless of how it actually performed."""
     matching_all = [r for r in rows if r["variance_level"] >= SUMMARY_MIN_LEVEL]
     baseline_matching = [r for r in matching_all if r["suite"] == "dead_reckoning"]
     baseline_rate = sum(r["success"] for r in baseline_matching) / len(baseline_matching)
@@ -107,10 +115,11 @@ def value_ranking(rows, layout):
         successes = sum(r["success"] for r in matching)
         rate = successes / n
         cost = SUITES[suite].cost_usd
-        per_100 = (rate - baseline_rate) / (cost / 100) * 100 if cost > 0 else float("inf")
+        per_100 = None if cost == 0 else (rate - baseline_rate) / (cost / 100) * 100
         ci_lo, ci_hi = bootstrap_ci(successes, n, seed=_bootstrap_seed(layout, suite))
         results[suite] = {"rate": rate, "per_100": per_100, "ci_lo": ci_lo, "ci_hi": ci_hi}
-    best = max(results, key=lambda s: results[s]["per_100"])
+    priced = {s: v for s, v in results.items() if v["per_100"] is not None}
+    best = max(priced, key=lambda s: priced[s]["per_100"])
     return results, baseline_rate, best
 
 
@@ -125,7 +134,10 @@ def plot_layout_comparison(per_layout, path):
     fig, axes = plt.subplots(1, len(LAYOUT_ORDER), figsize=(15, 5), sharey=True)
     for ax, layout in zip(axes, LAYOUT_ORDER):
         results, baseline_rate, best = per_layout[layout]
-        suites = [s for s in SUITE_ORDER if s != "dead_reckoning"]
+        # $0 suites (IMU) are excluded here the same way DeadReckoningSuite
+        # itself already is -- "value per dollar" has no bar to draw for
+        # free hardware.
+        suites = [s for s in SUITE_ORDER if s != "dead_reckoning" and SUITES[s].cost_usd > 0]
         colors = [SUITE_COLORS[s] for s in suites]
         heights = [results[s]["per_100"] for s in suites]
         bars = ax.bar([SUITE_LABELS[s] for s in suites], heights, color=colors)
@@ -173,7 +185,12 @@ def write_writeup(per_layout, stats_by_layout, path):
         overall = {s: overall_success_rate(stats, s) for s in SUITE_ORDER}
         for suite in sorted(SUITE_ORDER, key=lambda s: -overall[s]):
             cost = SUITES[suite].cost_usd
-            per_100_str = "n/a (free)" if suite == "dead_reckoning" else f"{results[suite]['per_100']:+.1f}"
+            if suite == "dead_reckoning":
+                per_100_str = "n/a (free)"
+            elif results[suite]["per_100"] is None:
+                per_100_str = "undefined (cost_usd == 0)"
+            else:
+                per_100_str = f"{results[suite]['per_100']:+.1f}"
             lines.append(f"| {SUITE_LABELS[suite]} | ${cost:.0f} | {overall[suite]:.0%} | {per_100_str} |")
         lines += ["", f"Best value on this layout: {SUITE_LABELS[best]}.", ""]
 

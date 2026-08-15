@@ -126,7 +126,7 @@ def plot_frontier(results, frontier, per_profile, path):
     ax_scatter.plot([r.cost_usd for r in frontier], [r.weighted_success_rate for r in frontier],
                     "o-", color="tab:green", linewidth=2, markersize=7, label="Pareto frontier", zorder=4)
     # Frontier labels are long ("odometry pods + IMU + front camera +
-    # rear camera + lidar"), and the expensive end of the frontier is
+    # rear camera + 8 ToF sensors"), and the expensive end of the frontier is
     # by construction at the right edge of the plot -- so anything past
     # the midpoint is labeled leftward, or the most interesting points
     # are the ones whose names run off the figure.
@@ -212,6 +212,7 @@ def write_writeup(summary_data, path):
 
     best = ranked[0]
     most_robust = robust_ranked[0]
+    same_robot = best.parts == most_robust.parts
     best_single = max((r for r in results if len(r.component_names) == 1),
                       key=lambda r: r.weighted_success_rate)
 
@@ -227,7 +228,7 @@ def write_writeup(summary_data, path):
         "`ftc_optimizer_results.csv`, charts in `ftc_optimizer_frontier.png` and "
         "`ftc_optimizer_synergy.png`.",
         "",
-        "Two things make this different from `ftc_suite_writeup.md`'s five-suite comparison:",
+        "Two things make this different from `ftc_suite_writeup.md`'s seven-suite comparison:",
         "",
         "- Bundles are costed over the UNION of their parts, so shared hardware is counted once. AprilTag "
         "+ AprilTag-with-IMU is a $25 robot with one camera, not a $50 robot with two, and the two "
@@ -237,7 +238,8 @@ def write_writeup(summary_data, path):
         "overlap. Every \"significant\" below means a paired 95% CI that excludes zero AND a bootstrap "
         "p < 0.05, not a taller bar.",
         "",
-        "## The best robot, and the most robust robot, are not the same robot",
+        "## The best robot and the most robust robot" + (" are the SAME robot" if same_robot
+                                                          else " are not the same robot"),
         "",
         "| Rank | Robot | Cost | Weighted success | Worst scenario | pp/$100 |",
         "|---:|---|---:|---:|---:|---:|",
@@ -262,15 +264,19 @@ def write_writeup(summary_data, path):
         f"{most_robust.worst_profile_rate:.0%} worst-case vs. {best.worst_profile_rate:.0%} for the "
         "best-average robot)."
         + (
+            " The two objectives pick the literal SAME robot here, not just a tie on worst-case rate -- "
+            "there is no best-average-vs-most-robust tradeoff to report in this catalog, and a team should "
+            "read that as \"the choice was easy,\" not as a coincidence worth distrusting."
+            if same_robot else
             " These are genuinely different robots: averaging across scenarios rewards a bundle that is "
             "excellent at two things and helpless at a third, and a match schedule doesn't let you pick "
             "which one you get."
             if robustness_gap > 0.01 else
             f" Those worst-case rates are the same, so no robustness is being given up by taking the "
-            f"best-average robot here -- the two objectives happen to agree in this catalog. They "
-            f"differ in PRICE, though: ${most_robust.cost_usd:.2f} vs. ${best.cost_usd:.2f} for "
-            f"{best.weighted_success_rate - most_robust.weighted_success_rate:+.0%} average success, "
-            "which is the real choice on offer."
+            f"best-average robot here -- the two objectives happen to agree on worst-case performance, "
+            f"but still name different robots at different prices: ${most_robust.cost_usd:.2f} vs. "
+            f"${best.cost_usd:.2f} for {best.weighted_success_rate - most_robust.weighted_success_rate:+.0%} "
+            "average success, which is the real choice on offer."
         ),
         "",
         "## Does bundling actually beat buying one sensor?",

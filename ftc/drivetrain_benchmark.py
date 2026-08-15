@@ -32,7 +32,7 @@ Reduced trial count/level set relative to the headline sweep -- the
 same "a comparison sweep needs enough points to see the shape, not a
 publication-grade curve at every point" reasoning ftc/robustness.py's
 own docstring already uses -- since this crosses 2 drivetrains x 2
-fidelity tiers x 5 suites x 3 deviation types on top of the headline
+fidelity tiers x 7 suites x 3 deviation types on top of the headline
 axes.
 
 Writes benchmark_results/ftc_drivetrain_results.csv (every trial, raw,
@@ -201,7 +201,7 @@ def write_writeup(stats, rows, path):
         "aimed at the nearest AprilTag wall site -- for the whole match, paying no turn cost but a "
         f"speed/drift penalty on any step that isn't roughly forward relative to that held heading. "
         f"Crossed with 2 fidelity tiers "
-        f"({', '.join(FIDELITY_ORDER)}) x 5 suites x 3 deviation types x levels {LEVELS} x {TRIALS} "
+        f"({', '.join(FIDELITY_ORDER)}) x 7 suites x 3 deviation types x levels {LEVELS} x {TRIALS} "
         "trials/point on the 'cluttered' layout -- reduced relative to the headline sweep (see module "
         "docstring). Raw data in `ftc_drivetrain_results.csv`, chart in `ftc_drivetrain_comparison.png`.",
         "",

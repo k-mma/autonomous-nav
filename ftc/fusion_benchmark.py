@@ -22,7 +22,7 @@ study) and again at fusion=True (does the existing verdict survive).
 
 Uses ftc/optimizer.py's DEFAULT_PROFILES -- the same 5 scenario
 profiles ftc/optimizer_benchmark.py's headline study uses, chosen there
-for spreading the five headline suites across a wide range of success
+for spreading the seven headline suites across a wide range of success
 rates -- but this module's own scenario generation and seeds,
 independent of ftc/optimizer.py's module-level scenario cache. This
 module reads DEFAULT_PROFILES' definitions and nothing else from ftc/

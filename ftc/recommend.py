@@ -15,7 +15,7 @@ placeholder -- see ftc/calibration.py's module docstring for why that
 distinction has to stay visible at every layer, not just inside
 calibration.py itself.
 
-    python3 -m ftc.recommend                                   # rank all 5 suites
+    python3 -m ftc.recommend                                   # rank all 7 suites
     python3 -m ftc.recommend --suite distance_sensors           # + how it compares to the best option
     python3 -m ftc.recommend --elements my_field.csv --odometry my_robot.csv
     python3 -m ftc.recommend --layout corridor --blocker-probability 0.3
@@ -179,7 +179,7 @@ def main():
             print(f"{SUITE_LABELS[best_success.suite]} predicts {gap:+.0%} higher success rate on this field/"
                   f"robot profile, at ${best_success.cost_usd - chosen.cost_usd:+.0f} more.")
         else:
-            print("This is also the best raw performer among all 5 suites on this field/robot profile.")
+            print("This is also the best raw performer among all 7 suites on this field/robot profile.")
 
 
 if __name__ == "__main__":

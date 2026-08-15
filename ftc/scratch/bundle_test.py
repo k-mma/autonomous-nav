@@ -37,7 +37,7 @@ from ftc.bundle import (
 )
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
-from ftc.sensors import SUITES, DistanceSensorSuite, FullSuite, LidarSuite, make_distance_sensor_suite
+from ftc.sensors import SUITES, DistanceSensorSuite, FullSuite, make_distance_sensor_suite
 
 
 def _scenario(seed, layout="cluttered", level=0.6):
@@ -161,25 +161,34 @@ def check_conflicting_parts_rejected():
 
 
 def check_composite_sensor_unions_coverage():
+    """Two DIFFERENT ToF mount layouts (the headline 3-sensor
+    front/left/right and the 6-sensor even-spacing variant, ftc/
+    config.py's DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT) rather than one
+    cone sensor plus a full disc scan -- this project no longer models
+    any full-360-degree sensor (lidar-class hardware isn't legal FTC
+    equipment, see README.md's "Threats to validity"), but the union/
+    dedup property this test exists to check needs no disc scan to
+    prove: two cone layouts with genuinely different (non-identical)
+    coverage exercise the exact same CompositeObstacleSensor code path."""
     grid = build_grid("cluttered")
     position = (grid.size // 2, grid.size // 2)
     heading = 0.0
 
-    cones = DistanceSensorSuite().make_obstacle_sensor()
-    lidar = LidarSuite().make_obstacle_sensor()
-    cone_seen = cones.sense(grid, position, heading)
-    lidar_seen = lidar.sense(grid, position, heading)
+    cones_3 = DistanceSensorSuite().make_obstacle_sensor()
+    cones_6 = make_distance_sensor_suite(6).make_obstacle_sensor()
+    seen_3 = cones_3.sense(grid, position, heading)
+    seen_6 = cones_6.sense(grid, position, heading)
 
     composite = CompositeObstacleSensor([DistanceSensorSuite().make_obstacle_sensor(),
-                                          LidarSuite().make_obstacle_sensor()])
+                                          make_distance_sensor_suite(6).make_obstacle_sensor()])
     first = composite.sense(grid, position, heading)
     second = composite.sense(grid, position, heading)  # nothing moved -- nothing is "newly" seen
 
-    union_ok = first == (cone_seen | lidar_seen)
-    superset_ok = cone_seen <= first and lidar_seen <= first
+    union_ok = first == (seen_3 | seen_6)
+    superset_ok = seen_3 <= first and seen_6 <= first
     no_repeat_ok = second == set()
-    print(f"  cones saw {len(cone_seen)}, lidar saw {len(lidar_seen)}, composite saw {len(first)} "
-          f"(union {len(cone_seen | lidar_seen)}); second identical scan reported {len(second)} new")
+    print(f"  3-sensor cones saw {len(seen_3)}, 6-sensor cones saw {len(seen_6)}, composite saw {len(first)} "
+          f"(union {len(seen_3 | seen_6)}); second identical scan reported {len(second)} new")
     ok = union_ok and superset_ok and no_repeat_ok
     print(f"A composite sensor sees the union of its children and never re-reports a known cell: "
           f"{'OK' if ok else 'FAIL'}")

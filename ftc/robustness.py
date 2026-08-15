@@ -180,7 +180,15 @@ def value_ranking(rows, parameter, multiplier, cost_overrides=None):
     """{suite: {rate, per_100, ci_lo, ci_hi}} for every non-baseline
     suite at this sweep point, plus the best-value suite name.
     `cost_overrides` lets the cost sweep reuse one set of match rows
-    across every multiplier (see module docstring)."""
+    across every multiplier (see module docstring).
+
+    per_100 is None (NOT infinity) at cost_usd == 0.0 -- IMU is a second
+    $0 headline suite besides the dead-reckoning baseline itself now
+    (COST_SWEEP_SUITES deliberately excludes it: scaling a $0 cost by
+    any multiplier is always still $0, so there is no cost tipping
+    point to sweep for it). `best` is picked only among suites with a
+    defined per_100, same convention as ftc/suite_benchmark.py's own
+    write_writeup."""
     baseline_rate, _, _ = overall_rate(rows, "dead_reckoning")
     results = {}
     for suite in SUITE_ORDER:
@@ -188,10 +196,11 @@ def value_ranking(rows, parameter, multiplier, cost_overrides=None):
             continue
         rate, successes, n = overall_rate(rows, suite)
         cost = (cost_overrides or {}).get(suite, SUITES[suite].cost_usd)
-        per_100 = (rate - baseline_rate) / (cost / 100) * 100 if cost > 0 else float("inf")
+        per_100 = None if cost == 0 else (rate - baseline_rate) / (cost / 100) * 100
         ci_lo, ci_hi = bootstrap_ci(successes, n, seed=_bootstrap_seed(parameter, multiplier, suite))
         results[suite] = {"rate": rate, "n": n, "per_100": per_100, "ci_lo": ci_lo, "ci_hi": ci_hi}
-    best = max(results, key=lambda s: results[s]["per_100"])
+    priced = {s: v for s, v in results.items() if v["per_100"] is not None}
+    best = max(priced, key=lambda s: priced[s]["per_100"])
     return results, best
 
 
@@ -302,7 +311,7 @@ def write_csv(all_points, path):
                 rows.append({
                     "parameter": parameter, "multiplier": m, "suite": suite,
                     "rate": round(stats["rate"], 4), "n": stats["n"],
-                    "per_100": round(stats["per_100"], 3) if stats["per_100"] != float("inf") else "inf",
+                    "per_100": round(stats["per_100"], 3) if stats["per_100"] is not None else "undefined",
                     "ci_lo": round(stats["ci_lo"], 4), "ci_hi": round(stats["ci_hi"], 4),
                     "is_best": suite == best,
                 })
@@ -328,7 +337,11 @@ def plot_robustness(all_points, tipping_points, path):
 
     for ax, parameter in zip(axes, params):
         per_multiplier = all_points[parameter]
-        suites_present = sorted({s for m in MULTIPLIERS for s in per_multiplier[m][0]})
+        # $0-cost suites (IMU) are excluded -- per_100 is undefined
+        # (None) for them, and "value per dollar vs. a swept parameter"
+        # has nothing to plot for hardware that costs nothing.
+        suites_present = sorted({s for m in MULTIPLIERS for s, v in per_multiplier[m][0].items()
+                                  if v["per_100"] is not None})
         for suite in suites_present:
             ys = [per_multiplier[m][0][suite]["per_100"] for m in MULTIPLIERS]
             ax.plot(MULTIPLIERS, ys, "o-", label=SUITE_LABELS[suite], color=SUITE_COLORS[suite], markersize=4)

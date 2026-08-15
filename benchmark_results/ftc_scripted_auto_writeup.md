@@ -1,6 +1,6 @@
 # Does a scripted (never-replanning) auto routine change which sensor is worth buying?
 
-Real FTC teams overwhelmingly run a fixed, hand-tuned sequence of moves worked out before the match, not a live onboard pathfinder -- a gap this project's simulation never named, let alone measured, until now. `ftc/match.py`'s `scripted_auto=True` plans exactly once, from the assumed map, then drives that route with zero reconsideration -- no reroute for a tag correction, a sensed obstacle, or a stall (see `run_match`'s own docstring). Crossed with the same 5 headline suites x 3 deviation types x levels [0.3, 0.5, 0.7, 0.9] x 20 trials/point this project's other studies use, on the 'cluttered' layout. Raw data in `ftc_scripted_auto_results.csv`, chart in `ftc_scripted_auto_comparison.png`.
+Real FTC teams overwhelmingly run a fixed, hand-tuned sequence of moves worked out before the match, not a live onboard pathfinder -- a gap this project's simulation never named, let alone measured, until now. `ftc/match.py`'s `scripted_auto=True` plans exactly once, from the assumed map, then drives that route with zero reconsideration -- no reroute for a tag correction, a sensed obstacle, or a stall (see `run_match`'s own docstring). Crossed with the same 7 headline suites x 3 deviation types x levels [0.3, 0.5, 0.7, 0.9] x 20 trials/point this project's other studies use, on the 'cluttered' layout. Raw data in `ftc_scripted_auto_results.csv`, chart in `ftc_scripted_auto_comparison.png`.
 
 ## The headline question: does DistanceSensorSuite's advantage survive?
 
@@ -20,7 +20,9 @@ This comparison doesn't cleanly confirm the predicted mechanism, for a reason wo
 | Dead reckoning | 19% | 19% | +0% |
 | Odometry pods | 46% | 46% | +0% |
 | Distance sensors | 19% | 19% | -0% |
-| AprilTag | 44% | 42% | -2% |
+| AprilTag (front camera) | 44% | 42% | -2% |
+| IMU | 19% | 19% | +0% |
+| Rear camera | 44% | 42% | -2% |
 | Full suite | 58% | 59% | +1% |
 
 Both pose-fixing suites (AprilTag, Odometry pods) stay measurably ahead of Dead reckoning even under scripted auto -- correcting the believed-to-true position mapping still helps the SAME fixed route land closer to where it was planned, which needs no reroute at all. Pose correction and obstacle-sensing genuinely are different failure-mode fixes with different dependence on live replanning, not just different in degree.

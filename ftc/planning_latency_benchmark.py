@@ -54,7 +54,7 @@ own domain-neutral grid. This is a real constraint on ftc/field.py's
 `cell_size_in` parameter that this study surfaced, not a design choice
 made for its own sake -- see "Honest findings" in the writeup.
 
-REPLAN FREQUENCY: ftc/sensors.py's 5 headline suites (SUITE_ORDER),
+REPLAN FREQUENCY: ftc/sensors.py's 7 headline suites (SUITE_ORDER),
 reused as-is -- they already replan at different, real rates
 (DeadReckoningSuite never replans past its first plan; AprilTag/
 DistanceSensorSuite/FullSuite do, for different reasons -- see ftc/
@@ -510,7 +510,7 @@ def write_writeup(rows, path):
         "target would show this same tail-latency effect at a smaller grid size than reported here, not a "
         "different effect.",
         "- **`cell_size_in` was deliberately not swept.** Every `*_CELLS` sensor-range constant in ftc/"
-        "config.py (APRILTAG_RANGE_CELLS, DISTANCE_SENSOR_RANGE_CELLS, LIDAR_RANGE_CELLS, ...) is computed "
+        "config.py (APRILTAG_RANGE_CELLS, DISTANCE_SENSOR_RANGE_CELLS, ...) is computed "
         "once at import time from the native CELL_SIZE_IN and does not read whatever `cell_size_in` a "
         "particular `build_grid()` call used. This study only ever varies `size` (a bigger physical field, "
         "same 6in cells), which keeps every sensor's real-world range correct -- but it means `ftc/field.py`'s "

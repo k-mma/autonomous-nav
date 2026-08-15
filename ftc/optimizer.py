@@ -5,7 +5,7 @@ ranking -- says whether a bundle is *significantly* better than any one
 sensor bought alone, or whether it just looks better because it was
 measured on different luck.
 
-The gap this fills. ftc/suite_benchmark.py ranks five fixed suites on
+The gap this fills. ftc/suite_benchmark.py ranks seven fixed suites on
 one axis of deviation at a time; ftc/recommend.py predicts a single
 suite's success rate on one calibrated field. Neither can answer the
 question a team with $300 actually has: given everything on the shelf,
@@ -57,7 +57,7 @@ Runs as a CLI:
     python3 -m ftc.optimizer --budget 150                     # best robot for $150
     python3 -m ftc.optimizer --objective worst_case           # most robust, not best-on-average
     python3 -m ftc.optimizer --search greedy --max-size 4     # marginal value of each addition
-    python3 -m ftc.optimizer --components apriltag,imu,lidar,odometry_pods --trials 20
+    python3 -m ftc.optimizer --components apriltag,imu,dual_camera_apriltag,odometry_pods --trials 20
 
 ftc/optimizer_benchmark.py runs the same machinery at full rigor and
 writes the CSV/chart/writeup study; this module holds the reusable
@@ -86,7 +86,7 @@ DEFAULT_BASE_SEED = 21_000_000
 # measured against (ftc/suite_benchmark.py, ftc/recommend.py, ftc/
 # newsuites_benchmark.py all use the same one).
 BASELINE_SUITE = "dead_reckoning"
-# All 9 suites in ftc/sensors.py minus full_suite, which is itself a
+# All 8 suites in ftc/sensors.py minus full_suite, which is itself a
 # hardcoded bundle of three of the others -- ftc/bundle.py rebuilds it
 # exactly from its components, so including it as a separate "part"
 # would just create duplicate-signature candidates the search would
@@ -128,7 +128,7 @@ class ScenarioProfile:
 # gating and heading drift are live.
 #
 # The levels are chosen for DISCRIMINATION, not for being impressive or
-# punishing: each one is a point where the five headline suites spread
+# punishing: each one is a point where the seven headline suites spread
 # out across a wide range of success rates (checked against ftc_suite_
 # writeup.md's published per-axis numbers, which this harness
 # reproduces). A profile everything fails, or everything survives,
@@ -246,8 +246,8 @@ class ProfileOutcome:
 @dataclass
 class CandidateResult:
     key: str
-    label: str          # the suites named to build it ("AprilTag + Lidar")
-    parts_label: str    # the robot it actually is ("front camera + lidar")
+    label: str          # the suites named to build it ("AprilTag + IMU")
+    parts_label: str    # the robot it actually is ("front camera + IMU")
     component_names: list
     parts: frozenset
     cost_usd: float

@@ -26,7 +26,7 @@ buy nothing here except more drift and slower per-cell drive time),
 15s (right at where binding starts), and 10s (binds hard). Reduced
 trial count/level set relative to the headline sweep (the same
 reasoning ftc/robustness.py's own docstring already documents), since
-this crosses 3 gearing options x 3 budgets x 5 suites x 3 deviation
+this crosses 3 gearing options x 3 budgets x 7 suites x 3 deviation
 types on top of the headline axes.
 
 Writes benchmark_results/ftc_gearing_results.csv (every trial, raw,
@@ -134,7 +134,7 @@ def plot_gearing(stats, path):
         ax.set_title(f"budget = {budget_s:g}s", fontsize=10)
         ax.set_ylim(0, 1.0)
         ax.tick_params(axis="x", labelrotation=20, labelsize=8)
-    axes[0].set_ylabel("Success rate (averaged across all 5 suites)")
+    axes[0].set_ylabel("Success rate (averaged across all 7 suites)")
     fig.suptitle(f"Gearing vs. budget ({TRIALS} trials/point, levels {LEVELS}, '{LAYOUT}' layout)", fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     fig.savefig(path, dpi=150)
@@ -155,7 +155,7 @@ def write_writeup(stats, path):
         "This is not a speed-vs-slip tradeoff; it's a lose-lose at this grid's cell scale. Crossed with "
         "budget at "
         f"{BUDGET_LEVELS} (30s = the real budget where it never binds; 15s = right at the binding point; "
-        f"10s = binds hard), averaged across all 5 headline suites, {TRIALS} trials/point, levels "
+        f"10s = binds hard), averaged across all 7 headline suites, {TRIALS} trials/point, levels "
         f"{LEVELS}, all 3 deviation types, 'cluttered' layout -- reduced relative to the headline sweep "
         "(see module docstring). Raw data in `ftc_gearing_results.csv`, chart in "
         "`ftc_gearing_comparison.png`.",
@@ -216,7 +216,7 @@ def write_writeup(stats, path):
             )
 
     lines += ["", "## What this does and does not prove", "",
-              "This is a reduced-rigor sweep (see module docstring), averaged across all 5 suites rather "
+              "This is a reduced-rigor sweep (see module docstring), averaged across all 7 suites rather "
               "than reported per suite -- a real team would want to check this against the SPECIFIC suite "
               "it's actually running, since a suite that already fixes pose (AprilTag, odometry pods) can "
               "absorb the extra slip-driven drift better than one that can't (dead reckoning). The "

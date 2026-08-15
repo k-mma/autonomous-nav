@@ -30,7 +30,7 @@ isn't: this steps N synchronized match traces against a shared field,
 not a single search algorithm against a single displayed grid.
 
     python3 pygame_app/scenarios/scenario_ftc_suites.py
-        # all 5 headline suites, side by side, real-time playback
+        # all 7 headline suites, side by side, real-time playback
 
     python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag
     python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite
@@ -71,10 +71,11 @@ heading; grey outline square = BELIEVED position/heading (what the
 suite's own pose estimate thinks); red line between them = the
 pose-error vector this whole project is about. Gold = a fresh AprilTag/
 IMU correction just fired. Red = currently stuck on a collision, still
-trying. Orange wedge(s) = ToF cone(s). Blue wedge = camera FOV (only
-drawn when fidelity narrows it below 360deg). Purple disc = lidar's
-full scan. Dark/orange 18in square = the opponent robot (--opponent
-static/moving), facing its own direction of travel when it's driving.
+trying. Orange wedge(s) = ToF cone(s). Blue wedge(s) = camera FOV (only
+drawn when fidelity narrows it below 360deg; two wedges for the Rear
+camera suite's front+rear mounts). Dark/orange 18in square = the
+opponent robot (--opponent static/moving), facing its own direction of
+travel when it's driving.
 """
 import argparse
 import copy
@@ -578,7 +579,7 @@ def parse_args(argv=None):
     p.add_argument("--suite", default=None, help="single suite name (shorthand for --suites NAME)")
     p.add_argument("--suites", default=None,
                      help="comma-separated suite names, or 'all' for every suite ftc/sensors.py defines "
-                          "(default: the 5 headline suites, ftc.sensors.SUITE_ORDER)")
+                          "(default: the 7 headline suites, ftc.sensors.SUITE_ORDER)")
     p.add_argument("--layout", default="cluttered", choices=["sparse", "cluttered", "corridor"])
     p.add_argument("--deviation-type", default="start_drift", choices=DEVIATION_TYPE_ORDER)
     p.add_argument("--level", type=float, default=0.5,

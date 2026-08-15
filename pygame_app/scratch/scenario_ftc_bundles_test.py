@@ -268,9 +268,9 @@ def check_headless_run_pages_through_every_bundle():
 def check_headless_run_completes_a_specific_small_pool():
     """A separate, smaller candidate pool -- confirms the paging
     mechanism (and the enumeration/window-resize machinery underneath
-    it) isn't somehow special-cased to the default 7-candidate,
-    42-bundle pool."""
-    pool_argv = ["--candidates", "odometry_pods,apriltag,imu,lidar", "--max-size", "2"]
+    it) isn't somehow special-cased to the default 6-candidate,
+    19-bundle pool."""
+    pool_argv = ["--candidates", "odometry_pods,apriltag,imu,dual_camera_apriltag", "--max-size", "2"]
     args = scenario_ftc_bundles.parse_args(pool_argv)
     candidates = scenario_ftc_bundles.resolve_candidates(args)
     num_bundles = len(scenario_ftc_bundles.enumerate_all_bundles(

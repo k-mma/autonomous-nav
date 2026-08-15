@@ -8,34 +8,36 @@ The example budgets in the original ask (30s, 20s, 15s, 10s, 7s) do bind, starti
 
 | Budget (s) | Ranking (best to worst) | Worst over-budget rate |
 |---:|---|---:|
-| 30 | Full suite > Odometry pods > AprilTag > Distance sensors > Dead reckoning | 0% |
-| 20 | Full suite > Odometry pods > AprilTag > Distance sensors > Dead reckoning | 0% |
-| 15 | Full suite > Odometry pods > AprilTag > Distance sensors > Dead reckoning | 7% |
-| 10 | Full suite > AprilTag > Odometry pods > Distance sensors > Dead reckoning | 22% |
-| 7 | Full suite > AprilTag > Odometry pods > Distance sensors > Dead reckoning | 43% |
-| 5 | Full suite > Distance sensors > Odometry pods > AprilTag > Dead reckoning | 58% |
-| 4 | Full suite > Distance sensors > Odometry pods > AprilTag > Dead reckoning | 66% |
-| 3 | Full suite > Distance sensors > Odometry pods > Dead reckoning > AprilTag | 76% |
-| 2 | Distance sensors > Full suite > Dead reckoning > Odometry pods > AprilTag | 83% |
-| 1.5 | Distance sensors > Full suite > Dead reckoning > Odometry pods > AprilTag | 85% |
+| 30 | Full suite > Odometry pods > AprilTag (front camera) > Rear camera > Distance sensors > Dead reckoning > IMU | 0% |
+| 20 | Full suite > Odometry pods > AprilTag (front camera) > Rear camera > Distance sensors > Dead reckoning > IMU | 0% |
+| 15 | Full suite > Odometry pods > AprilTag (front camera) > Rear camera > Distance sensors > Dead reckoning > IMU | 7% |
+| 10 | Full suite > AprilTag (front camera) > Rear camera > Odometry pods > Distance sensors > Dead reckoning > IMU | 22% |
+| 7 | Full suite > AprilTag (front camera) > Rear camera > Odometry pods > Distance sensors > Dead reckoning > IMU | 43% |
+| 5 | Full suite > Distance sensors > Odometry pods > AprilTag (front camera) > Rear camera > Dead reckoning > IMU | 58% |
+| 4 | Full suite > Distance sensors > Odometry pods > AprilTag (front camera) > Rear camera > Dead reckoning > IMU | 66% |
+| 3 | Full suite > Distance sensors > Odometry pods > Dead reckoning > AprilTag (front camera) > IMU > Rear camera | 76% |
+| 2 | Distance sensors > Full suite > Dead reckoning > Odometry pods > AprilTag (front camera) > IMU > Rear camera | 83% |
+| 1.5 | Distance sensors > Full suite > Dead reckoning > Odometry pods > AprilTag (front camera) > IMU > Rear camera | 85% |
 
 ## Replanning frequency (real 30s budget, unaffected by tightening)
 
 | Suite | Avg. replans/trial |
 |---|---:|
-| AprilTag | 3.97 |
+| AprilTag (front camera) | 3.97 |
+| Rear camera | 3.97 |
 | Full suite | 3.33 |
 | Distance sensors | 0.63 |
 | Dead reckoning | 0.00 |
 | Odometry pods | 0.00 |
+| IMU | 0.00 |
 
 AprilTag replans on every successful tag correction, not just DistanceSensorSuite/FullSuite's every-newly-sensed-obstacle trigger -- it ends up replanning more often than DistanceSensorSuite despite never sensing obstacles at all.
 
 ## Where it starts to bind
 
-The budget starts binding at 20s -- the tightest budget at which every suite still has a 0% over-budget rate is the next one up in this sweep. At the tightest budget tested (1.5s), AprilTag has the highest over-budget rate (85%).
+The budget starts binding at 20s -- the tightest budget at which every suite still has a 0% over-budget rate is the next one up in this sweep. At the tightest budget tested (1.5s), AprilTag (front camera) has the highest over-budget rate (85%).
 
-This matches the replan-heavy-suites-degrade-first hypothesis: AprilTag replans 3.97 times/trial on average (above the 0.63/trial median across all 5 suites, see the table above), each replan charged PLANNING_OVERHEAD_S on top of drive time -- exactly the kind of suite expected to feel a tight budget first, even though the specific suite (AprilTag, corrections-driven) isn't the one the original obstacle-sensing-suites hypothesis named.
+This matches the replan-heavy-suites-degrade-first hypothesis: AprilTag (front camera) replans 3.97 times/trial on average (above the 0.63/trial median across all 7 suites, see the table above), each replan charged PLANNING_OVERHEAD_S on top of drive time -- exactly the kind of suite expected to feel a tight budget first, even though the specific suite (AprilTag, corrections-driven) isn't the one the original obstacle-sensing-suites hypothesis named.
 
 ## Does tightening the budget change which suite wins?
 

@@ -1,8 +1,8 @@
 """
-Do ftc/sensors.py's Priority-3 additions (make_distance_sensor_suite,
-LidarSuite) actually take effect end to end, not just look right on
-paper -- the trap ftc/robustness.py's docstring already flags (cost_usd
-and mount_headings_deg are class attributes baked in at import time;
+Does ftc/sensors.py's make_distance_sensor_suite Priority-3 addition
+actually take effect end to end, not just look right on paper -- the
+trap ftc/robustness.py's docstring already flags (cost_usd and
+mount_headings_deg are class attributes baked in at import time;
 mutating ftc.config after the fact does nothing to an already-built
 suite instance).
 
@@ -18,13 +18,10 @@ suite instance).
    strictly larger fraction of it than a 3-sensor suite, confirming the
    coverage-vs-count relationship the whole sweep depends on is real,
    not just documented.
-3. check_lidar_suite_sees_the_full_ring: the same ring test against
-   LidarSuite detects EVERY cell in it (a full 360-degree scan has no
-   blind spot at all), unlike any DistanceSensorSuite count.
 """
 import ftc.config as config_module
 from ftc.field import build_grid
-from ftc.sensors import DistanceSensorSuite, LidarSuite, make_distance_sensor_suite
+from ftc.sensors import DistanceSensorSuite, make_distance_sensor_suite
 from nav.grid import Grid
 
 GRID_SIZE = 24
@@ -100,20 +97,6 @@ def check_more_sensors_see_more_of_a_ring():
     return ok, seen_by, total_ring_cells
 
 
-def check_lidar_suite_sees_the_full_ring():
-    grid, position = _ring_grid_and_position()
-    total_ring_cells = sum(
-        1 for r in range(GRID_SIZE) for c in range(GRID_SIZE) if grid.cells[r][c] == Grid.OBSTACLE
-    )
-    suite = LidarSuite()
-    sensor = suite.make_obstacle_sensor()
-    seen = sensor.sense(grid, position, heading_deg_now=0.0)
-    ok = len(seen) == total_ring_cells
-    print(f"  LidarSuite sees {len(seen)}/{total_ring_cells} ring cells")
-    print(f"LidarSuite (full 360-degree scan) sees every cell in the ring, no blind spot: {'OK' if ok else 'FAIL'}")
-    return ok
-
-
 # --- pytest entry points --------------------------------------------------
 # Thin wrappers so `pytest` collects and runs the checks above as real
 # tests; the checks themselves (and the standalone `python3 <this file>`
@@ -129,15 +112,10 @@ def test_more_sensors_see_more_of_a_ring():
     assert ok
 
 
-def test_lidar_suite_sees_the_full_ring():
-    assert check_lidar_suite_sees_the_full_ring()
-
-
 if __name__ == "__main__":
     ring_ok, _, _ = check_more_sensors_see_more_of_a_ring()
     checks = [
         check_suite_override_takes_effect(),
         ring_ok,
-        check_lidar_suite_sees_the_full_ring(),
     ]
     print("\nALL PASS" if all(checks) else "\nSOME CHECKS FAILED")

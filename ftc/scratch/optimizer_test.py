@@ -44,7 +44,7 @@ TEST_PROFILES = [
     ScenarioProfile("pose", "Pose drift", variance_level=0.5, start_drift_scale=1.0),
     ScenarioProfile("map", "Map error", variance_level=0.5, obstacle_drift_scale=1.0),
 ]
-TEST_COMPONENTS = ["dead_reckoning", "odometry_pods", "apriltag", "lidar"]
+TEST_COMPONENTS = ["dead_reckoning", "odometry_pods", "apriltag", "distance_sensors"]
 
 
 def _optimizer(trials=8):

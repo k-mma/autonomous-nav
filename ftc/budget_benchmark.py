@@ -328,7 +328,7 @@ def write_writeup(all_summaries, binding_budget, ranking_change, path):
             lines.append(
                 f"\nThis matches the replan-heavy-suites-degrade-first hypothesis: {SUITE_LABELS[worst_suite]} "
                 f"replans {replans_by_suite[worst_suite]:.2f} times/trial on average (above the "
-                f"{median_replans:.2f}/trial median across all 5 suites, see the table above), each replan "
+                f"{median_replans:.2f}/trial median across all 7 suites, see the table above), each replan "
                 "charged PLANNING_OVERHEAD_S on top of drive time -- exactly the kind of suite expected to "
                 "feel a tight budget first, even though the specific suite (AprilTag, corrections-driven) "
                 "isn't the one the original obstacle-sensing-suites hypothesis named."

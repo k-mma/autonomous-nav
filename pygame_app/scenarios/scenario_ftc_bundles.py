@@ -4,7 +4,7 @@ combination of 2 or more sensor suites, one at a time, each one run and
 drawn live against the identical seeded scenario -- the animated
 counterpart to ftc/optimizer_benchmark.py's static writeup. Separate
 from pygame_app/scenarios/scenario_ftc_suites.py on purpose: that file
-is the single-suite comparison tool (SUITE_ORDER's 5 headline suites,
+is the single-suite comparison tool (SUITE_ORDER's 7 headline suites,
 or any explicit list of them, side by side); this one's whole subject
 is COMBINATIONS, and giving it its own entry point keeps "compare fixed
 suites" and "browse the bundle space" from fighting over one file's
@@ -13,17 +13,17 @@ keybindings, panel-count logic, and CLI surface.
 *** HOW TO SEE EVERY BUNDLE: press Left/Right. *** That's the entire
 mechanism -- Left/Right steps to the previous/next bundle in a list that
 covers EVERY combination of 2+ suites ftc/bundle.py can build from
---candidates (7 suites by default: everything ftc/optimizer.py's
+--candidates (6 suites by default: everything ftc/optimizer.py's
 DEFAULT_COMPONENTS offers except dead_reckoning, which never changes a
-bundle's behavior -- see LIVE_BUNDLE_CANDIDATES's reasoning in this
+bundle's behavior -- see DEFAULT_CANDIDATES's reasoning in this
 project's own optimizer module), deduplicated by PHYSICAL HARDWARE the
 same way ftc/bundle.py's enumerate_bundles always does (two suite names
 that buy the same parts -- e.g. "apriltag+apriltag_imu" and
 "apriltag_imu" alone -- are the same purchase and appear only once).
-That's 42 distinct robots at the defaults (18 two-suite bundles, 16
-three-suite, 7 four-suite, 1 five-suite); PageUp/PageDown jump 5 at a
+That's 19 distinct robots at the defaults (12 two-suite bundles, 6
+three-suite, 1 four-suite); PageUp/PageDown jump 5 at a
 time, Home/End jump to the first/last, and the status bar always shows
-"Bundle i/42" plus the browsing keys, so there is no way to lose track
+"Bundle i/19" plus the browsing keys, so there is no way to lose track
 of where you are in the list or how to keep moving through it. Nothing
 here needs typing a suite name -- every combination is already queued
 up, in order, one keypress away.
@@ -42,14 +42,14 @@ behavior this file needs that the fixed-panel-count scenario_ftc_
 suites.py doesn't.
 
     python3 pygame_app/scenarios/scenario_ftc_bundles.py
-        # every 2+-suite combination of the 7 default candidates,
+        # every 2+-suite combination of the 6 default candidates,
         # sorted cheapest-first, starting at the cheapest bundle
 
     python3 pygame_app/scenarios/scenario_ftc_bundles.py --sort parts
         # browse fewest-parts-first instead of cheapest-first
 
     python3 pygame_app/scenarios/scenario_ftc_bundles.py \\
-        --candidates odometry_pods,apriltag,imu,lidar --max-size 2
+        --candidates odometry_pods,apriltag,imu,dual_camera_apriltag --max-size 2
         # a smaller candidate pool, pairs only (6 combinations)
 
     python3 pygame_app/scenarios/scenario_ftc_bundles.py \\
@@ -75,7 +75,7 @@ Keys:
 Legend: same as scenario_ftc_suites.py (solid 18in square = true
 position/heading, grey outline = believed, red line = pose error, gold
 = a fresh AprilTag/IMU correction, orange wedge(s) = ToF cone(s), blue
-wedge = camera FOV, purple disc = lidar, red X = collision) -- one
+wedge = camera FOV, red X = collision) -- one
 addition: the rightmost, bundle panel's title is prefixed "BUNDLE:" so
 it's never ambiguous which panel is the combination and which are its
 own ingredients running alone.

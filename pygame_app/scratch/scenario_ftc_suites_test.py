@@ -5,7 +5,7 @@ actually run -- not just ftc/trace.py's recording logic underneath it
 pygame at all)? Nobody had run this under a headless display to
 confirm the drawing code itself doesn't crash: pygame_app/ftc_viz/
 field_view.py's grid/tag/trail/robot/sensor-cone drawing, every
-sensor_kind branch (cone/camera/lidar/none), the collision mark, and
+sensor_kind branch (cone/camera/none), the collision mark, and
 scenario_ftc_suites.py's own interactive handlers (reroll, deviation-
 type cycling, variance_level clamping, fidelity cycling).
 
@@ -15,10 +15,10 @@ patched to count frames and post synthetic input, so main()'s own event
 loop drives everything exactly like a real interactive session would.
 
 Runs with --suites all (every suite ftc/sensors.py defines, including
-the Priority-3/4 additions the headline sweep never touches) so every
-sensor_kind branch in field_view.draw_sensor_visual gets exercised at
-least once in a single pass, not just whichever branch the 5 headline
-suites happen to cover.
+the one remaining non-headline addition, AprilTag+IMU, that the
+headline sweep never touches) so every sensor_kind branch in
+field_view.draw_sensor_visual gets exercised at least once in a single
+pass, not just whichever branch the 7 headline suites happen to cover.
 """
 import os
 
@@ -87,7 +87,7 @@ def check_headless_run_completes_all_suites():
     except Exception as e:
         ok = False
         print(f"  scenario_ftc_suites.main(['--suites', 'all']) raised: {e!r}")
-    print(f"scenario_ftc_suites.py runs headlessly (every sensor_kind branch: cone/camera/lidar/none) "
+    print(f"scenario_ftc_suites.py runs headlessly (every sensor_kind branch: cone/camera/none) "
           f"without crashing: {'OK' if ok else 'FAIL'}")
     return ok
 

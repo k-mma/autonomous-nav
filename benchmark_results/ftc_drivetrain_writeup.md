@@ -1,6 +1,6 @@
 # Does a mecanum drivetrain's cost premium get repaid?
 
-ftc/drivetrain.py adds TANK ($40) and MECANUM ($170) as an axis orthogonal to sensor suite: TANK must rotate to face its direction of travel (the existing flat per-90-degree turn cost, unchanged from before this addition); MECANUM holds a fixed heading -- aimed at the nearest AprilTag wall site -- for the whole match, paying no turn cost but a speed/drift penalty on any step that isn't roughly forward relative to that held heading. Crossed with 2 fidelity tiers (optimistic, realistic) x 5 suites x 3 deviation types x levels [0.3, 0.5, 0.7, 0.9] x 15 trials/point on the 'cluttered' layout -- reduced relative to the headline sweep (see module docstring). Raw data in `ftc_drivetrain_results.csv`, chart in `ftc_drivetrain_comparison.png`.
+ftc/drivetrain.py adds TANK ($40) and MECANUM ($170) as an axis orthogonal to sensor suite: TANK must rotate to face its direction of travel (the existing flat per-90-degree turn cost, unchanged from before this addition); MECANUM holds a fixed heading -- aimed at the nearest AprilTag wall site -- for the whole match, paying no turn cost but a speed/drift penalty on any step that isn't roughly forward relative to that held heading. Crossed with 2 fidelity tiers (optimistic, realistic) x 7 suites x 3 deviation types x levels [0.3, 0.5, 0.7, 0.9] x 15 trials/point on the 'cluttered' layout -- reduced relative to the headline sweep (see module docstring). Raw data in `ftc_drivetrain_results.csv`, chart in `ftc_drivetrain_comparison.png`.
 
 ## The AprilTag interaction this module exists to check
 
@@ -15,9 +15,9 @@ Mecanum does NOT come out ahead here, at either tier -- and the reason is visibl
 
 | Drivetrain | Fidelity | Best value | pp/$100 |
 |---|---|---|---:|
-| Tank | optimistic | AprilTag | +26.5 |
-| Tank | realistic | AprilTag | +18.0 |
-| Mecanum | optimistic | AprilTag | +9.7 |
+| Tank | optimistic | AprilTag (front camera) | +26.5 |
+| Tank | realistic | Rear camera | +19.8 |
+| Mecanum | optimistic | AprilTag (front camera) | +9.7 |
 | Mecanum | realistic | Odometry pods | +8.1 |
 
 ## Does mecanum's own premium get repaid?
@@ -29,7 +29,9 @@ Comparing each suite's success rate on mecanum vs. tank, at mecanum's $130 total
 | Dead reckoning | 21% | 13% | -8% | no |
 | Odometry pods | 50% | 49% | -1% | marginal |
 | Distance sensors | 22% | 10% | -12% | no |
-| AprilTag | 33% | 17% | -16% | no |
+| AprilTag (front camera) | 33% | 17% | -16% | no |
+| IMU | 21% | 13% | -8% | no |
+| Rear camera | 39% | 21% | -18% | no |
 | Full suite | 47% | 22% | -26% | no |
 
 ## What this does and does not prove

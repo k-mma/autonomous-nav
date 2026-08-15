@@ -6,28 +6,33 @@ collides in roughly half its trials even at zero field deviation,
 because those 3 cones cover only ~75deg of the 360deg around the robot
 -- and a controlled check showed pose drift is NOT the dominant cause
 (ftc_suite_writeup.md's "Honest findings"). That study never says
-whether a team can buy its way out of the problem. This does two
-things:
+whether a team can buy its way out of the problem. This sweeps
+DISTANCE_SENSOR_COUNT over {3, 4, 6, 8} (ftc/config.py's
+DISTANCE_SENSOR_COUNTS_SWEPT, via ftc/sensors.py's
+make_distance_sensor_suite), with the mount-heading layout documented
+per count -- even coverage vs. front-weighted is itself a real
+placement choice, not a detail (see ftc/config.py's
+DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT comment). Reports the
+coverage-vs-collisions curve and whether any count actually makes the
+suite worth its scaling price (DISTANCE_SENSOR_COST_USD per sensor).
 
-1. Sweeps DISTANCE_SENSOR_COUNT over {3, 4, 6, 8} (ftc/config.py's
-   DISTANCE_SENSOR_COUNTS_SWEPT, via ftc/sensors.py's
-   make_distance_sensor_suite), with the mount-heading layout
-   documented per count -- even coverage vs. front-weighted is itself a
-   real placement choice, not a detail (see ftc/config.py's
-   DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT comment). Reports the
-   coverage-vs-collisions curve and whether any count actually makes
-   the suite worth its scaling price (DISTANCE_SENSOR_COST_USD per
-   sensor).
-2. Adds LidarSuite (ftc/sensors.py) -- a full 360-degree disc scan,
-   ~$100 (Slamtec RPLIDAR A1, ftc/config.py's LIDAR_COST_USD),
-   nav/sensor.py's LidarSensor already IS exactly this sensing model --
-   as the direct head-to-head the blind-spot finding demands: the
-   headline 3-sensor DistanceSensorSuite's blind cones vs. full
-   coverage, for comparable money.
+An earlier version of this study also benchmarked a full-360-degree
+disc-scan suite (nav/sensor.py's own domain-neutral sensor model, wired
+in as a purchasable "lidar" option) as the direct head-to-head the
+blind-spot finding invites: what does closing the gap ENTIRELY cost?
+That comparison point is gone -- lidar-class hardware isn't legal FTC
+equipment, so this project no longer prices or simulates it anywhere
+(see README.md's "Threats to validity"). That changes what this study
+can honestly claim: there is no purchasable full-coverage option to
+compare against, and the question becomes sharper, not weaker -- how
+much of the 360-degree perimeter can the largest swept count (8
+sensors) actually cover, and is any amount of blind arc structurally
+unavoidable at every FTC-legal ToF count tested? See "Is full coverage
+even reachable?" in the writeup for the answer.
 
 Reduced trial count/level set relative to the headline sweep (the same
 "enough to see the shape, not a publication-grade curve at every point"
-reasoning ftc/robustness.py already documents), since this crosses 5
+reasoning ftc/robustness.py already documents), since this crosses 4
 obstacle-sensing configurations x 3 deviation types x 4 levels on top of
 the headline axes.
 
@@ -35,8 +40,8 @@ Writes benchmark_results/ftc_coverage_results.csv (every trial, raw,
 with an added `config` column), benchmark_results/
 ftc_coverage_comparison.png (coverage angle vs. collision rate, plus
 cost vs. success rate), and benchmark_results/ftc_coverage_writeup.md
-(whether any sensor count -- or lidar -- actually closes the blind-spot
-gap, and at what price).
+(whether more sensors actually close the blind-spot gap, how much of it
+is structurally unclosable by any legal ToF count, and at what price).
 """
 import csv
 import random
@@ -50,13 +55,10 @@ import matplotlib.pyplot as plt
 from nav.field_variance import generate_ground_truth
 from nav.stats import bootstrap_ci
 
-from ftc.config import (
-    DISTANCE_SENSOR_COST_USD, DISTANCE_SENSOR_COUNTS_SWEPT, DISTANCE_SENSOR_HALF_ANGLE_DEG,
-    LIDAR_COST_USD,
-)
+from ftc.config import DISTANCE_SENSOR_COUNTS_SWEPT, DISTANCE_SENSOR_HALF_ANGLE_DEG
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
-from ftc.sensors import LidarSuite, make_distance_sensor_suite
+from ftc.sensors import make_distance_sensor_suite
 from ftc.suite_benchmark import DEVIATION_TYPES, DEVIATION_TYPE_ORDER, LAYOUT, _solvable_scenario
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
@@ -65,21 +67,16 @@ LEVELS = [0.0, 0.3, 0.6, 1.0]
 TRIALS = 15
 BASE_SEED = 12_000_000
 
-CONFIG_ORDER = [f"distance_{n}" for n in DISTANCE_SENSOR_COUNTS_SWEPT] + ["lidar"]
+CONFIG_ORDER = [f"distance_{n}" for n in DISTANCE_SENSOR_COUNTS_SWEPT]
 CONFIG_LABELS = {f"distance_{n}": f"{n} distance sensors" for n in DISTANCE_SENSOR_COUNTS_SWEPT}
-CONFIG_LABELS["lidar"] = "Lidar (360deg)"
 
 
 def _build_suite(config_name):
-    if config_name == "lidar":
-        return LidarSuite()
     count = int(config_name.split("_")[1])
     return make_distance_sensor_suite(count)
 
 
 def _coverage_deg(config_name):
-    if config_name == "lidar":
-        return 360.0
     count = int(config_name.split("_")[1])
     return count * 2 * DISTANCE_SENSOR_HALF_ANGLE_DEG
 
@@ -144,13 +141,21 @@ def plot_coverage(stats, path):
 
     coverage = [stats[c]["coverage_deg"] for c in CONFIG_ORDER]
     zero_dev_collisions = [stats[c]["zero_dev_collision_rate"] for c in CONFIG_ORDER]
-    colors = ["tab:blue"] * len(DISTANCE_SENSOR_COUNTS_SWEPT) + ["tab:green"]
+    # The highest-coverage count swept (8 sensors) gets its own color --
+    # not because it's a purchasable "full coverage" option (it isn't,
+    # see module docstring), just to visually mark the best this sweep
+    # actually tests.
+    colors = ["tab:blue"] * (len(DISTANCE_SENSOR_COUNTS_SWEPT) - 1) + ["tab:green"]
     ax_cov.scatter(coverage, zero_dev_collisions, c=colors, s=80, zorder=3)
     for c, cov, rate in zip(CONFIG_ORDER, coverage, zero_dev_collisions):
         ax_cov.annotate(CONFIG_LABELS[c], (cov, rate), fontsize=8, xytext=(4, 4), textcoords="offset points")
+    ax_cov.axvline(360.0, color="black", linestyle="--", linewidth=0.8)
+    ax_cov.annotate("360deg (unreachable at any\nswept count -- see writeup)", (360.0, 1.0),
+                     fontsize=7, ha="right", va="top", xytext=(-4, 0), textcoords="offset points")
     ax_cov.set_xlabel("Sensor coverage (degrees of the 360deg perimeter)")
     ax_cov.set_ylabel("Collision rate at variance_level=0.0")
     ax_cov.set_title("Coverage vs. collisions (zero field deviation)", fontsize=10)
+    ax_cov.set_xlim(0, 380)
     ax_cov.set_ylim(-0.05, 1.05)
 
     cost = [stats[c]["cost"] for c in CONFIG_ORDER]
@@ -177,9 +182,8 @@ def write_writeup(stats, path):
         "collide in roughly half their trials even at zero field deviation -- a controlled check showed "
         "pose drift wasn't the dominant cause. That study never asked whether more sensors fix it. This "
         f"sweeps `DISTANCE_SENSOR_COUNT` over {DISTANCE_SENSOR_COUNTS_SWEPT} (`ftc/sensors.py`'s "
-        "`make_distance_sensor_suite`, mount-heading layout documented per count in `ftc/config.py`) and "
-        "adds `LidarSuite` (a full 360-degree disc scan, ~$100 -- see the table below for exact figures) "
-        "as the direct head-to-head. Reduced "
+        "`make_distance_sensor_suite`, mount-heading layout documented per count in `ftc/config.py`). "
+        "Reduced "
         f"trial count relative to the headline sweep ({TRIALS} trials/point, levels {LEVELS}, all 3 "
         "deviation types, 'cluttered' layout -- see module docstring). Raw data in "
         "`ftc_coverage_results.csv`, chart in `ftc_coverage_comparison.png`.",
@@ -198,50 +202,59 @@ def write_writeup(stats, path):
         )
 
     three_sensor = stats["distance_3"]
-    eight_sensor = stats["distance_8"]
-    lidar = stats["lidar"]
+    max_count = max(DISTANCE_SENSOR_COUNTS_SWEPT)
+    eight_sensor = stats[f"distance_{max_count}"]
     lines += ["", "## Does more coverage actually reduce zero-deviation collisions?", ""]
     improves = eight_sensor["zero_dev_collision_rate"] < three_sensor["zero_dev_collision_rate"]
     if improves:
         lines.append(
-            f"Yes -- going from 3 to 8 distance sensors drops the zero-deviation collision rate from "
-            f"{three_sensor['zero_dev_collision_rate']:.0%} to {eight_sensor['zero_dev_collision_rate']:.0%}, "
+            f"Yes -- going from 3 to {max_count} distance sensors drops the zero-deviation collision rate "
+            f"from {three_sensor['zero_dev_collision_rate']:.0%} to "
+            f"{eight_sensor['zero_dev_collision_rate']:.0%}, "
             f"confirming the blind-spot finding is really about coverage angle (which the 3-sensor "
             f"count directly under-covers) and that adding sensors genuinely closes gaps in the "
             f"perimeter, not just adding redundant cones pointed at the same arcs."
         )
     else:
         lines.append(
-            f"Not cleanly -- the zero-deviation collision rate at 8 sensors "
+            f"Not cleanly -- the zero-deviation collision rate at {max_count} sensors "
             f"({eight_sensor['zero_dev_collision_rate']:.0%}) isn't clearly lower than at 3 "
             f"({three_sensor['zero_dev_collision_rate']:.0%}) at this trial count. Worth rechecking with "
             "more trials before concluding more sensors don't help; the mechanism (more coverage angle) "
             "should still reduce blind-spot collisions in principle."
         )
 
-    lines += ["", f"## The direct head-to-head: ${three_sensor['cost']:.0f} of blind cones vs. "
-              f"${lidar['cost']:.0f} of full coverage", "",
-              f"Lidar (360deg coverage, ${lidar['cost']:.0f}) has a "
-              f"{lidar['zero_dev_collision_rate']:.0%} zero-deviation collision rate, vs. "
-              f"{three_sensor['zero_dev_collision_rate']:.0%} for the headline 3-sensor DistanceSensorSuite "
-              f"at ${three_sensor['cost']:.0f} -- "
-              + ("closing essentially all of the blind-spot gap for roughly the same money."
-                 if lidar["zero_dev_collision_rate"] < three_sensor["zero_dev_collision_rate"] * 0.5 else
-                 "a real improvement, though not a complete elimination of geometry-driven collisions "
-                 "(some of DistanceSensorSuite's collision rate was never purely a coverage-angle problem "
-                 "-- see ftc_suite_writeup.md's own controlled check, which found roughly a third of "
-                 "collisions persisted even with pose drift disabled for reasons other than blind spots)."),
+    max_coverage_deg = eight_sensor["coverage_deg"]
+    residual_deg = 360.0 - max_coverage_deg
+    lines += [
+        "",
+        "## Is full coverage even reachable?",
+        "",
+        "No purchasable option in this sweep -- or anywhere else in this project -- covers the full "
+        "360-degree perimeter: lidar-class hardware isn't legal FTC equipment, so it isn't modeled here "
+        "(an earlier version of this study used it as a full-coverage reference point; removing it is "
+        "not a gap in this study, it's a correction -- see README.md's \"Threats to validity\"). Even at "
+        f"the largest count swept ({max_count} narrow ToF cones, `DISTANCE_SENSOR_HALF_ANGLE_DEG` each), "
+        f"total coverage tops out at {max_coverage_deg:.0f} of 360 degrees -- a "
+        f"{residual_deg:.0f}-degree blind arc survives no matter how many of these specific sensors a team "
+        "buys, because each one only ever adds its own narrow cone, never closes the gap between cones "
+        "faster than it opens new ones at the perimeter's edge. The honest framing of this study's own "
+        "finding is therefore blunter than \"more sensors help\" (true, see the table above) or \"buy "
+        "enough and the blind spot closes\" (false, for every FTC-legal ToF configuration this project can "
+        "price): a sparse fixed-cone sensor family has a structural coverage ceiling, not just a "
+        "currently-unmet one, and closing it fully would need a genuinely different sensing modality this "
+        "project doesn't model at all -- not a bigger version of the same one.",
         "",
         "## What this does and does not prove",
         "",
-        "This confirms the coverage-angle mechanism is real and actionable -- more sensors (or a sensor "
-        "with no blind spot at all) measurably reduce the specific zero-deviation collisions the headline "
-        "study flagged. It does NOT establish that any of these counts is the *right* number for a real "
-        "team to buy -- that's a cost/complexity tradeoff (more sensors is more I2C wiring/multiplexing, "
-        "ftc/sensors.py's own integration_notes) this module doesn't weigh, and lidar's integration_notes "
-        "explicitly flag that FTC's laser-class-device rules must be checked against the CURRENT season's "
-        "game manual before treating it as a real, legal recommendation -- this module prices and "
-        "simulates the sensing model, it does not assert legality.",
+        "This confirms the coverage-angle mechanism is real and actionable -- more sensors measurably "
+        "reduce the specific zero-deviation collisions the headline study flagged, right up to the "
+        f"{residual_deg:.0f}-degree ceiling the geometry itself imposes. It does NOT establish that any of "
+        "these counts is the *right* number for a real team to buy -- that's a cost/complexity tradeoff "
+        "(more sensors is more I2C wiring/multiplexing, ftc/sensors.py's own integration_notes) this "
+        "module doesn't weigh, and it does not establish that the residual blind arc is actually survivable "
+        "in a real match -- only that no amount of this specific hardware, bought in any quantity this "
+        "study tested, closes it to zero.",
     ]
 
     with open(path, "w") as f:

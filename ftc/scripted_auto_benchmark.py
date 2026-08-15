@@ -8,7 +8,7 @@ that measures it: `ftc/match.py`'s `scripted_auto=True` (a route
 planned exactly once, from the assumed map, then driven with zero
 reconsideration -- see run_match's own docstring for the full
 mechanism and for why nav/policies.py's OpenLoopPolicy was reused as a
-CONCEPT rather than as code) crossed against the same 5 headline
+CONCEPT rather than as code) crossed against the same 7 headline
 suites x 3 deviation types this project's headline sweep already uses.
 
 The specific, quantifiable claim this module exists to check, not just
@@ -140,7 +140,7 @@ def write_writeup(rows, path):
         "match, not a live onboard pathfinder -- a gap this project's simulation never named, let alone "
         "measured, until now. `ftc/match.py`'s `scripted_auto=True` plans exactly once, from the assumed "
         "map, then drives that route with zero reconsideration -- no reroute for a tag correction, a sensed "
-        "obstacle, or a stall (see `run_match`'s own docstring). Crossed with the same 5 headline suites x 3 "
+        "obstacle, or a stall (see `run_match`'s own docstring). Crossed with the same 7 headline suites x 3 "
         f"deviation types x levels {LEVELS} x {TRIALS} trials/point this project's other studies use, on the "
         f"'{LAYOUT}' layout. Raw data in `ftc_scripted_auto_results.csv`, chart in "
         "`ftc_scripted_auto_comparison.png`.",

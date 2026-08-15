@@ -57,7 +57,7 @@ is worth it is obvious from specs alone, because the answer depends on
 that starts a few inches off its mark needs pose correction, not
 obstacle sensing; a field with elements that don't quite match the
 CAD, or an opponent robot parked somewhere unplanned, needs the
-opposite. `ftc/suite_benchmark.py` sweeps 5 sensor suites
+opposite. `ftc/suite_benchmark.py` sweeps 7 sensor suites
 (`ftc/sensors.py`) against 3 independently-scaled deviation types
 (`nav/field_variance.py`, Phase 2's ablation) at 11 deviation levels, on
 a real 30-second time budget (`ftc/match.py`) -- the study a real season
@@ -173,13 +173,13 @@ python3 -m pytest                                # run the test suite (ftc/, nav
 
 python3 pygame_app/main.py                       # the pygame visualizer
 python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
-python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner/MeepMeep-style), real-time playback, all 5 headline suites side by side
+python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner/MeepMeep-style), real-time playback, all 7 headline suites side by side
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag                     # one suite, one big panel
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite         # an arbitrary side-by-side comparison
 python3 pygame_app/scenarios/scenario_ftc_suites.py --suites all --fidelity pessimistic  # every suite ftc/sensors.py defines, at the pessimistic tier
 python3 pygame_app/scenarios/scenario_ftc_suites.py --opponent moving                    # a second, wandering robot on the field
-python3 pygame_app/scenarios/scenario_ftc_bundles.py                                     # SEPARATE visualizer: browse all 42 buildable 2+-suite combinations (ftc/bundle.py) -- press Left/Right to step through every one, each shown as its own components running alone next to the combined BUNDLE panel
-python3 pygame_app/scenarios/scenario_ftc_bundles.py --sort parts --candidates odometry_pods,apriltag,imu,lidar --max-size 2  # a smaller candidate pool, pairs only
+python3 pygame_app/scenarios/scenario_ftc_bundles.py                                     # SEPARATE visualizer: browse all 19 buildable 2+-suite combinations (ftc/bundle.py) -- press Left/Right to step through every one, each shown as its own components running alone next to the combined BUNDLE panel
+python3 pygame_app/scenarios/scenario_ftc_bundles.py --sort parts --candidates odometry_pods,apriltag,imu,dual_camera_apriltag --max-size 2  # a smaller candidate pool, pairs only
 python3 -m nav.benchmark                         # regenerate benchmark_results/
 python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
 python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
@@ -190,9 +190,10 @@ python3 -m ftc.layout_benchmark                  # does the best-value suite cha
 python3 -m ftc.budget_benchmark                  # sweep AUTONOMOUS_PERIOD_S -- when does the budget start to bind?
 python3 -m ftc.opponent_benchmark                # static vs. moving opponent -- does it change which suite wins?
 python3 -m ftc.fidelity_benchmark                # headline sweep at all 3 MODEL_FIDELITY tiers side by side
-python3 -m ftc.drivetrain_benchmark              # tank vs. mecanum -- does holding heading toward a tag wall pay off?
-python3 -m ftc.coverage_benchmark                # distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot?
-python3 -m ftc.newsuites_benchmark               # IMU / AprilTag+IMU / dual-camera AprilTag
+python3 -m ftc.drivetrain_benchmark              # tank vs. mecanum -- does holding heading toward a tag wall pay off (AprilTag-focused, reduced rigor)?
+python3 -m ftc.drivetrain_suite_benchmark        # tank vs. mecanum, full-rigor headline sweep, all 7 suites -- does the best-value suite change?
+python3 -m ftc.coverage_benchmark                # distance-sensor count sweep {3,4,6,8} -- how much of the blind spot closes, and how much structurally can't?
+python3 -m ftc.newsuites_benchmark               # AprilTag+IMU (IMU and dual-camera AprilTag are now headline suites, see ftc.suite_benchmark)
 python3 -m ftc.gearing_benchmark                 # faster motor gearing vs. wheel slip, crossed with the budget
 python3 -m ftc.optimizer_benchmark               # bundle study: every combination of suites, Pareto frontier + synergy significance
 python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
@@ -493,7 +494,7 @@ scale_writeup.md`.
 ## FTC sensor-suite study: results
 
 The answer to this project's research question, from `ftc/suite_benchmark.py`
-(25 trials x 5 suites x 3 independently-scaled deviation types x 11
+(25 trials x 7 suites x 3 independently-scaled deviation types x 11
 deviation levels, on the "cluttered" field layout). Full breakdown,
 including the per-deviation-type charts and the reliability-per-dollar
 chart, in `benchmark_results/ftc_suite_writeup.md`,
@@ -503,9 +504,23 @@ chart, in `benchmark_results/ftc_suite_writeup.md`,
 |---|---:|---:|
 | Full suite | $399 | 58% |
 | Odometry pods | $280 | 45% |
-| AprilTag | $25 | 44% |
+| AprilTag (front camera) | $25 | 44% |
+| Rear camera | $50 | 44% |
 | Distance sensors | $94 | 21% |
 | Dead reckoning (baseline) | $0 | 19% |
+| IMU | $0 | 19% |
+
+IMU and Rear camera were promoted into this headline table from
+Priority-3/4 side studies that used to be the only place they were
+benchmarked (`ftc/newsuites_benchmark.py`, still around for the one
+suite that remains non-headline, AprilTag+IMU stacked). At this table's
+own `MODEL_FIDELITY = "optimistic"` tier, both ties are exact, not
+approximate -- IMU is byte-for-byte identical to Dead reckoning (no
+heading error exists at this tier for an IMU to correct), and Rear
+camera is byte-for-byte identical to AprilTag (an omnidirectional
+camera already sees everything a second one could add). Both suites
+separate measurably from their single-sensor baseline at the
+`realistic`/`pessimistic` tiers -- see "Model fidelity" below.
 
 Every cost above is a real, currently-listed vendor price, not a
 ballpark placeholder -- REV Robotics, goBILDA, and Logitech street
@@ -513,7 +528,8 @@ prices as of this writing; see `ftc/config.py`'s per-constant source
 comments for the exact product each figure comes from (e.g. AprilTag's
 $25 is a single Logitech C270, the webcam FTC's own vision docs call
 the workhorse of the program; Odometry pods' $280 is goBILDA's real
-2-pod-plus-Pinpoint-computer bundle, not a single pod).
+2-pod-plus-Pinpoint-computer bundle, not a single pod; IMU's $0 is the
+integrated Bosch IMU every REV Control Hub already ships with).
 
 (AprilTag's correction model accounts for range- and viewing-angle-
 dependent degradation, not a flat correction whenever a tag is merely
@@ -553,13 +569,16 @@ tiers, "realistic" (real camera-FOV gating + heading drift) and
 "pessimistic" (narrower FOV, more drift, AprilTag detection dropout);
 AprilTag stays the best-value suite at "realistic" too (its margin
 shrinks from +99.3pp/$100 to +36.7pp/$100, still well ahead of
-FullSuite's +7.7), but the best-value suite flips to Odometry pods at
-"pessimistic" -- see `benchmark_results/ftc_fidelity_writeup.md` for
+FullSuite's +7.7), but the best-value suite flips to Rear camera at
+"pessimistic" (+14.7pp/$100, vs. FullSuite's +7.7) -- see
+`benchmark_results/ftc_fidelity_writeup.md` for
 the full three-tier table and "Threats to validity" below for what this
-does and doesn't prove. `ftc/drivetrain_benchmark.py` and `ftc/
-coverage_benchmark.py` close two more previously-open gaps (mecanum
-strafing, distance-sensor blind spots) the same way -- see "Threats to
-validity" below and `WRITEUPS.md`.
+does and doesn't prove. `ftc/drivetrain_benchmark.py`, `ftc/
+drivetrain_suite_benchmark.py`, and `ftc/coverage_benchmark.py` close
+three more previously-open gaps (mecanum strafing, whether the
+best-value suite holds on mecanum specifically, distance-sensor blind
+spots) the same way -- see "Threats to validity" below and
+`WRITEUPS.md`.
 
 The most useful negative result: DistanceSensorSuite collides in
 roughly half its trials even at zero field deviation. A controlled
@@ -567,10 +586,15 @@ check (same trials, pose drift forced to zero) shows about two-thirds
 of those collisions persist regardless -- the dominant cause isn't pose
 drift, it's that 3 narrow ToF cones at ~12.5&deg; half-angle each cover
 only about 75&deg; of the 360&deg; around the robot. A sparse fixed-cone
-sensor suite has real, geometry-driven blind spots that this project's
-own `nav/sensor.py` LidarSensor (a full disc scan) doesn't have --
-buying distance sensors without covering enough of the robot's
-perimeter can be worse than not sensing at all.
+sensor suite has real, geometry-driven blind spots -- and `ftc/
+coverage_benchmark.py` finds the problem is structural, not just
+currently unmet: sweeping the sensor count up to 8 (the most this
+project prices as legal FTC hardware -- lidar-class 360&deg; scanners
+aren't, see "Threats to validity") only closes coverage to 200&deg; of
+360&deg;, leaving a 160&deg; blind arc no FTC-legal ToF count tested
+here can close. Buying distance sensors without covering enough of the
+robot's perimeter can be worse than not sensing at all, and there's no
+purchasable option in this project's model that covers all of it.
 
 `nav/uncertainty_benchmark.py`'s own (domain-neutral) study still holds
 at the retrofit-statistical-rigor bar Phase 3 asked for: reactive
@@ -592,13 +616,13 @@ numbers themselves.
 
 ## Sensor bundle optimizer: which COMBINATION to buy
 
-The suite study above compares five fixed suites. A team's real question
+The suite study above compares seven fixed suites. A team's real question
 is a shopping question -- given everything on the shelf, which
 *combination* should we buy, is combining actually better than buying
 the single best sensor, and what's the best robot for the money we
 have? `ftc/bundle.py` composes any 2+ suites into one working suite,
 and `ftc/optimizer.py` searches that space; `ftc/optimizer_benchmark.py`
-runs the study (43 distinct robots x 5 scenario profiles x 25 trials,
+runs the study (24 distinct robots x 5 scenario profiles x 25 trials,
 full writeup in `benchmark_results/ftc_optimizer_writeup.md`).
 
 ![Every buildable robot: cost vs. success with the Pareto frontier, and the winning robot per scenario](benchmark_results/ftc_optimizer_frontier.png)
@@ -607,7 +631,7 @@ Bundles are costed over the **union of their parts**, not the sum of
 their prices: AprilTag ($25, one webcam) + AprilTag-with-IMU ($25, the
 same webcam and a free IMU) is a $25 robot with one camera, and the two
 descriptions collapse to the same candidate before anything is
-simulated. That's what makes 92 raw combinations reduce to 43 genuinely
+simulated. That's what makes 63 raw combinations reduce to 24 genuinely
 distinct robots.
 
 Because every candidate runs the *identical* seeded scenarios, "is this
@@ -621,10 +645,19 @@ dominant source of variance here, and pairing removes it.
 
 | Question | Answer from the sweep |
 |---|---:|
-| Best average across scenarios | odometry pods + IMU + 2 cameras + lidar ($430, 66%) |
-| Best worst-case (minimax) | odometry pods + IMU + 2 cameras ($330) -- same 32% worst case, $100 less |
+| Best average across scenarios | odometry pods + IMU + front + rear camera ($330, 61%) |
+| Best worst-case (minimax) | the SAME robot -- odometry pods + IMU + front + rear camera ($330), 32% worst case |
 | Best robot under $300 | front + rear camera ($50, 43%) |
-| Cheapest *significant* upgrade over one sensor | + odometry pods over dual-camera AprilTag (+17.6%, 95% CI [+10.4%, +24.8%]) |
+| Cheapest *significant* upgrade over one sensor | + odometry pods over rear camera (+16.8%, 95% CI [+9.6%, +24.0%]) |
+
+Best-average and most-robust used to be different robots at different
+price points (an earlier version of this table, before lidar was
+removed as a candidate component -- see "Threats to validity" --
+reported odometry pods + IMU + 2 cameras + lidar as the $430 best
+average and a $100-cheaper 2-camera bundle as the more robust pick).
+With lidar gone, both objectives land on the identical $330 robot: not
+a coincidence to distrust, just a catalog where the best-on-average
+choice and the most-robust choice happen to be the same purchase.
 
 Three findings worth stating plainly:
 
@@ -635,7 +668,7 @@ Three findings worth stating plainly:
   component lacked. Two sensors that fix the same failure mode largely
   don't stack -- the second is correcting an error the first already
   removed. Buy across failure modes, not the two best sensors.
-- **Nothing between $50 and $305 is worth buying.** The best robot at
+- **Nothing between $50 and $330 is worth buying.** The best robot at
   a $150 budget and at a $300 budget is the same $50 one; the next rung
   of the frontier is out of reach and every intermediate option is a
   worse buy than something cheaper.
@@ -643,10 +676,9 @@ Three findings worth stating plainly:
   happens to work here, and its steps show where it stops paying.**
   Forward selection lands on the same robot as exhaustive search, but
   only its *first* addition (odometry pods, +16.8%, p<0.001) is
-  statistically significant. The next two -- a $100 lidar (+5.6%,
-  p=0.156) and the free IMU (+0.8%, p=0.367) -- are not distinguishable
-  from noise, which is why `--require-significant` exists as a stopping
-  rule.
+  statistically significant. The next one -- the free IMU (+0.8%,
+  p=0.368) -- is not distinguishable from noise, which is why
+  `--require-significant` exists as a stopping rule.
 
 ## Threats to validity / limitations
 
@@ -772,7 +804,7 @@ alone.
   buying speed doesn't even buy the thing it promises at this project's
   short-hop grid scale. Measured: at every budget tested (30s/15s/10s),
   faster gearing options measurably lose to stock, averaged across all
-  5 headline suites (a single suite that already fixes pose, e.g.
+  7 headline suites (a single suite that already fixes pose, e.g.
   AprilTag or odometry pods, would likely absorb the extra drift better
   -- not checked per-suite here). What's still not modeled:
   velocity isn't carried across consecutive collinear steps (each step
@@ -795,11 +827,11 @@ alone.
   comes out byte-for-byte identical either way. `ftc/planning_
   latency_benchmark.py` measures the real per-call latency distribution
   (median/p99/max) this repo had never looked at, across 5 grid sizes
-  (24 through 384 cells/side) x 3 layouts x 5 suites, and asks the
+  (24 through 384 cells/side) x 3 layouts x 7 suites, and asks the
   question that actually matters: would a match currently reported as
   under budget flip to over budget if `elapsed_s` used each match's own
   REAL measured planning time instead of the flat constant? At this
-  project's native, published grid scale, no -- 0 of 900 matches tested
+  project's native, published grid scale, no -- 0 of 1260 matches tested
   flip under that counterfactual (`benchmark_results/planning_
   latency_writeup.md`), and none do at any synthetic size tested either,
   because a bounded-path-length scenario design (deliberate, to keep
@@ -848,19 +880,35 @@ alone.
   ftc_drivetrain_heading_policy_writeup.md`, own output files, own base
   seed, doesn't touch the original study's numbers) measures what
   re-aiming actually buys: `route_dominant` is a real, paired-
-  bootstrap-significant improvement over `fixed_at_start` (25% -> 30%
+  bootstrap-significant improvement over `fixed_at_start` (23% -> 28%
   pooled success rate at the `realistic` fidelity tier), while
   `nearest_tag_current` is not distinguishable from the fixed baseline
   at this trial count. Neither alternative closes the gap to tank
-  (38%), and neither changes which sensor suite is the best value on
-  mecanum (still Odometry pods, not AprilTag, under every heading
-  policy tested) -- re-aiming genuinely helps, exactly the mechanism
+  (37%), and neither changes which sensor suite is the best value on
+  mecanum (still Odometry pods, not AprilTag or Rear camera, under
+  every heading policy tested) -- re-aiming genuinely helps, exactly the mechanism
   the original study predicted but had no policy to demonstrate with,
   it just doesn't help enough to flip either headline verdict. A
   policy that minimizes strafe against the route's own IMMEDIATE next
   leg (rather than the route's average direction, or a fixed tag)
   remains untested -- see `ftc_drivetrain_heading_policy_writeup.md`'s
   own closing section.
+
+  A separate, full-rigor question neither sweep above answers: does
+  the *headline* best-value recommendation itself (AprilTag, measured
+  under the default tank-equivalent drivetrain) hold for the large
+  fraction of FTC teams that run mecanum? `ftc/
+  drivetrain_suite_benchmark.py` reruns `ftc_suite_writeup.md`'s exact
+  full-rigor sweep -- all 11 variance_level steps, all 3 deviation
+  types, 25 trials/point, nothing reduced -- once per drivetrain, for
+  all 7 headline suites (own output files, own labeled writeup,
+  doesn't touch either sweep above). The answer: yes -- AprilTag is
+  the best-value suite under both tank and mecanum, though every
+  suite's raw success rate drops on mecanum (e.g. Full suite 58% ->
+  24%, the largest drop, since it stacks the most steps that end up
+  strafing against distance sensors' own narrow cones on top of the
+  drivetrain's own drift penalty) -- see `benchmark_results/
+  ftc_drivetrain_suite_writeup.md`.
 - Camera field of view and heading error -- previously UNSTATED,
   now BOUNDED via `ftc/config.py`'s `MODEL_FIDELITY` tiers, not
   calibrated. Every number in this README before this addition assumed
@@ -880,7 +928,7 @@ alone.
   tier, AprilTag detection dropout. `ftc/fidelity_benchmark.py`'s
   finding: AprilTag stays the best-value suite at "realistic" (margin
   shrinks from +99.3pp/$100 to +36.7pp/$100), but the best-value suite
-  flips to Odometry pods at "pessimistic". Fidelity tiers BOUND this
+  flips to Rear camera at "pessimistic". Fidelity tiers BOUND this
   gap -- they
   make its size visible and swept -- they do NOT CALIBRATE it: every
   non-optimistic tier's constants (`CAMERA_FOV_DEG_BY_TIER`,
@@ -969,12 +1017,16 @@ alone.
 ## Running the sweeps in parallel
 
 Every full-rigor sweep (`ftc/suite_benchmark.py`, `ftc/layout_
-benchmark.py`, `ftc/fidelity_benchmark.py`, and `nav/uncertainty_
-benchmark.py`) runs its independent trial batches across worker
+benchmark.py`, `ftc/fidelity_benchmark.py`, `ftc/drivetrain_
+suite_benchmark.py`, and `nav/uncertainty_benchmark.py`) runs its
+independent trial batches across worker
 processes via `run_sweep()`/`ProcessPoolExecutor` instead of a plain
 sequential loop, roughly 1.9x faster on the 8-core machine this was
-measured on (11.8s median down to 6.2s for the 4,125-row headline
-sweep; scaling is sublinear -- 2 workers already gets to 8.4s, 8
+measured on (11.8s median down to 6.2s for the then-4,125-row headline
+sweep -- IMU and Rear camera's later promotion into SUITE_ORDER grew
+the sweep to 5,775 rows, not remeasured for timing at that size, though
+nothing about the parallelization mechanism itself is suite-count
+dependent; scaling is sublinear -- 2 workers already gets to 8.4s, 8
 workers only to 6.2s -- because each of the 33 (deviation_type,
 variance_level) combos is a different amount of work, and 33 combos
 split unevenly across many workers leaves some idle while the biggest
@@ -988,7 +1040,7 @@ scratch/uncertainty_sweep_parallel_test.py` prove this by running the
 same reduced sweep at 1, 2, and 3 workers and diffing every non-timing
 column of the output, and a full parallel run of the actual headline
 sweep reproduces `ftc_suite_results.csv` with zero mismatches across
-all 4,125 rows. `ftc/budget_benchmark.py` is a deliberate exception --
+all 5,775 rows. `ftc/budget_benchmark.py` is a deliberate exception --
 it works by monkeypatching `ftc.match.AUTONOMOUS_PERIOD_S` before
 calling into the sweep, which only reaches a subprocess's own copy of
 that module under `fork` (Linux), not `spawn` (macOS/Windows's
@@ -1046,9 +1098,11 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
   config.py          Field/robot/match/sensor constants, each with its real-world source noted;
                      includes MODEL_FIDELITY's 3 tiers and the drivetrain/coverage/new-suite constants
   field.py           Parameterized field layouts (not tied to one season's game) -> a real-footprint-inflated nav.grid.Grid
-  sensors.py         9 sensor suites (5 headline: dead reckoning / odometry / distance sensors /
-                     AprilTag / full; 4 Priority-3/4 additions: IMU / AprilTag+IMU / dual-camera
-                     AprilTag / lidar) -- which fix POSE error, OBSTACLE error, or (IMU) HEADING error
+  sensors.py         8 sensor suites (7 headline: dead reckoning / odometry / distance sensors /
+                     AprilTag / IMU / dual-camera AprilTag (Rear camera) / full; 1 remaining
+                     Priority-4 addition: AprilTag+IMU) -- which fix POSE error, OBSTACLE error,
+                     or (IMU) HEADING error. No lidar-class hardware is modeled anywhere in this
+                     package -- it isn't legal FTC equipment (see "Threats to validity")
   drivetrain.py      TANK/MECANUM -- an axis orthogonal to sensor suite, not part of SUITE_ORDER
   match.py           30-second autonomous-period budget model: drive + turn + replan time,
                      (row, col, heading) pose-error mechanic, fidelity-tier + drivetrain + gearing hooks
@@ -1062,13 +1116,18 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
                      -> CSV + plot + writeup; a SECOND sweep in the same module crosses tank against all
                      3 MECANUM heading policies (fixed_at_start/nearest_tag_current/route_dominant) ->
                      own CSV + plot + writeup, doesn't touch the first sweep's numbers
-  coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} + lidar -- can you buy out the blind spot? -> CSV + plot + writeup
-  newsuites_benchmark.py IMU / AprilTag+IMU / dual-camera AprilTag x fidelity tier -> CSV + plot + writeup
+  drivetrain_suite_benchmark.py Tank vs. mecanum, FULL-RIGOR headline sweep (all 7 suites, same
+                     rigor as suite_benchmark.py) -- does the best-value suite hold on mecanum?
+                     -> CSV + plot + writeup, separate from drivetrain_benchmark.py's own
+  coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} -- how much of the blind spot closes,
+                     and how much is structurally unclosable by any FTC-legal ToF count? -> CSV + plot + writeup
+  newsuites_benchmark.py AprilTag+IMU x fidelity tier (IMU and dual-camera AprilTag are themselves
+                     now headline suites, see sensors.py above) -> CSV + plot + writeup
   gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
   planning_latency_benchmark.py Does planning-time TAIL latency (not just average) ever change a match
                      outcome? Non-invasively times every astar() call run_match makes (patches
                      ftc.match.astar for the duration of one call, restores it after) across 5 grid
-                     sizes x 3 layouts x 5 suites -> CSV + plot + writeup
+                     sizes x 3 layouts x 7 suites -> CSV + plot + writeup
   calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled
                      synthetic placeholder) -- including AprilTag measurement variance (range/incidence
                      scatter -> OLS fit) and odometry process variance, the two inputs nav/kalman.py needs
@@ -1089,7 +1148,7 @@ ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
                      touch fusion_benchmark.py's own numbers -> CSV + plot + writeup
   optimizer_benchmark.py The bundle study -- every buildable combination x 5 scenario profiles -> CSV + 2 plots + writeup
   scripted_auto_benchmark.py Live A* replanning vs. a fixed, never-reconsidered "scripted auto" route
-                     (run_match's scripted_auto=True) x 5 suites x 3 deviation types -- does an
+                     (run_match's scripted_auto=True) x 7 suites x 3 deviation types -- does an
                      obstacle-sensing suite's advantage depend on being able to act on what it senses?
                      -> CSV + plot + writeup
   trace.py           record_match() -- runs run_match() once and additionally captures a full tick-by-tick
@@ -1111,14 +1170,14 @@ pygame_app/        Everything that touches pygame
                       field_view.interp_snapshot, an opponent-robot option, on_collision="replan"
                       stuck/recovery behavior local to this visualizer only (see ftc/match.py); a SEPARATE
                       scenario_ftc_bundles.py browses every buildable 2+-suite combination (ftc/bundle.py) --
-                      Left/Right (PageUp/PageDown to jump 5, Home/End for first/last) steps through all 42
+                      Left/Right (PageUp/PageDown to jump 5, Home/End for first/last) steps through all 19
                       at the default candidate set, each shown as its own components running alone next to
                       the combined BUNDLE panel, window resizing to fit whichever combination's size is
                       currently selected, ...)
   ftc_viz/           Drawing primitives BOTH scenario_ftc_suites.py's and scenario_ftc_bundles.py's animated
                       field panels share (field_view.py) -- pure functions of an ftc/trace.py MatchTrace +
                       tick index, no simulation of its own; suite_sensor_visuals draws every active sensor
-                      type a suite or bundle has (cone/camera/lidar together, not just one)
+                      type a suite or bundle has (cone and/or camera together, not just one)
   scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths
 
 pybullet_app/      Everything that touches PyBullet

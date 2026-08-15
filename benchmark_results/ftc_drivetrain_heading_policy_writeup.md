@@ -8,11 +8,11 @@ Pooled across every suite, paired on identical scenarios, at the `realistic` fid
 
 | Policy | Success rate | vs. fixed_at_start [95% CI] | Verdict |
 |---|---:|---:|---|
-| fixed_at_start (baseline) | 25% | -- | -- |
-| Mecanum (re-aim to nearest tag) | 24% | -0.3% [-2.1%, +1.6%] | not distinguishable from noise |
-| Mecanum (aim along route) | 30% | +5.2% [+3.1%, +7.3%] | **significantly better** |
+| fixed_at_start (baseline) | 23% | -- | -- |
+| Mecanum (re-aim to nearest tag) | 22% | -0.8% [-2.5%, +0.9%] | not distinguishable from noise |
+| Mecanum (aim along route) | 28% | +5.6% [+3.7%, +7.5%] | **significantly better** |
 
-Tank (no held heading at all, for reference): 38%.
+Tank (no held heading at all, for reference): 37%.
 
 At least one alternative heading policy is a statistically real improvement over fixed_at_start -- re-aiming genuinely helps, exactly the mechanism `ftc_drivetrain_writeup.md` predicted but didn't have a policy to demonstrate it with. Whether that improvement is enough to catch up to tank (see the per-suite table below) is a separate question from whether it helps at all.
 
@@ -20,7 +20,7 @@ At least one alternative heading policy is a statistically real improvement over
 
 | Policy | Best value | pp/$100 |
 |---|---|---:|
-| Tank | AprilTag | +13.7 |
+| Tank | Rear camera | +22.8 |
 | Mecanum | Odometry pods | +7.9 |
 | Mecanum (re-aim to nearest tag) | Odometry pods | +8.1 |
 | Mecanum (aim along route) | Odometry pods | +7.0 |
@@ -32,7 +32,9 @@ At least one alternative heading policy is a statistically real improvement over
 | Dead reckoning | 24% | 14% | 12% | 18% |
 | Odometry pods | 49% | 49% | 49% | 49% |
 | Distance sensors | 27% | 9% | 11% | 18% |
-| AprilTag | 33% | 18% | 20% | 22% |
+| AprilTag (front camera) | 33% | 18% | 20% | 22% |
+| IMU | 23% | 15% | 12% | 19% |
+| Rear camera | 44% | 21% | 20% | 30% |
 | Full suite | 56% | 32% | 29% | 42% |
 
 ## What this does and does not prove

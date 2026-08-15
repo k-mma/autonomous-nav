@@ -87,6 +87,12 @@ SUITE_COLORS = {
     "odometry_pods": "tab:orange",
     "distance_sensors": "tab:blue",
     "apriltag": "tab:purple",
+    # Promoted from ftc/newsuites_benchmark.py's side study into the
+    # headline sweep -- reusing that module's own colors for the same
+    # two suites, so a reader who's seen ftc_newsuites_comparison.png
+    # doesn't have to relearn a color mapping.
+    "imu": "tab:cyan",
+    "dual_camera_apriltag": "tab:brown",
     "full_suite": "tab:green",
 }
 
@@ -102,14 +108,24 @@ def _solvable_scenario(trial_seed, grid, free_cells):
 
 
 def run_combo(deviation_type, variance_level, num_trials, base_seed, grid, free_cells, tag_sites,
-              fidelity=None):
+              fidelity=None, drivetrain=None):
     """`fidelity` defaults to None -- run_match resolves that to
     ftc.config.MODEL_FIDELITY (the "optimistic" default) fresh on every
     call, so every caller that doesn't pass it (every one that existed
     before ftc/fidelity_benchmark.py) is completely unaffected. Passing
     an explicit tier is what lets ftc/fidelity_benchmark.py rerun this
     exact sweep at "realistic"/"pessimistic" without duplicating this
-    function."""
+    function.
+
+    `drivetrain` defaults to None the same way -- run_match's own
+    `drivetrain=None` default reproduces the existing tank-equivalent
+    behavior exactly, so every caller that doesn't pass it (every one
+    that existed before ftc/drivetrain_suite_benchmark.py) is completely
+    unaffected. It is NOT part of `base_seed`/the per-trial seed: a
+    (deviation_type, variance_level, trial index) triple must draw the
+    identical ground truth regardless of which drivetrain later drives
+    it, which is what lets ftc/drivetrain_suite_benchmark.py pair a
+    tank run and a mecanum run trial-for-trial on the same scenarios."""
     rows = []
     scale_kwargs = DEVIATION_TYPES[deviation_type]
     for t in range(num_trials):
@@ -121,7 +137,7 @@ def run_combo(deviation_type, variance_level, num_trials, base_seed, grid, free_
         for suite_name in SUITE_ORDER:
             suite = SUITES[suite_name]()
             result = run_match(suite, grid, start, goal, ground_truth, actual_start, tag_sites,
-                                random.Random(trial_seed), fidelity=fidelity)
+                                random.Random(trial_seed), fidelity=fidelity, drivetrain=drivetrain)
             rows.append({
                 "suite": suite_name,
                 "deviation_type": deviation_type,
@@ -156,7 +172,7 @@ def base_seed(deviation_type, level):
 
 
 def run_sweep(deviation_types, levels, num_trials, grid, free_cells, tag_sites, fidelity=None,
-              max_workers=None):
+              max_workers=None, drivetrain=None):
     """Runs run_combo for every (deviation_type, level) pair using
     base_seed() above, and returns every row concatenated in the same
     order a plain `for deviation_type: for level:` loop would produce --
@@ -174,20 +190,26 @@ def run_sweep(deviation_types, levels, num_trials, grid, free_cells, tag_sites, 
     max_workers=1 skips ProcessPoolExecutor entirely and runs every
     combo serially in this process -- no subprocess startup cost, and
     it's the baseline parallel_determinism_test.py compares against.
-    max_workers=None hands off to ProcessPoolExecutor's own default."""
+    max_workers=None hands off to ProcessPoolExecutor's own default.
+
+    `drivetrain` (a ftc.drivetrain.Drivetrain instance, or None) is
+    passed straight through to every run_combo call -- see run_combo's
+    own docstring for why it defaults to None and stays out of the seed
+    formula. ftc/drivetrain_suite_benchmark.py is the one caller that
+    passes an explicit one."""
     combos = [(dt, lvl) for dt in deviation_types for lvl in levels]
 
     if max_workers == 1:
         results = {
             combo: run_combo(combo[0], combo[1], num_trials, base_seed(*combo), grid, free_cells, tag_sites,
-                              fidelity=fidelity)
+                              fidelity=fidelity, drivetrain=drivetrain)
             for combo in combos
         }
     else:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 combo: executor.submit(run_combo, combo[0], combo[1], num_trials, base_seed(*combo), grid,
-                                        free_cells, tag_sites, fidelity)
+                                        free_cells, tag_sites, fidelity, drivetrain)
                 for combo in combos
             }
             results = {combo: future.result() for combo, future in futures.items()}
@@ -278,9 +300,17 @@ def plot_reliability_per_dollar(stats, path):
     a hypothetical suite that's 16 percentage points better at $50 reads
     as +32, the number you'd actually want to read off the bar) -- leaving it
     unscaled would silently be 100x smaller than what the axis label
-    and the write_writeup() text below both claim to be showing."""
+    and the write_writeup() text below both claim to be showing.
+
+    Suites at cost_usd == 0.0 (the dead-reckoning baseline itself, and
+    ImuSuite -- every REV Control Hub already ships one) are excluded
+    from this chart entirely, not divided-by-zero or plotted as
+    "infinite" value: "value per dollar" isn't a meaningful axis for
+    hardware that costs nothing (see ftc/newsuites_benchmark.py's own
+    per_100=None convention for the same case). ImuSuite's raw gain is
+    reported separately in write_writeup() instead."""
     baseline = overall_success_rate(stats, "dead_reckoning")
-    suites = [s for s in SUITE_ORDER if s != "dead_reckoning"]
+    suites = [s for s in SUITE_ORDER if s != "dead_reckoning" and SUITES[s].cost_usd > 0]
     gains_per_100 = []
     for suite in suites:
         rate = overall_success_rate(stats, suite)
@@ -394,15 +424,31 @@ def write_writeup(stats, rows, path):
         # without it, every printed value here was 100x smaller than
         # its own unit label said (a real bug caught reviewing the
         # symposium poster, which uses the corrected number).
-        per_100 = (gain / (cost / 100)) * 100 if cost > 0 else float("inf")
+        #
+        # None (NOT infinity) at cost_usd == 0.0 -- IMU is the one
+        # headline suite this applies to (every REV Control Hub already
+        # ships one). "Infinite value per dollar" isn't a meaningful
+        # claim about a suite whose only real cost is integration
+        # effort this project's dollar model can't price -- same
+        # reasoning ftc/newsuites_benchmark.py and ftc/optimizer.py's
+        # CandidateResult.value_per_100 already use for exactly this
+        # case, applied here now that a second $0 suite besides the
+        # baseline itself exists.
+        per_100 = None if cost == 0 else (gain / (cost / 100)) * 100
         value_lines.append((suite, cost, gain, per_100))
 
-    for suite, cost, gain, per_100 in sorted(value_lines, key=lambda x: -x[3]):
-        per_100_str = f"{per_100:+.1f}pp/$100" if per_100 != float("inf") else "infinite (free)"
+    # Priced suites sort by per_100 descending; $0 suites sort last
+    # (reported separately below, never as "infinitely good value") --
+    # the same ordering rule ftc/optimizer.py's rank(objective="value")
+    # uses.
+    for suite, cost, gain, per_100 in sorted(value_lines, key=lambda x: (x[3] is not None, x[3] or 0.0),
+                                              reverse=True):
+        per_100_str = f"{per_100:+.1f}pp/$100" if per_100 is not None else "undefined (cost_usd == 0)"
         lines.append(f"- {SUITE_LABELS[suite]} (${cost:.0f}): {gain:+.0%} success rate over the free "
                        f"baseline -- {per_100_str}.")
 
-    best_value = max(value_lines, key=lambda x: x[3])
+    priced_value_lines = [v for v in value_lines if v[3] is not None]
+    best_value = max(priced_value_lines, key=lambda x: x[3])
     full_suite_value = next(v for v in value_lines if v[0] == "full_suite")
     lines += ["", (
         f"{SUITE_LABELS[best_value[0]]} is the best value by success-rate-gained-per-dollar. "
@@ -417,9 +463,47 @@ def write_writeup(stats, rows, path):
         )
     ), ""]
 
+    free_value_lines = [v for v in value_lines if v[3] is None]
+    if free_value_lines:
+        imu_suite, imu_cost, imu_gain, _ = next(v for v in free_value_lines if v[0] == "imu")
+        lines += [
+            f"IMU gained {imu_gain:+.0%} success rate over dead reckoning for $0 -- a real gain (or loss) "
+            "with no dollar figure to divide it by (every REV Control Hub already ships one; the only real "
+            "cost is the integration effort of reading and fusing it, ftc/sensors.py's ImuSuite, which this "
+            "project's dollar-based cost model has no way to price). \"Is the free hardware worth the code\" "
+            "has to be answered by the gain itself, not a per-dollar ranking.", "",
+        ]
+
+    imu_ties_dead_reckoning = overall["imu"] == overall["dead_reckoning"]
+    rear_ties_front = overall["dual_camera_apriltag"] == overall["apriltag"]
+    lines += ["## Honest findings", ""]
+    if imu_ties_dead_reckoning or rear_ties_front:
+        lines.append(
+            "Two of this sweep's own numbers above are easy to misread as a bug rather than what they "
+            "are -- an explicit consequence of `MODEL_FIDELITY = \"optimistic\"` (`ftc/config.py`), the "
+            "tier this whole headline sweep runs at by default. "
+            + (
+                "IMU's overall success rate is IDENTICAL to DeadReckoningSuite's, cell for cell across "
+                "every deviation type, because the optimistic tier's heading drift is 0.0 by construction "
+                "-- there is no heading error anywhere for an IMU's continuous heading correction to fix, "
+                "so ImuSuite behaves byte-for-byte like DeadReckoningSuite at this tier. "
+                if imu_ties_dead_reckoning else ""
+            )
+            + (
+                "Rear camera's overall success rate is IDENTICAL to AprilTag (front camera)'s, because the "
+                "optimistic tier's camera FOV is 360 degrees (omnidirectional) -- a second, rear-facing "
+                "camera adds no coverage a camera that already sees everything didn't already have. "
+                if rear_ties_front else ""
+            )
+            + "Both are real findings about this tier's own stated assumptions, not measurement noise -- "
+            "`ftc/fidelity_benchmark.py` reruns this sweep at the `realistic`/`pessimistic` tiers, where "
+            "heading drift and real camera FOV are both live, and both suites separate measurably from "
+            "their baselines there (see `ftc_fidelity_writeup.md`)."
+        )
+        lines.append("")
+
     dr_rows = [r for r in rows if r["suite"] == "distance_sensors" and r["variance_level"] == 0.0]
     dr_zero_collisions = sum(1 for r in dr_rows if r["collisions"] > 0)
-    lines += ["## Honest findings", ""]
     if dr_zero_collisions > 0:
         rate = dr_zero_collisions / len(dr_rows) if dr_rows else 0.0
         covered_deg = DISTANCE_SENSOR_COUNT * 2 * DISTANCE_SENSOR_HALF_ANGLE_DEG
@@ -438,12 +522,15 @@ def write_writeup(stats, rows, path):
             "compounding factor on top of that (the same check found collisions drop by roughly a third "
             "once drift is disabled, since a correctly-remembered obstacle position still isn't the same "
             "as never having missed one), but the primary lesson is blunter than a SLAM-consistency "
-            "story: a sparse fixed-cone sensor suite has real, geometry-driven blind spots that a full "
-            "lidar-style disc scan (like nav/sensor.py's LidarSensor, which nav/uncertainty_benchmark.py's "
-            "ReactivePolicy uses and never collides with) doesn't have, and this project's own headline "
-            "nav/ result (reactive beats belief) doesn't transfer to a suite whose sensing coverage is "
-            "this incomplete. Buying distance sensors without covering enough of the robot's perimeter "
-            "can be worse than not sensing at all, purely from what the hardware physically cannot see."
+            "story: a sparse fixed-cone sensor suite has real, geometry-driven blind spots, and this "
+            "project's own headline nav/ result (reactive beats belief, measured against nav/sensor.py's "
+            "full disc-scan sensor model, which has no blind spot at all) doesn't transfer to a suite "
+            "whose sensing coverage is this incomplete. `ftc/coverage_benchmark.py` sweeps more ToF "
+            "sensors against this exact gap and finds it's worse than 'currently unmet': even at the "
+            "largest count tested, a structural blind arc survives no FTC-legal ToF sensor count can "
+            "close (see `ftc_coverage_writeup.md`'s 'Is full coverage even reachable?'). Buying distance "
+            "sensors without covering enough of the robot's perimeter can be worse than not sensing at "
+            "all, purely from what the hardware physically cannot see."
         )
     else:
         lines.append(

@@ -195,7 +195,7 @@ APRILTAG_COST_USD = 25.0
 # -- which matters, because the ~75-degrees-of-360 coverage figure
 # behind this project's headline negative result is computed directly
 # from DISTANCE_SENSOR_COUNT x 2 x this half-angle. "Sees obstacles
-# only where pointed," not a lidar disc.
+# only where pointed," not an omnidirectional scanner.
 DISTANCE_SENSOR_RANGE_CELLS = round((2.0 / 0.0254) / CELL_SIZE_IN)  # ~13 cells
 DISTANCE_SENSOR_HALF_ANGLE_DEG = 12.5
 # Mount headings for DISTANCE_SENSOR_COUNT sensors, relative to the
@@ -571,30 +571,6 @@ DISTANCE_SENSOR_MOUNT_HEADINGS_BY_COUNT = {
     8: [i * 45.0 for i in range(8)],
 }
 
-# Slamtec RPLIDAR A1 -- VERIFIED at $99.95 (Adafruit's listed price for
-# the A1M8 360-degree laser range scanner); other resellers list the
-# same unit anywhere from ~$99 to ~$220, so this is the low, most
-# commonly cited end of a real spread. A full 360-degree disc scan,
-# which nav/sensor.py's LidarSensor already models exactly (see
-# ftc/sensors.py's LidarSuite).
-#
-# NOTE: FTC's laser-class-device rules must be checked against the
-# CURRENT season's game manual before treating this as a real, legal
-# recommendation for a team to buy -- this repo prices and simulates
-# the sensing model, it does not assert legality. (The A1's own spec
-# sheet lists it as a Class 1 laser product, the same class as the REV
-# 2m Distance Sensor's 940nm emitter above, but "same laser class as a
-# part teams already use" is an argument to check the manual with, not
-# a substitute for checking it.)
-LIDAR_COST_USD = 100.0
-# The A1's published scan radius is 12m, which comfortably exceeds this
-# field's own corner-to-corner diagonal (144in x 144in = 203in = 5.2m)
-# -- so range genuinely is not the binding constraint for this sensor
-# on this field. Set to safely exceed the 24x24 grid's own ~34-cell
-# diagonal so the sensor model reads as "sees the whole field," which
-# is what the real hardware would do here.
-LIDAR_RANGE_CELLS = FTC_GRID_SIZE * 2
-
 # === New suites enabled by the fidelity-tier model ======================
 # VERIFIED: every REV Control Hub ships with an integrated IMU -- a
 # Bosch BNO055 on units built before September 2022, and a Bosch
@@ -718,7 +694,6 @@ PART_COSTS_USD = {
     "camera_front": APRILTAG_COST_USD,
     "camera_rear": APRILTAG_COST_USD,
     "imu": IMU_COST_USD,
-    "lidar": LIDAR_COST_USD,
     # One part per ToF-sensor COUNT rather than a single per-sensor
     # part: the mount-heading layout is chosen per count (DISTANCE_
     # SENSOR_MOUNT_HEADINGS_BY_COUNT above), so "3 sensors" and "6

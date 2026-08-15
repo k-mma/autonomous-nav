@@ -180,7 +180,12 @@ def overall_success_rate(stats, suite, blocker_type, min_level=SUMMARY_MIN_LEVEL
 def value_ranking(stats, blocker_type):
     """{suite: {rate, per_100}} for every non-baseline suite under this
     blocker_type, plus the best-value suite name -- same success-rate-
-    gain-per-$100 metric ftc/suite_benchmark.py's headline table uses."""
+    gain-per-$100 metric ftc/suite_benchmark.py's headline table uses.
+
+    per_100 is None (NOT infinity) at cost_usd == 0.0 -- IMU is a second
+    $0 headline suite besides the dead-reckoning baseline itself now;
+    `best` is picked only among suites with a defined per_100, same
+    convention as ftc/suite_benchmark.py's own write_writeup."""
     baseline = overall_success_rate(stats, "dead_reckoning", blocker_type)
     results = {}
     for suite in SUITE_ORDER:
@@ -188,9 +193,10 @@ def value_ranking(stats, blocker_type):
             continue
         rate = overall_success_rate(stats, suite, blocker_type)
         cost = SUITES[suite].cost_usd
-        per_100 = (rate - baseline) / (cost / 100) * 100 if cost > 0 else float("inf")
+        per_100 = None if cost == 0 else (rate - baseline) / (cost / 100) * 100
         results[suite] = {"rate": rate, "per_100": per_100}
-    best = max(results, key=lambda s: results[s]["per_100"])
+    priced = {s: v for s, v in results.items() if v["per_100"] is not None}
+    best = max(priced, key=lambda s: priced[s]["per_100"])
     return results, baseline, best
 
 
@@ -222,8 +228,11 @@ def _runner_up_overlap(rows, blocker_type, results, best):
     intervals is not a real flip" check ftc/robustness.py and ftc/
     budget_benchmark.py both already apply to their own tipping-point
     claims. Returns (runner_up, overlap) or (None, None) if there's
-    only one ranked suite."""
-    ranked = sorted(results, key=lambda s: -results[s]["per_100"])
+    only one ranked suite. $0-cost suites (per_100=None) are excluded --
+    a runner-up has to be a priced suite to make "how close was the
+    dollar-value margin" a meaningful question at all."""
+    priced = [s for s in results if results[s]["per_100"] is not None]
+    ranked = sorted(priced, key=lambda s: -results[s]["per_100"])
     if len(ranked) < 2:
         return None, None
     runner_up = ranked[1]
