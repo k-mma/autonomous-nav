@@ -176,6 +176,10 @@ two-part result than "the incremental algorithm always wins." Full
 breakdown in benchmark_results/replan_writeup.md.
 
 
+Poster figures (Pillar 1, etc.) have moved out of this directory into
+"screenshots/poster figures/" -- see that folder's own SCREENSHOTS.txt.
+
+
 Regenerating these screenshots
 -------------------------------
     python3 screenshots/pygame/capture.py

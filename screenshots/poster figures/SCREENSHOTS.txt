@@ -1,0 +1,27 @@
+Poster Figures -- SEED symposium poster
+=========================================
+
+Figures built specifically for the poster (screenshots/pygame/ holds
+the general project screenshots this folder is split out from).
+
+
+pillar1_figure.png -- FTC field + 5-algorithm comparison (poster Pillar 1)
+--------------------------------------------------------------------------------
+Two-panel figure built by generate_pillar1_figure.py, not captured from
+an interactive session like screenshots/pygame's scenarios. Left panel:
+an actual FTC-scale (144in x 144in, 6in cells = 24x24) grid from
+ftc.field.build_grid("cluttered"), planned with nav.algorithms.astar,
+robot drawn mid-route with its real rotated footprint (the same corner
+math ftc/field.py's collision check uses) over the *eroded* (real,
+uninflated) obstacle cells. Right panel: Dijkstra/A*/RRT/RRT* planning
+time and quality stats, recomputed live from benchmark_results/
+results.csv (nav/benchmark.py's 20-trial run) rather than hardcoded.
+ftc_field_pillar1_inprogress.png is the same left panel alone, saved as
+a smaller standalone crop.
+
+Regenerate after any change to ftc/field.py, ftc/match.py,
+pygame_app/ftc_viz/field_view.py (anything touching obstacle inflation,
+erosion, or footprint/collision geometry), or after re-running
+nav/benchmark.py:
+
+    python3 "screenshots/poster figures/generate_pillar1_figure.py"
