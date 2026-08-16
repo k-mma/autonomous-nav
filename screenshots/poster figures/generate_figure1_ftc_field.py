@@ -1,6 +1,6 @@
-"""Regenerates pillar1_figure.png (and its left-panel-only crop,
-ftc_field_pillar1_inprogress.png) for the SEED symposium poster's
-Pillar 1 figure: "we simulated the field, and here's how we picked A*."
+"""Regenerates figure1_ftc_field.png for the SEED symposium poster's
+Pillar 1: "we simulated the field, and here's how we picked A* to plan
+across it."
 
 Two panels, built from two different (and independent) pieces of this
 project's real code -- neither panel is a mockup:
@@ -10,22 +10,20 @@ project's real code -- neither panel is a mockup:
            nav.algorithms.astar, with the robot's footprint drawn via
            the same rotated-footprint corner math ftc/field.py's
            footprint_overlaps_cells collision check uses
-           (_footprint_corners) and obstacles drawn via
-           eroded_obstacle_cells -- the real game-element footprint,
-           not the planner's Minkowski-inflated safety margin. Both of
-           those are the pieces `git show bdfa0ab` ("fix robot/wall and
-           rotated-footprint obstacle overlap") touched, which is why
-           this panel -- and only this panel -- needed regenerating.
+           (_footprint_corners), over the *eroded* (real, uninflated)
+           obstacle cells eroded_obstacle_cells() returns.
 
   Right -- aggregate stats pulled straight from benchmark_results/
            results.csv, nav/benchmark.py's own 20-trial Dijkstra vs A*
-           vs RRT vs RRT* output. nav/ wasn't touched by that commit,
-           so these numbers are unchanged from the prior figure --
-           recomputed here from the CSV anyway rather than assumed, so
-           a future run of this script always reflects whatever
-           results.csv actually contains.
+           vs RRT vs RRT* output -- the comparison Pillar 1's own
+           poster text cites for why A* was the one selected to plan
+           every match in this project.
 
-    python3 "screenshots/poster figures/generate_pillar1_figure.py"
+Regenerate after any change to ftc/field.py, ftc/match.py, or the
+footprint/collision geometry those two share, or after re-running
+nav/benchmark.py:
+
+    python3 "screenshots/poster figures/generate_figure1_ftc_field.py"
 """
 import csv
 import math
@@ -40,7 +38,7 @@ from matplotlib.patches import FancyBboxPatch, Rectangle
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from ftc.field import ROBOT_HALF_WIDTH_CELLS, _footprint_corners, build_grid, eroded_obstacle_cells
+from ftc.field import _footprint_corners, build_grid, eroded_obstacle_cells
 from nav.algorithms import astar
 
 OUT_DIR = Path(__file__).resolve().parent
@@ -50,8 +48,8 @@ LAYOUT = "cluttered"
 START = (21, 2)
 GOAL = (2, 21)
 # How far along the A*-planned path the robot has driven, as a fraction
-# of the route -- purely illustrative (matches the "mid-route" framing
-# of the original figure), not tied to any timing model.
+# of the route -- purely illustrative ("mid-route" framing), not tied
+# to any timing model.
 ROBOT_PROGRESS = 0.35
 
 FIELD_BG = "#eef0f2"
@@ -90,7 +88,7 @@ def draw_field(ax, grid, path, robot_idx):
         ax.axhline(i, color=GRID_LINE, linewidth=1, zorder=1)
 
     # Perimeter walls -- blue (left) / red (right) alliance walls, black
-    # top/bottom, matching FTC field convention and the original figure.
+    # top/bottom, matching FTC field convention.
     wall_w = 6
     ax.plot([0, 0], [0, size], color=WALL_BLUE, linewidth=wall_w, solid_capstyle="butt", zorder=5)
     ax.plot([size, size], [0, size], color=WALL_RED, linewidth=wall_w, solid_capstyle="butt", zorder=5)
@@ -98,7 +96,7 @@ def draw_field(ax, grid, path, robot_idx):
     ax.plot([0, size], [size, size], color=WALL_BLACK, linewidth=wall_w, solid_capstyle="butt", zorder=5)
 
     # Obstacles -- the REAL (eroded) game-element cells, not the
-    # planner's hard-inflated safety margin (see module docstring).
+    # planner's hard-inflated safety margin.
     for (r, c) in eroded_obstacle_cells(grid):
         pad = 0.12
         ax.add_patch(FancyBboxPatch(
@@ -128,9 +126,8 @@ def draw_field(ax, grid, path, robot_idx):
     ax.annotate("", xy=(gc + 0.5, gr + 0.75), xytext=(gc + 0.5, gr + 0.25),
                 arrowprops=dict(arrowstyle="-|>", color=WALL_RED, linewidth=2.5), zorder=5)
 
-    # Robot: actual rotated ROBOT_HALF_WIDTH_CELLS footprint (the same
-    # corner math ftc/field.py's collision check uses), corner dots,
-    # and a heading triangle.
+    # Robot: actual rotated footprint (the same corner math ftc/field.py's
+    # collision check uses), corner dots, and a heading triangle.
     r_row, r_col = path[robot_idx]
     prev_idx = max(robot_idx - 1, 0)
     next_idx = min(robot_idx + 1, len(path) - 1)
@@ -150,8 +147,8 @@ def draw_field(ax, grid, path, robot_idx):
                               edgecolor="none", zorder=8))
 
     ax.set_title(
-        f"Simulated field: real FTC dimensions ({int(grid.size * 6)}in x {int(grid.size * 6)}in, 6in cells)\n"
-        "robot mid-route on its A*-planned path",
+        f"Simulated FTC field ({int(grid.size * 6)}in × {int(grid.size * 6)}in)\n"
+        "Robot mid-route on its A*-planned path",
         fontsize=15.5, fontweight="bold", pad=12, loc="left",
     )
 
@@ -187,15 +184,13 @@ def draw_benchmark(ax, stats):
     n = stats["n"]
     algos = [
         ("Dijkstra", stats["dijkstra"]["time"], "#3c6fce", False,
-         f"{stats['dijkstra']['cells']:.0f} cells explored\n(avg, {n} trials)"),
+         f"{stats['dijkstra']['cells']:.0f} cells explored"),
         ("A*  (selected)", stats["astar"]["time"], "#2e8b3d", True,
-         f"{stats['astar']['cells']:.0f} cells explored -- {stats['astar']['fewer_pct']:.0f}%\n"
-         f"fewer than Dijkstra, same optimal path"),
+         f"{stats['astar']['cells']:.0f} cells (−{stats['astar']['fewer_pct']:.0f}% vs. Dijkstra)"),
         ("RRT", stats["rrt"]["time"], "#e0863c", False,
-         f"path {stats['rrt']['over_pct']:.1f}% longer\nthan optimal"),
+         f"+{stats['rrt']['over_pct']:.1f}% longer path"),
         ("RRT*", stats["rrt_star"]["time"], "#7a4a35", False,
-         f"path {abs(stats['rrt_star']['over_pct']):.0f}% shorter than A*\n"
-         f"-- but {stats['rrt_star']['slower_x']:.0f}x slower"),
+         f"−{abs(stats['rrt_star']['over_pct']):.0f}% path, {stats['rrt_star']['slower_x']:.0f}× slower"),
     ]
     ys = list(range(len(algos)))[::-1]
     ax.set_xscale("log")
@@ -213,7 +208,7 @@ def draw_benchmark(ax, stats):
     for tick, (_, _, _, selected, _) in zip(ax.get_yticklabels(), algos):
         if selected:
             tick.set_color("#2e8b3d")
-    ax.set_xlabel(f"Planning time per call, ms (log scale, avg of {n} trials)", fontsize=12.5)
+    ax.set_xlabel(f"Planning time (ms, log scale, n={n})", fontsize=12.5)
     ax.set_title("5 pathfinding algorithms tested", fontsize=17, fontweight="bold", pad=12, loc="left")
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.tick_params(left=False)
@@ -244,23 +239,12 @@ def main():
     draw_benchmark(ax_bench, stats)
 
     fig.text(0.045, 0.03,
-              "green = start   red flag = goal   gold = driven so far   bold blue = route remaining",
+              "start · goal · driven · remaining",
               fontsize=13, color="#333333")
 
-    out_path = OUT_DIR / "pillar1_figure.png"
+    out_path = OUT_DIR / "figure1_ftc_field.png"
     fig.savefig(out_path, facecolor="white")
     print(f"wrote {out_path}")
-
-    # Left-panel-only crop, for anywhere a smaller single-field image is
-    # more useful than the full two-panel figure.
-    fig_left = plt.figure(figsize=(7.12, 7.12), dpi=100)
-    ax_left = fig_left.add_subplot(1, 1, 1)
-    fig_left.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    draw_field(ax_left, grid, path, robot_idx)
-    ax_left.set_title("")
-    crop_path = OUT_DIR / "ftc_field_pillar1_inprogress.png"
-    fig_left.savefig(crop_path, facecolor="white")
-    print(f"wrote {crop_path}")
 
 
 if __name__ == "__main__":
