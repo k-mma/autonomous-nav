@@ -40,6 +40,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ftc.field import _footprint_corners, build_grid, eroded_obstacle_cells
 from nav.algorithms import astar
+from nav.replan_benchmark import verdict
 
 OUT_DIR = Path(__file__).resolve().parent
 RESULTS_CSV = REPO_ROOT / "benchmark_results" / "results.csv"
@@ -186,8 +187,19 @@ def load_benchmark_stats():
 
 
 def load_replan_stats():
-    """D* Lite's speedup over from-scratch A* at FTC field scale, from
-    nav/replan_benchmark.py's own output.
+    """How D* Lite fares against from-scratch A* at FTC field scale --
+    as a VERDICT ("tie"/"loss"/"win"), not as printed constants.
+
+    The constants were the first draft and were wrong to show: these are
+    wall-clock microbenchmarks, and the 25x25 moving-obstacle ratio
+    lands either side of 1.0 from run to run (0.98x and 1.08x on two
+    consecutive runs here). A poster that prints "1.08x" invites a
+    reader to treat a coin-flip margin as a measurement. The
+    win/tie/loss characterization is what's actually stable across runs,
+    so that's what this returns and what the figure draws.
+    The threshold comes from nav.replan_benchmark.verdict, so this
+    figure and replan_writeup.md can never disagree about what counts
+    as a tie.
 
     Kept OFF the bar chart on purpose (see draw_benchmark): every other
     algorithm there is timed on "produce a route from scratch," while
@@ -218,11 +230,16 @@ def load_replan_stats():
         a, d = totals[scenario]
         return (sum(a) / len(a)) / (sum(d) / len(d))
 
-    return {
-        "size": REPLAN_FIELD_SIZE,
-        "moving_obstacle_x": speedup("moving_obstacle"),
-        "sensor_discovery_x": speedup("sensor_discovery"),
-    }
+    mo, sd = verdict(speedup("moving_obstacle")), verdict(speedup("sensor_discovery"))
+    if mo == "win" and sd == "win":
+        summary = "already beats A* at FTC field scale"
+    elif mo == "win" or sd == "win":
+        summary = ("mixed at FTC field scale — wins where a\n"
+                   "replan stays local, loses where it doesn't")
+    else:
+        summary = ("no faster than A* at FTC field scale;\n"
+                   "only pays off on much larger grids")
+    return {"size": REPLAN_FIELD_SIZE, "summary": summary}
 
 
 def draw_benchmark(ax, stats):
@@ -243,13 +260,8 @@ def draw_benchmark(ax, stats):
          f"+{stats['rrt']['over_pct']:.1f}% longer path"),
         ("RRT*", stats["rrt_star"]["time"], "#7a4a35", False,
          f"−{abs(stats['rrt_star']['over_pct']):.0f}% path, {stats['rrt_star']['slower_x']:.0f}× slower"),
-        # Two decimals, not one: the moving-obstacle figure sits just
-        # under 1.0 and rounds to "1.0x" at one decimal, which reads as
-        # exact parity rather than as the slight loss it is.
         ("D* Lite", None, "#9aa0a8", False,
-         "repairs a route, doesn't plan one\n"
-         f"{ds['moving_obstacle_x']:.2f}× vs. A* (moving obstacle)\n"
-         f"{ds['sensor_discovery_x']:.2f}× (sensor discovery)"),
+         f"repairs a route, doesn't plan one\n{ds['summary']}"),
     ]
     ys = list(range(len(algos)))[::-1]
     ax.set_xscale("log")

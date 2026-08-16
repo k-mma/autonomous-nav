@@ -55,17 +55,23 @@ Putting a repair cost on the same log axis as four planning costs would
 invite a comparison neither number supports, so it gets a labeled row,
 an em dash, and its real numbers in the note instead.
 
-Those numbers are recomputed from benchmark_results/replan_results.csv,
-so re-running nav/replan_benchmark.py and then regenerating this figure
-is all it takes to keep them current. (replan_writeup.md used to be
-hand-maintained beside a machine-generated CSV and drifted badly enough
-to claim 2.42x where the run gave ~1x; nav/replan_benchmark.py now
-generates that writeup too.)
+That row states a VERDICT, not numbers, and deliberately so. An earlier
+draft printed the measured ratios ("1.08x vs. A* on a moving
+obstacle"), but these are wall-clock microbenchmarks and the 25x25
+moving-obstacle ratio lands either side of 1.0 between runs (0.98x and
+1.08x on two consecutive runs) -- printing it invites a reader to treat
+a coin-flip margin as a measurement. The figure now reads
+benchmark_results/replan_results.csv, classifies each scenario with
+nav.replan_benchmark.verdict (the same +/-10% tie band
+replan_writeup.md uses, imported rather than re-declared so the two can
+never disagree), and picks its wording from the result. If a future run
+genuinely flips a verdict, the sentence changes; noise alone won't move
+it.
 
-These are wall-clock timings and the 25x25 figures move run to run --
-the moving-obstacle number lands near 1.0x either side. Treat the row
-as "a tie at field scale, a clear loss on sensor discovery," which is
-what's stable, rather than as two precise constants.
+Exact per-run numbers live in benchmark_results/replan_writeup.md,
+which nav/replan_benchmark.py now generates itself -- it used to be
+hand-maintained beside a machine-generated CSV and had drifted far
+enough to claim 2.42x where the run gave ~1x.
 
 Regenerate after any change to ftc/field.py, ftc/match.py, or the
 footprint/collision geometry those two share, or after re-running

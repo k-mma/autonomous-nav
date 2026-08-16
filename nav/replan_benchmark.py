@@ -341,7 +341,7 @@ TIE_BAND = 0.10
 INTERACTIVE_SIZE = 25
 
 
-def _verdict(speedup):
+def verdict(speedup):
     if speedup > 1 + TIE_BAND:
         return "win"
     if speedup < 1 - TIE_BAND:
@@ -385,7 +385,7 @@ def write_writeup(mo_rows, sd_rows, path):
 
     def phrase(sc, size):
         x = sc["x"][size]
-        v = _verdict(x)
+        v = verdict(x)
         if v == "win":
             return f"{x:.2f}x faster"
         if v == "loss":
@@ -482,7 +482,7 @@ def write_writeup(mo_rows, sd_rows, path):
         "is.",
     ]
 
-    verdicts = {sc: _verdict(stats[sc]["x"][small]) for sc in ("mo", "sd")}
+    verdicts = {sc: verdict(stats[sc]["x"][small]) for sc in ("mo", "sd")}
     if all(v == "win" for v in verdicts.values()):
         lines.append(f"D* Lite already pays off at this project's actual {small}x{small} scale on both "
                      "scenarios, so the incremental algorithm is simply the right default here.")
