@@ -43,6 +43,10 @@ from nav.algorithms import astar
 
 OUT_DIR = Path(__file__).resolve().parent
 RESULTS_CSV = REPO_ROOT / "benchmark_results" / "results.csv"
+REPLAN_CSV = REPO_ROOT / "benchmark_results" / "replan_results.csv"
+# The benchmark grid size closest to this project's 24x24 FTC field --
+# what "at field scale" means in the D* Lite row below.
+REPLAN_FIELD_SIZE = 25
 
 LAYOUT = "cluttered"
 START = (21, 2)
@@ -177,11 +181,59 @@ def load_benchmark_stats():
         "astar": {"time": ast_t, "cells": ast_c, "fewer_pct": fewer_pct},
         "rrt": {"time": rrt_t, "over_pct": rrt_over},
         "rrt_star": {"time": rrts_t, "over_pct": rrts_over, "slower_x": rrts_slower},
+        "dstar_lite": load_replan_stats(),
+    }
+
+
+def load_replan_stats():
+    """D* Lite's speedup over from-scratch A* at FTC field scale, from
+    nav/replan_benchmark.py's own output.
+
+    Kept OFF the bar chart on purpose (see draw_benchmark): every other
+    algorithm there is timed on "produce a route from scratch," while
+    D* Lite's entire point is repairing an existing route after the
+    world changes. nav/algorithms.py's own dstar_lite branch says the
+    same thing -- a single find_path call can't demonstrate what the
+    algorithm is for. Plotting a repair cost against four planning
+    costs on one axis would invite a comparison neither number
+    supports.
+
+    Aggregated exactly the way nav/replan_benchmark.py's `average` +
+    plot/writeup path does: mean total-ms per trial at one grid size,
+    then astar_mean / dstar_mean. Recomputed here rather than read from
+    replan_writeup.md, because that writeup's numbers are stale -- the
+    CSV was regenerated (commit c73fe1d) without regenerating the
+    writeup alongside it, so its table still reports an older run.
+    """
+    totals = {}
+    with open(REPLAN_CSV) as f:
+        for row in csv.DictReader(f):
+            if int(row["grid_size"]) != REPLAN_FIELD_SIZE:
+                continue
+            a, d = totals.setdefault(row["scenario"], [[], []])
+            a.append(float(row["astar_total_ms"]))
+            d.append(float(row["dstar_total_ms"]))
+
+    def speedup(scenario):
+        a, d = totals[scenario]
+        return (sum(a) / len(a)) / (sum(d) / len(d))
+
+    return {
+        "size": REPLAN_FIELD_SIZE,
+        "moving_obstacle_x": speedup("moving_obstacle"),
+        "sensor_discovery_x": speedup("sensor_discovery"),
     }
 
 
 def draw_benchmark(ax, stats):
     n = stats["n"]
+    ds = stats["dstar_lite"]
+    # The 5th entry carries time=None: D* Lite was tested, but on a
+    # different quantity (repair-after-change, not plan-from-scratch --
+    # see load_replan_stats), so it gets a labeled row and a note
+    # instead of a bar. Dropping it entirely would leave the panel
+    # titled "5 pathfinding algorithms tested" over four bars, which is
+    # the inconsistency this row exists to close.
     algos = [
         ("Dijkstra", stats["dijkstra"]["time"], "#3c6fce", False,
          f"{stats['dijkstra']['cells']:.0f} cells explored"),
@@ -191,23 +243,46 @@ def draw_benchmark(ax, stats):
          f"+{stats['rrt']['over_pct']:.1f}% longer path"),
         ("RRT*", stats["rrt_star"]["time"], "#7a4a35", False,
          f"−{abs(stats['rrt_star']['over_pct']):.0f}% path, {stats['rrt_star']['slower_x']:.0f}× slower"),
+        # Two decimals, not one: the moving-obstacle figure sits just
+        # under 1.0 and rounds to "1.0x" at one decimal, which reads as
+        # exact parity rather than as the slight loss it is.
+        ("D* Lite", None, "#9aa0a8", False,
+         "repairs a route, doesn't plan one\n"
+         f"{ds['moving_obstacle_x']:.2f}× vs. A* (moving obstacle)\n"
+         f"{ds['sensor_discovery_x']:.2f}× (sensor discovery)"),
     ]
     ys = list(range(len(algos)))[::-1]
     ax.set_xscale("log")
     ax.set_xlim(0.05, 500)
+    # Extra headroom below the last row so the bar-less D* Lite entry
+    # doesn't sit on top of the x-axis spine and its tick labels.
+    ax.set_ylim(-1.15, len(algos) - 0.5)
     for y, (label, t, color, selected, note) in zip(ys, algos):
+        weight = "bold" if selected else "normal"
+        if t is None:
+            # No bar, and an em dash where the timing would sit, so the
+            # row reads as "measured, but not on this axis" rather than
+            # as a missing or zero value. The rule above it marks where
+            # the shared planning-time axis stops applying.
+            ax.axhline(y + 0.55, color="#c9ced6", linewidth=1, linestyle=(0, (4, 3)), zorder=1)
+            ax.text(0.062, y, "—", va="center", ha="left", fontsize=17, color=color)
+            ax.text(1.04, y, note, va="center", ha="left", fontsize=10.5,
+                    color="#5b6470", linespacing=1.4, style="italic",
+                    transform=ax.get_yaxis_transform())
+            continue
         edge = "black" if selected else "none"
         lw = 2.5 if selected else 0
         ax.barh(y, t, color=color, edgecolor=edge, linewidth=lw, height=0.55, zorder=3)
-        weight = "bold" if selected else "normal"
         ax.text(t * 1.15, y, f"{t:.2f} ms", va="center", fontsize=15, fontweight=weight)
         ax.text(1.04, y, note, va="center", ha="left", fontsize=12.5,
                 fontweight=weight, linespacing=1.3, transform=ax.get_yaxis_transform())
     ax.set_yticks(ys)
     ax.set_yticklabels([a[0] for a in algos], fontsize=16, fontweight="bold")
-    for tick, (_, _, _, selected, _) in zip(ax.get_yticklabels(), algos):
+    for tick, (_, t, color, selected, _) in zip(ax.get_yticklabels(), algos):
         if selected:
             tick.set_color("#2e8b3d")
+        elif t is None:
+            tick.set_color(color)
     ax.set_xlabel(f"Planning time (ms, log scale, n={n})", fontsize=12.5)
     ax.set_title("5 pathfinding algorithms tested", fontsize=17, fontweight="bold", pad=12, loc="left")
     ax.spines[["top", "right", "left"]].set_visible(False)

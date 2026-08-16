@@ -1076,16 +1076,26 @@ scale:
 
 | Size | Moving obstacle speedup | Sensor discovery speedup |
 |---:|---:|---:|
-| 25x25 | 2.42x | 0.49x (slower) |
-| 50x50 | 2.90x | 0.63x (slower) |
-| 100x100 | 8.49x | 1.31x |
-| 200x200 | 16.34x | 1.97x |
+| 25x25 | ~1x (a tie) | ~0.6x (slower) |
+| 50x50 | ~1.9x | ~0.7x (slower) |
+| 100x100 | ~3.7x | ~1.5x |
+| 200x200 | ~6.7x | ~2.3x |
 
-Moving obstacle: D* Lite wins at every size, growing fast -- a single
-bouncing obstacle only ever invalidates a small, localized neighborhood
-each time it moves, exactly the case incremental repair is built for.
+These are wall-clock microbenchmarks and the small-grid figures move a
+few tens of percent run to run, so they're quoted approximately here;
+`benchmark_results/replan_writeup.md` carries the exact numbers from the
+most recent run and is regenerated automatically by
+`python3 -m nav.replan_benchmark`. What's stable across runs is the
+*shape*: a tie at 25x25 on moving obstacle, a clear loss at 25x25 on
+sensor discovery, and both crossing over as the grid grows.
 
-Sensor discovery is the more honest result: D* Lite is *slower* at
+Moving obstacle: a dead heat at this project's actual 25x25 scale, then
+D* Lite pulls away fast as the grid grows -- a single bouncing obstacle
+only ever invalidates a small, localized neighborhood each time it
+moves, exactly the case incremental repair is built for, but at 25x25
+that repair costs about what a fresh search does.
+
+Sensor discovery is the starker result: D* Lite is outright *slower* at
 this project's actual 25x25 scale, only becoming a net win at 100x100
 and above. Two real reasons, not artifacts: sensor discovery can reveal
 several newly-blocked cells in one event (unlike one bouncing obstacle),

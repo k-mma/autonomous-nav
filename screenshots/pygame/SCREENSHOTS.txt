@@ -168,12 +168,14 @@ changes (an obstacle moves, or the sensor discovers something new), how
 much does it cost to replan a route already in progress, D* Lite's
 incremental repair vs. just rerunning A* from scratch? Left panel is the
 moving-obstacle scenario, right panel is sensor-discovery, both log-scale
-runtime vs. grid size. D* Lite wins at every size on the moving-obstacle
-scenario (2.4x-16.3x faster) but is actually *slower* than fresh A* at
-this project's normal interactive scale on sensor discovery, only
-pulling ahead once the grid is considerably bigger -- a more honest,
-two-part result than "the incremental algorithm always wins." Full
-breakdown in benchmark_results/replan_writeup.md.
+runtime vs. grid size. At this project's normal interactive 25x25 scale
+D* Lite wins neither scenario -- roughly a tie on moving obstacles and
+clearly slower on sensor discovery -- and only pulls ahead as the grid
+grows, several-fold by 200x200. A more honest result than "the
+incremental algorithm always wins." Exact per-run numbers (these are
+wall-clock timings and the small-grid ones move run to run) are in
+benchmark_results/replan_writeup.md, regenerated automatically by
+python3 -m nav.replan_benchmark.
 
 
 Poster figures (Pillar 1, etc.) have moved out of this directory into

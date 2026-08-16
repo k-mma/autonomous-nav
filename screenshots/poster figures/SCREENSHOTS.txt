@@ -43,11 +43,33 @@ interactive session like screenshots/pygame's scenarios. Two panels:
            recomputed live from benchmark_results/results.csv
            (nav/benchmark.py's 20-trial run) -- the comparison Pillar 1
            cites for why A* is the algorithm every match in this
-           project plans with.
+           project plans with. Plus a fifth, bar-less D* Lite row (see
+           below).
+
+The D* Lite row. The panel is titled "5 pathfinding algorithms tested"
+but only four have bars, because D* Lite is timed on a different
+quantity: repairing a route after the world changes, not planning one
+from scratch (nav/algorithms.py's own dstar_lite branch makes the same
+point -- one find_path call can't show what the algorithm is for).
+Putting a repair cost on the same log axis as four planning costs would
+invite a comparison neither number supports, so it gets a labeled row,
+an em dash, and its real numbers in the note instead.
+
+Those numbers are recomputed from benchmark_results/replan_results.csv,
+so re-running nav/replan_benchmark.py and then regenerating this figure
+is all it takes to keep them current. (replan_writeup.md used to be
+hand-maintained beside a machine-generated CSV and drifted badly enough
+to claim 2.42x where the run gave ~1x; nav/replan_benchmark.py now
+generates that writeup too.)
+
+These are wall-clock timings and the 25x25 figures move run to run --
+the moving-obstacle number lands near 1.0x either side. Treat the row
+as "a tie at field scale, a clear loss on sensor discovery," which is
+what's stable, rather than as two precise constants.
 
 Regenerate after any change to ftc/field.py, ftc/match.py, or the
 footprint/collision geometry those two share, or after re-running
-nav/benchmark.py:
+nav/benchmark.py or nav/replan_benchmark.py:
 
     python3 "screenshots/poster figures/generate_figure1_ftc_field.py"
 
