@@ -30,6 +30,21 @@ so a wrong heading belief doesn't just misreport a number, it steers
 the robot somewhere it didn't intend to go -- see
 ftc/scratch/fidelity_test.py's check_heading_error_rotates_execution).
 
+A step landing on a cell the (inflated) grid considers free is only
+half the collision check. `ftc/field.py`'s hard inflation proves an
+AXIS-ALIGNED 3-cell-wide footprint stays clear of every real obstacle
+at that cell -- it says nothing about a footprint held at a non-
+cardinal heading, which is every diagonal step this project's
+8-directional grid allows, and every step a holonomic drivetrain takes
+while its held heading doesn't match its direction of travel. Every
+successful step also runs `ftc/field.py`'s `footprint_overlaps_cells`
+against the robot's actual rotated footprint, at the heading it would
+actually be holding on arrival, over the REAL (eroded, not inflated)
+obstacle cells -- and a hit is treated exactly like landing on an
+inflated-obstacle cell: a rejected move, not a cosmetic footnote (see
+that function's own docstring for the geometry and
+`ftc/scratch/field_test.py`'s rotated-footprint checks).
+
 Which fidelity tier's assumptions apply (`fidelity`, defaulting to
 ftc.config.MODEL_FIDELITY, resolved fresh on every call the same way
 AUTONOMOUS_PERIOD_S already is below -- NOT baked in at import time)
@@ -89,6 +104,7 @@ from ftc.config import (
     PLANNING_OVERHEAD_S, TURN_TIME_PER_90DEG_S,
 )
 from ftc.drivetrain import resolve_held_heading_deg
+from ftc.field import eroded_obstacle_cells, footprint_overlaps_cells
 from ftc.fusion import fused_tag_correction, fused_tag_correction_kalman
 from ftc.sensors import angular_diff, diagnose_tag_detections, heading_deg
 
@@ -380,6 +396,17 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
         on_tick(snapshot)
         tick_counter += 1
 
+    # The REAL (eroded, not inflated) obstacle cells footprint_overlaps_
+    # cells checks the robot's actual rotated footprint against -- see
+    # that function's own docstring and this module's own docstring for
+    # why the inflated grid's center-cell clearance alone isn't enough.
+    # Computed once here (cheap relative to the astar() calls this loop
+    # already makes) rather than every tick, EXCEPT when a moving
+    # obstacle can actually change ground_truth's obstacle cells out
+    # from under it -- recomputed below, right after ticking those,
+    # only in that case.
+    real_obstacle_cells = eroded_obstacle_cells(ground_truth)
+
     _emit("start")
 
     for _ in range(MAX_TICKS):
@@ -388,6 +415,8 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
 
         for obstacle in moving_obstacles:
             obstacle.tick(ground_truth, elapsed_s * 1000.0)
+        if moving_obstacles:
+            real_obstacle_cells = eroded_obstacle_cells(ground_truth)
 
         newly_seen_believed = set()
         if suite.senses_obstacles:
@@ -502,7 +531,58 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
                                  next_believed[1] + error[1] + heading_delta[1])
         next_true = (round(next_true_continuous[0]), round(next_true_continuous[1]))
 
-        if not ground_truth.is_valid(*next_true) or ground_truth.is_obstacle(*next_true):
+        # The heading/turn-cost/drivetrain resolution this step would
+        # produce ON ARRIVAL -- resolved here, before deciding whether
+        # the step is valid, because it's pure (no rng draw, no
+        # elapsed_s charge yet) and the footprint_overlaps_cells check
+        # right below needs to test the robot's footprint at the
+        # heading it would actually be holding on arrival, not the
+        # heading it's holding right now. Reused unchanged in the
+        # success path further down instead of recomputed, so there is
+        # exactly one heading resolution per tick, not two that could
+        # silently disagree.
+        step_dist = math.hypot(next_true[0] - true_position[0], next_true[1] - true_position[1])
+        travel_heading = heading
+        candidate_heading = heading
+        if step_dist > 1e-9:
+            # Direction of the TRUE realized motion (after error/heading-
+            # error have already been applied above) -- used uniformly
+            # for both the legacy path and every Drivetrain, which is
+            # exactly what makes an explicit TANK instance byte-for-byte
+            # identical to the drivetrain=None default (ftc/drivetrain.py's
+            # own docstring promises this; see ftc/scratch/
+            # drivetrain_test.py's check_tank_matches_legacy_default):
+            # TANK.robot_heading_deg returns travel_heading unchanged and
+            # TANK.speed_and_drift_factor is always (1.0, 1.0), so the
+            # drivetrain-aware branch below reduces to exactly the same
+            # arithmetic the legacy `if drivetrain is None` branch does.
+            travel_heading = heading_deg(true_position, next_true)
+            if drivetrain is None:
+                candidate_heading = travel_heading
+            else:
+                # Re-resolved every tick (see run_match's own pre-loop
+                # comment on fixed_heading_deg, and resolve_held_heading_
+                # deg's docstring) from wherever the robot actually is
+                # RIGHT NOW (`true_position`, before this step's motion
+                # is applied) and the CURRENT plan (`path`/`idx`, already
+                # advanced past `prev_believed` above) -- a byte-for-byte
+                # no-op for the "fixed_at_start" default, a real
+                # re-aiming for the other two heading policies.
+                fixed_heading_deg = resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites,
+                                                               path, idx)
+                candidate_heading = drivetrain.robot_heading_deg(heading, travel_heading, fixed_heading_deg)
+
+        # A step onto a cell the inflated grid considers free is only
+        # half the check -- footprint_overlaps_cells tests the robot's
+        # ACTUAL rotated footprint, at the heading it would hold on
+        # arrival, against the REAL (un-inflated) obstacle cells (see
+        # this module's own docstring). A hit here is treated exactly
+        # like landing on an inflated-obstacle cell: same counter, same
+        # event, same on_collision/stall-recovery handling below --
+        # deliberately not a separate code path, since a rejected move
+        # is a rejected move regardless of which check caught it.
+        if (not ground_truth.is_valid(*next_true) or ground_truth.is_obstacle(*next_true)
+                or footprint_overlaps_cells(next_true, candidate_heading, real_obstacle_cells, ground_truth.size)):
             collisions += 1
             _emit("collision", attempted_position=next_true, newly_seen_believed=set(newly_seen_believed))
             if on_collision != "replan":
@@ -546,40 +626,21 @@ def run_match(suite, assumed_grid, start, goal, ground_truth, actual_start, tag_
             stalled = True
             continue
 
-        step_dist = math.hypot(next_true[0] - true_position[0], next_true[1] - true_position[1])
+        # step_dist/travel_heading/candidate_heading were already
+        # resolved above, before the collision gate -- this step
+        # actually succeeded, so charge the turn cost and adopt the
+        # heading now, reusing that single resolution rather than
+        # computing a second one that could disagree with the one the
+        # footprint check above already tested.
         speed_factor, drift_mult = 1.0, 1.0
         if step_dist > 1e-9:
-            # Direction of the TRUE realized motion (after error/heading-
-            # error have already been applied above) -- used uniformly
-            # for both the legacy path and every Drivetrain, which is
-            # exactly what makes an explicit TANK instance byte-for-byte
-            # identical to the drivetrain=None default (ftc/drivetrain.py's
-            # own docstring promises this; see ftc/scratch/
-            # drivetrain_test.py's check_tank_matches_legacy_default):
-            # TANK.robot_heading_deg returns travel_heading unchanged and
-            # TANK.speed_and_drift_factor is always (1.0, 1.0), so the
-            # drivetrain-aware branch below reduces to exactly the same
-            # arithmetic the legacy `if drivetrain is None` branch does.
-            travel_heading = heading_deg(true_position, next_true)
             if drivetrain is None:
-                turn_deg = abs(angular_diff(travel_heading, heading))
+                turn_deg = abs(angular_diff(candidate_heading, heading))
                 elapsed_s += (turn_deg / 90.0) * TURN_TIME_PER_90DEG_S
-                heading = travel_heading
             else:
-                # Re-resolved every tick (see run_match's own pre-loop
-                # comment on fixed_heading_deg, and resolve_held_heading_
-                # deg's docstring) from wherever the robot actually is
-                # RIGHT NOW (`true_position`, before this step's motion
-                # is applied) and the CURRENT plan (`path`/`idx`, already
-                # advanced past `prev_believed` above) -- a byte-for-byte
-                # no-op for the "fixed_at_start" default, a real
-                # re-aiming for the other two heading policies.
-                fixed_heading_deg = resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites,
-                                                               path, idx)
-                new_heading = drivetrain.robot_heading_deg(heading, travel_heading, fixed_heading_deg)
-                elapsed_s += drivetrain.turn_cost_s(heading, new_heading)
-                speed_factor, drift_mult = drivetrain.speed_and_drift_factor(new_heading, travel_heading)
-                heading = new_heading
+                elapsed_s += drivetrain.turn_cost_s(heading, candidate_heading)
+                speed_factor, drift_mult = drivetrain.speed_and_drift_factor(candidate_heading, travel_heading)
+            heading = candidate_heading
 
         step_meters = (step_dist * CELL_SIZE_IN) / INCHES_PER_METER
         elapsed_s += _trapezoidal_drive_time_s(

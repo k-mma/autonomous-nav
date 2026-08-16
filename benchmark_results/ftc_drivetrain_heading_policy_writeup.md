@@ -8,11 +8,11 @@ Pooled across every suite, paired on identical scenarios, at the `realistic` fid
 
 | Policy | Success rate | vs. fixed_at_start [95% CI] | Verdict |
 |---|---:|---:|---|
-| fixed_at_start (baseline) | 23% | -- | -- |
-| Mecanum (re-aim to nearest tag) | 22% | -0.8% [-2.5%, +0.9%] | not distinguishable from noise |
-| Mecanum (aim along route) | 28% | +5.6% [+3.7%, +7.5%] | **significantly better** |
+| fixed_at_start (baseline) | 7% | -- | -- |
+| Mecanum (re-aim to nearest tag) | 7% | +0.0% [-1.0%, +1.0%] | not distinguishable from noise |
+| Mecanum (aim along route) | 9% | +1.8% [+0.8%, +2.9%] | **significantly better** |
 
-Tank (no held heading at all, for reference): 37%.
+Tank (no held heading at all, for reference): 18%.
 
 At least one alternative heading policy is a statistically real improvement over fixed_at_start -- re-aiming genuinely helps, exactly the mechanism `ftc_drivetrain_writeup.md` predicted but didn't have a policy to demonstrate it with. Whether that improvement is enough to catch up to tank (see the per-suite table below) is a separate question from whether it helps at all.
 
@@ -20,22 +20,22 @@ At least one alternative heading policy is a statistically real improvement over
 
 | Policy | Best value | pp/$100 |
 |---|---|---:|
-| Tank | Rear camera | +22.8 |
-| Mecanum | Odometry pods | +7.9 |
-| Mecanum (re-aim to nearest tag) | Odometry pods | +8.1 |
-| Mecanum (aim along route) | Odometry pods | +7.0 |
+| Tank | Odometry pods | +7.1 |
+| Mecanum | Odometry pods | +3.0 |
+| Mecanum (re-aim to nearest tag) | Odometry pods | +3.2 |
+| Mecanum (aim along route) | Odometry pods | +3.1 |
 
 ## Per-suite success rate (realistic fidelity)
 
 | Suite | Tank | fixed_at_start | nearest_tag_current | route_dominant |
 |---|---:|---:|---:|---:|
-| Dead reckoning | 24% | 14% | 12% | 18% |
-| Odometry pods | 49% | 49% | 49% | 49% |
-| Distance sensors | 27% | 9% | 11% | 18% |
-| AprilTag (front camera) | 33% | 18% | 20% | 22% |
-| IMU | 23% | 15% | 12% | 19% |
-| Rear camera | 44% | 21% | 20% | 30% |
-| Full suite | 56% | 32% | 29% | 42% |
+| Dead reckoning | 14% | 6% | 5% | 7% |
+| Odometry pods | 37% | 19% | 19% | 21% |
+| Distance sensors | 9% | 3% | 2% | 4% |
+| AprilTag (front camera) | 15% | 6% | 6% | 8% |
+| IMU | 14% | 6% | 5% | 7% |
+| Rear camera | 18% | 6% | 6% | 7% |
+| Full suite | 16% | 4% | 4% | 6% |
 
 ## What this does and does not prove
 

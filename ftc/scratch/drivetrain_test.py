@@ -38,10 +38,11 @@ from nav.field_variance import generate_ground_truth
 LAYOUT = "corridor"  # forces a real multi-leg detour, not a straight line
 
 
-def _zigzag_scenario(seed=3):
-    grid = build_grid(LAYOUT)
+def _zigzag_scenario(seed=3, layout=None):
+    layout = layout or LAYOUT
+    grid = build_grid(layout)
     free = [(r, c) for r in range(grid.size) for c in range(grid.size) if grid.cells[r][c] == 0]
-    tag_sites = tag_sites_for(LAYOUT)
+    tag_sites = tag_sites_for(layout)
     rng = random.Random(seed)
     for _ in range(50):
         start, goal = rng.sample(free, 2)
@@ -70,7 +71,19 @@ def check_tank_matches_legacy_default():
 
 
 def check_mecanum_never_pays_turn_cost():
-    grid, start, goal, ground_truth, actual_start, tag_sites = _zigzag_scenario()
+    # Deliberately NOT the module-default 'corridor' scenario: 'corridor'
+    # is built to be barely passable at all for an axis-aligned 3-cell
+    # footprint (ftc/scratch/field_test.py's own check_corridor_stays_
+    # passable), so a zig-zag through it routinely puts the robot's
+    # footprint at a non-cardinal heading right at the edge of a real
+    # obstacle -- exactly the case ftc/match.py's footprint_overlaps_
+    # cells check exists to catch (see that function's own docstring),
+    # which would then end the match on a genuine collision instead of
+    # measuring the turn-cost difference this check is actually about.
+    # 'sparse' at this seed gives both drivetrains a real multi-leg
+    # route with zero collisions on either side, confirmed directly
+    # below rather than assumed.
+    grid, start, goal, ground_truth, actual_start, tag_sites = _zigzag_scenario(seed=4, layout="sparse")
 
     tank_result = run_match(DeadReckoningSuite(), grid, start, goal, ground_truth, actual_start, tag_sites,
                               random.Random(3), drivetrain=TANK)
@@ -81,13 +94,19 @@ def check_mecanum_never_pays_turn_cost():
     # this whole check would be measuring nothing (a straight-line path
     # never turns regardless of drivetrain).
     tank_turned = tank_result.elapsed_s > 0 and tank_result.steps > 0
+    # Neither drivetrain actually collided with anything -- the
+    # precondition that makes the elapsed_s/steps comparison below mean
+    # what it claims (a pure turn-cost difference, not one run ending
+    # early on a real footprint-obstacle overlap).
+    neither_collided = tank_result.collisions == 0 and mecanum_result.collisions == 0
     # MECANUM should reach the SAME number of steps (identical path,
     # identical translation-error seed) in strictly less elapsed_s than
     # TANK on a path with any real turning, since it pays zero turn cost
     # (it may still pay a strafe speed penalty on some legs, but that's
     # bounded by MECANUM_STRAFE_SPEED_FACTOR, not the flat per-turn cost
     # TANK pays on top of identical drive time).
-    ok = tank_turned and mecanum_result.steps == tank_result.steps and mecanum_result.elapsed_s < tank_result.elapsed_s
+    ok = (tank_turned and neither_collided and mecanum_result.steps == tank_result.steps
+          and mecanum_result.elapsed_s < tank_result.elapsed_s)
     print(f"  TANK:    elapsed_s={tank_result.elapsed_s}, steps={tank_result.steps}")
     print(f"  MECANUM: elapsed_s={mecanum_result.elapsed_s}, steps={mecanum_result.steps}")
     print(f"MECANUM completes the identical zig-zag path in less elapsed_s than TANK (no turn-cost tax): "

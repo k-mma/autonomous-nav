@@ -6,23 +6,23 @@
 
 | Budget | Stock | Fast | Faster |
 |---:|---:|---:|---:|
-| 30s | 39% | 32% | 29% |
-| 15s | 37% | 30% | 21% |
-| 10s | 28% | 22% | 13% |
+| 30s | 15% | 12% | 10% |
+| 15s | 15% | 12% | 8% |
+| 10s | 13% | 10% | 6% |
 
 ## Accumulated pose error by gearing (the slip cost)
 
 | Budget | Stock | Fast | Faster |
 |---:|---:|---:|---:|
-| 30s | 4.69in | 5.64in | 6.74in |
-| 15s | 4.69in | 5.58in | 6.53in |
-| 10s | 4.58in | 5.45in | 6.34in |
+| 30s | 4.88in | 5.43in | 6.14in |
+| 15s | 4.89in | 5.43in | 6.11in |
+| 10s | 4.87in | 5.40in | 5.81in |
 
 ## Does it pay off?
 
-At 30s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 29% vs. stock's 39% (-10%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
-At 15s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 21% vs. stock's 37% (-16%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
-At 10s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 13% vs. stock's 28% (-15%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
+At 30s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 10% vs. stock's 15% (-5%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
+At 15s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 8% vs. stock's 15% (-7%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
+At 10s, faster gearing is worse, exactly as the per-cell kinematics predict: Faster gearing lands at 6% vs. stock's 13% (-7%), and the two suites' success-rate confidence intervals don't overlap at this trial count. This isn't a tradeoff that failed to pay off -- 'faster' gearing is strictly slower per cell AND drifts more (see the table above and ftc/scratch/gearing_test.py); there was never a time saving here for the drift cost to be weighed against. Buying speed without also buying something that corrects pose (odometry pods, AprilTag) makes the average suite's overall reliability worse, not better.
 
 ## What this does and does not prove
 

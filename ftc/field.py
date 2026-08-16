@@ -35,7 +35,7 @@ from dataclasses import dataclass, field as dataclass_field
 from nav.config import COST_INFLUENCE_RADIUS, COST_MAX_EXTRA
 from nav.grid import Grid
 
-from ftc.config import CELL_SIZE_IN, FIELD_SIZE_IN, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS
+from ftc.config import CELL_SIZE_IN, FIELD_SIZE_IN, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS, ROBOT_SIZE_IN
 
 
 @dataclass
@@ -160,6 +160,28 @@ def _hard_inflate(grid, radius):
         grid.cells[r][c] = Grid.OBSTACLE
 
 
+def _hard_inflate_border(grid, radius):
+    """The field's own perimeter wall is a workspace obstacle exactly
+    like any FieldElement, for the same C-space reason _hard_inflate
+    exists (see module docstring) -- it's just one this module never
+    stores as an explicit obstacle rectangle, since it's implicit in
+    the grid's own edges. Without this, a free cell right on row/col 0
+    (or the far edge) reads as perfectly legal for the robot's CENTER,
+    but that cell is where an 18in-wide (3-cell) robot's footprint
+    starts hanging a cell and a half off the field -- i.e. through the
+    real wall. Blocks every cell within `radius` of any edge, the same
+    "would a robot centered here have any part of its footprint outside
+    a real boundary" test _hard_inflate applies to obstacles, so the
+    point-robot planner treats the field edge with the same respect it
+    already gives every interior obstacle."""
+    size = grid.size
+    for row in range(size):
+        for col in range(size):
+            if row < radius or col < radius or row >= size - radius or col >= size - radius:
+                if grid.cells[row][col] == Grid.FREE:
+                    grid.cells[row][col] = Grid.OBSTACLE
+
+
 def build_grid(layout_name_or_layout, robot_radius_cells=ROBOT_RADIUS_CELLS,
                 soft_influence_radius=COST_INFLUENCE_RADIUS, soft_max_extra=COST_MAX_EXTRA,
                 diagonal=True, size=FTC_GRID_SIZE, cell_size_in=CELL_SIZE_IN):
@@ -167,12 +189,15 @@ def build_grid(layout_name_or_layout, robot_radius_cells=ROBOT_RADIUS_CELLS,
     Build an FTC-scale Grid from a layout name (a key of LAYOUTS) or a
     FieldLayout directly. Obstacle cells come straight from the
     layout's elements; then every obstacle is hard-inflated by
-    `robot_radius_cells` (see _hard_inflate) so the point-robot planner
-    downstream is correct for a real 3-cell-wide robot, not just a
-    point. A soft costmap (nav.grid.Grid.compute_cost_map, the same
-    machinery pygame_app's K toggle uses) is layered on top of that
-    hard boundary so a planner still prefers extra clearance beyond the
-    minimum required, instead of grazing every hard-inflated edge.
+    `robot_radius_cells` (see _hard_inflate), and the field's own outer
+    perimeter gets the identical treatment (see _hard_inflate_border) --
+    so the point-robot planner downstream is correct for a real
+    3-cell-wide robot, not just a point, against BOTH the game elements
+    and the wall around them. A soft costmap (nav.grid.Grid.compute_
+    cost_map, the same machinery pygame_app's K toggle uses) is layered
+    on top of that hard boundary so a planner still prefers extra
+    clearance beyond the minimum required, instead of grazing every
+    hard-inflated edge.
 
     `diagonal=True` by default -- FTC drivetrains are commonly holonomic
     (mecanum), so 8-directional movement is a more honest model of what
@@ -195,6 +220,7 @@ def build_grid(layout_name_or_layout, robot_radius_cells=ROBOT_RADIUS_CELLS,
                 grid.cells[r][c] = Grid.OBSTACLE
 
     _hard_inflate(grid, robot_radius_cells)
+    _hard_inflate_border(grid, robot_radius_cells)
 
     grid.cost_map_enabled = True
     grid.compute_cost_map(influence_radius=soft_influence_radius, max_extra=soft_max_extra)
@@ -211,3 +237,166 @@ def in_to_cell(x_in, y_in, cell_size_in=CELL_SIZE_IN):
     """A single (x_in, y_in) field point -> (row, col) grid cell --
     used to place AprilTag sites on the same grid the layout builds."""
     return (int(y_in // cell_size_in), int(x_in // cell_size_in))
+
+
+def eroded_obstacle_cells(grid, radius=ROBOT_RADIUS_CELLS):
+    """The actual game-element footprint a real robot could touch --
+    approximately undoes this module's own Minkowski-sum hard-inflation
+    (every obstacle grown by `radius` so a point-robot plan is safe for
+    the real 3-cell-wide robot -- see `_hard_inflate`'s docstring) via
+    morphological erosion, the standard inverse of dilation. `radius`
+    should match whatever `build_grid` call produced `grid` -- pass the
+    same value, not just the default, for a grid built with a
+    non-default `robot_radius_cells`.
+
+    Two callers, one obstacle set. `pygame_app/ftc_viz/field_view.py`
+    draws exactly these cells (not the inflated ones) so a robot's
+    drawn footprint reads as touching real game elements, not the
+    planner's own safety buffer. `ftc/match.py`'s `footprint_overlaps_
+    cells` collision check (see that function) tests the robot's actual
+    ROTATED footprint against this same set, not the inflated grid --
+    the two staying the same set is what makes "does this look like it's
+    overlapping on screen" and "does this count as a collision" the same
+    question, not two independently-maintained approximations of it.
+
+    Center-cell inflation-clearance alone (the ORIGINAL reason this
+    function exists) only ever proves an AXIS-ALIGNED 3-cell-wide
+    footprint stays clear: a free center cell means no real (eroded)
+    obstacle cell is within `radius` cells of it, so no eroded obstacle
+    cell can be within `radius` of an axis-aligned footprint's own edge
+    either. That guarantee does NOT extend to a footprint held at a
+    non-cardinal heading (e.g. mid-diagonal-travel, or a mecanum
+    drivetrain holding a fixed heading unrelated to its direction of
+    travel) -- a square rotated 45 degrees reaches its own half-width
+    times sqrt(2) (~2.12 cells at this project's 1.5-cell half-width)
+    straight out from center, well past the ~1.5-cell axis-aligned
+    clearance the inflation actually proves. `footprint_overlaps_cells`
+    is the check that closes that gap; this function is what both it and
+    the visualizer draw their notion of "real obstacle" from."""
+    size = grid.size
+
+    def is_obstacle(r, c):
+        return grid.is_valid(r, c) and grid.cells[r][c] == Grid.OBSTACLE
+
+    survivors = set()
+    for row in range(size):
+        for col in range(size):
+            if not is_obstacle(row, col):
+                continue
+            if all(is_obstacle(row + dr, col + dc)
+                    for dr in range(-radius, radius + 1) for dc in range(-radius, radius + 1)):
+                survivors.add((row, col))
+    return survivors
+
+
+# Half-width, in grid cells, of the robot's actual ROBOT_SIZE_IN x
+# ROBOT_SIZE_IN square footprint -- 1.5 cells at this project's default
+# 6in cells, i.e. a full cell more than ROBOT_RADIUS_CELLS's rounded-
+# down 1, and the number footprint_overlaps_cells rotates by heading
+# rather than treating as a fixed axis-aligned bounding box.
+ROBOT_HALF_WIDTH_CELLS = ROBOT_SIZE_IN / CELL_SIZE_IN / 2.0
+
+# How far a footprint_overlaps_cells search needs to look from the
+# robot's center cell to find every real-obstacle cell its rotated
+# footprint could possibly touch, at ANY heading -- the worst case is a
+# corner reaching straight out along a grid axis, sqrt(2) times the
+# half-width (see ROBOT_HALF_WIDTH_CELLS), rounded up to a whole cell
+# with one extra cell of slack rather than trusting a boundary float
+# comparison to land exactly on an integer.
+_FOOTPRINT_SEARCH_RADIUS_CELLS = int(math.ceil(ROBOT_HALF_WIDTH_CELLS * math.sqrt(2))) + 1
+
+
+def _footprint_corners(position, heading_deg, half=ROBOT_HALF_WIDTH_CELLS):
+    """The 4 (row, col) corners of the robot's actual footprint, in grid-
+    cell units (not pixels -- see pygame_app/ftc_viz/field_view.py's
+    `_robot_corners` for the pixel-space twin this mirrors), plus the
+    footprint's own two edge-normal directions (forward, right) --
+    `footprint_overlaps_cells` needs those as candidate separating
+    axes. Uses the same directly-verified heading_deg convention,
+    atan2(d_row, d_col), every other consumer in this project does:
+    (cos, sin) = (d_col, d_row)."""
+    row, col = position
+    rad = math.radians(heading_deg)
+    fwd_row, fwd_col = math.sin(rad), math.cos(rad)
+    right_row, right_col = fwd_col, -fwd_row
+    corners = [
+        (row + half * fwd_row - half * right_row, col + half * fwd_col - half * right_col),
+        (row + half * fwd_row + half * right_row, col + half * fwd_col + half * right_col),
+        (row - half * fwd_row + half * right_row, col - half * fwd_col + half * right_col),
+        (row - half * fwd_row - half * right_row, col - half * fwd_col - half * right_col),
+    ]
+    return corners, (fwd_row, fwd_col), (right_row, right_col)
+
+
+def _project_onto_axis(points, axis):
+    values = [p[0] * axis[0] + p[1] * axis[1] for p in points]
+    return min(values), max(values)
+
+
+# Two continuous ranges that merely TOUCH (share an endpoint, zero-width
+# overlap) count as separated, not colliding -- otherwise the ordinary,
+# already-proven-safe axis-aligned case (a free center cell's nearest
+# real obstacle sits exactly ROBOT_HALF_WIDTH_CELLS away, edge to edge,
+# at the worst-case Chebyshev-2 placement inflation guarantees) would
+# spuriously flag as a collision on floating-point boundary noise alone.
+_TOUCH_EPS = 1e-9
+
+
+def _ranges_separated(a_lo, a_hi, b_lo, b_hi):
+    return a_hi <= b_lo + _TOUCH_EPS or b_hi <= a_lo + _TOUCH_EPS
+
+
+def footprint_overlaps_cells(position, heading_deg, real_obstacle_cells, grid_size,
+                               half=ROBOT_HALF_WIDTH_CELLS):
+    """Does the robot's ACTUAL footprint -- an 18in x 18in square
+    (`ROBOT_HALF_WIDTH_CELLS`), centered at `position` and rotated to
+    `heading_deg`, not an axis-aligned bounding box -- overlap any real
+    (eroded, `eroded_obstacle_cells`) obstacle cell within reach.
+
+    This is the check `_hard_inflate`'s own center-cell clearance
+    doesn't cover (see `eroded_obstacle_cells`'s docstring): a robot
+    whose CENTER sits on a cell the planner considers safe can still
+    have its rotated body clip a real obstacle when it isn't facing a
+    cardinal direction, which happens on every diagonal step this
+    project's 8-directional grid allows, and on any step a holonomic
+    drivetrain takes while holding a heading that doesn't match its
+    direction of travel. `ftc/match.py` calls this once per successful
+    step, at the heading the robot would actually be holding on
+    arrival, and treats a hit exactly like arriving on an inflated-
+    obstacle cell -- a rejected move, not a cosmetic footnote.
+
+    Separating-axis test between the rotated footprint and each nearby
+    axis-aligned unit-cell square: two convex quadrilaterals are
+    disjoint iff their projections onto SOME candidate axis don't
+    overlap, and for two rectangles the only candidate axes that can
+    ever separate them are each rectangle's own two edge normals -- the
+    grid's row/col axes for the cell, and the footprint's own forward/
+    right axes for the rotated square. Only cells within
+    `_FOOTPRINT_SEARCH_RADIUS_CELLS` of `position` that are actually in
+    `real_obstacle_cells` get the full test; every other cell is
+    rejected by a cheap set-membership check first."""
+    row, col = position
+    corners, fwd_axis, right_axis = _footprint_corners(position, heading_deg, half)
+    reach = _FOOTPRINT_SEARCH_RADIUS_CELLS
+    for dr in range(-reach, reach + 1):
+        for dc in range(-reach, reach + 1):
+            cell = (row + dr, col + dc)
+            if cell not in real_obstacle_cells:
+                continue
+            cr, cc = cell
+            if not (0 <= cr < grid_size and 0 <= cc < grid_size):
+                continue
+            cell_corners = [
+                (cr - 0.5, cc - 0.5), (cr - 0.5, cc + 0.5),
+                (cr + 0.5, cc - 0.5), (cr + 0.5, cc + 0.5),
+            ]
+            separated = False
+            for axis in ((1.0, 0.0), (0.0, 1.0), fwd_axis, right_axis):
+                a_lo, a_hi = _project_onto_axis(corners, axis)
+                b_lo, b_hi = _project_onto_axis(cell_corners, axis)
+                if _ranges_separated(a_lo, a_hi, b_lo, b_hi):
+                    separated = True
+                    break
+            if not separated:
+                return True
+    return False

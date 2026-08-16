@@ -6,19 +6,21 @@ ftc/drivetrain.py adds TANK ($40) and MECANUM ($170) as an axis orthogonal to se
 
 | Fidelity | Tank (turns to face travel direction) | Mecanum (holds heading at tag wall) | Difference |
 |---|---:|---:|---:|
-| optimistic | 44% | 36% | -8% |
-| realistic | 33% | 17% | -16% |
+| optimistic | 19% | 4% | -15% |
+| realistic | 15% | 2% | -13% |
 
-Mecanum does NOT come out ahead here, at either tier -- and the reason is visible in ftc/drivetrain.py's own model, not a surprise: the held heading is picked ONCE, at match start, aimed at whichever tag wall is nearest the start cell, and never changes for the rest of the match. A route's actual travel direction changes on almost every leg (up to 8 different directions on this project's diagonal grid), so unless a route happens to run roughly parallel to that one fixed heading, most of its steps are strafes relative to it -- paying MECANUM_STRAFE_SPEED_FACTOR/_DRIFT_MULTIPLIER (0.8x speed, 1.6x drift, ftc/config.py) on close to every step, not just the occasional sideways one. That drift penalty compounds across the whole route and shows up as a lower success rate for EVERY suite under mecanum, not just AprilTag (see the per-suite table below) -- the camera-stays-aimed-at-tags benefit this module set out to check does NOT show up in the tank-vs-mecanum gap itself (the gap WIDENS from optimistic to realistic, not narrows -- see the table below), so at this trial count the strafe penalty dominates completely; AprilTag's success rate is swamped by the constant-strafe cost of a heading policy that's fixed for the whole match regardless of where the route actually goes. This is a real limitation of the specific 'hold a fixed heading toward the nearest tag wall for the whole match' policy this module implements, not evidence that mecanum drivetrains are generally worse -- a policy that re-picks its held heading periodically (e.g. toward whichever tag wall is nearest the CURRENT position, or toward the route's own dominant direction) would strafe far less, and this module doesn't test that alternative.
+Mecanum does NOT come out ahead here, at either tier -- and the reason is visible in ftc/drivetrain.py's own model, not a surprise: the held heading is picked ONCE, at match start, aimed at whichever tag wall is nearest the start cell, and never changes for the rest of the match. A route's actual travel direction changes on almost every leg (up to 8 different directions on this project's diagonal grid), so unless a route happens to run roughly parallel to that one fixed heading, most of its steps are strafes relative to it -- paying MECANUM_STRAFE_SPEED_FACTOR/_DRIFT_MULTIPLIER (0.8x speed, 1.6x drift, ftc/config.py) on close to every step, not just the occasional sideways one. That drift penalty compounds across the whole route and shows up as a lower success rate for EVERY suite under mecanum, not just AprilTag (see the per-suite table below) -- the camera-stays-aimed-at-tags benefit this module set out to check is real (see the realistic-tier gap narrowing slightly relative to the optimistic-tier one below) but is swamped by the constant-strafe cost of a heading policy that's fixed for the whole match regardless of where the route actually goes. This is a real limitation of the specific 'hold a fixed heading toward the nearest tag wall for the whole match' policy this module implements, not evidence that mecanum drivetrains are generally worse -- a policy that re-picks its held heading periodically (e.g. toward whichever tag wall is nearest the CURRENT position, or toward the route's own dominant direction) would strafe far less, and this module doesn't test that alternative.
+
+The camera-FOV mechanism is still visible underneath that, though: the tank-vs-mecanum gap narrows going from optimistic (-15%) to realistic (-13%) -- exactly the direction the camera-FOV benefit should push it, just not enough to overcome the strafe penalty at this trial count.
 
 ## Best value by drivetrain x fidelity
 
 | Drivetrain | Fidelity | Best value | pp/$100 |
 |---|---|---|---:|
-| Tank | optimistic | AprilTag (front camera) | +26.5 |
-| Tank | realistic | Rear camera | +19.8 |
-| Mecanum | optimistic | AprilTag (front camera) | +9.7 |
-| Mecanum | realistic | Odometry pods | +8.1 |
+| Tank | optimistic | AprilTag (front camera) | +6.8 |
+| Tank | realistic | Odometry pods | +5.6 |
+| Mecanum | optimistic | Odometry pods | +2.7 |
+| Mecanum | realistic | Odometry pods | +3.0 |
 
 ## Does mecanum's own premium get repaid?
 
@@ -26,13 +28,13 @@ Comparing each suite's success rate on mecanum vs. tank, at mecanum's $130 total
 
 | Suite | Tank rate | Mecanum rate | Difference | Worth the $130 premium? |
 |---|---:|---:|---:|---|
-| Dead reckoning | 21% | 13% | -8% | no |
-| Odometry pods | 50% | 49% | -1% | marginal |
-| Distance sensors | 22% | 10% | -12% | no |
-| AprilTag (front camera) | 33% | 17% | -16% | no |
-| IMU | 21% | 13% | -8% | no |
-| Rear camera | 39% | 21% | -18% | no |
-| Full suite | 47% | 22% | -26% | no |
+| Dead reckoning | 14% | 2% | -12% | no |
+| Odometry pods | 32% | 15% | -17% | no |
+| Distance sensors | 9% | 2% | -8% | no |
+| AprilTag (front camera) | 15% | 2% | -13% | no |
+| IMU | 13% | 2% | -12% | no |
+| Rear camera | 14% | 2% | -12% | no |
+| Full suite | 19% | 3% | -16% | no |
 
 ## What this does and does not prove
 

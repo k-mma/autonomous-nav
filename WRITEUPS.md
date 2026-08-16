@@ -1276,11 +1276,13 @@ comparison is confounded by route length and can point the wrong way.
 
 The headline numbers (25 trials x 5 suites x 3 deviation types x 11
 deviation levels, `ftc/suite_benchmark.py`, full methodology and tables
-in `benchmark_results/ftc_suite_writeup.md`): FullSuite has the highest
-raw success rate (58% at variance_level >= 0.3, averaged across all
-three deviation types), but AprilTag -- the cheapest suite that fixes
-anything at all -- has roughly ten times FullSuite's success-rate gain
-per dollar spent over the free DeadReckoningSuite baseline. Which
+in `benchmark_results/ftc_suite_writeup.md`): Odometry pods has the
+highest raw success rate (30% at variance_level >= 0.3, averaged across
+all three deviation types -- FullSuite isn't even the runner-up
+anymore, landing behind both AprilTag and Rear camera at 16%), but
+AprilTag -- the cheapest suite that fixes anything at all -- has over
+40 times FullSuite's success-rate gain per dollar spent over the free
+DeadReckoningSuite baseline. Which
 deviation type actually dominates a given suite's failures depends on
 what that suite fixes: DeadReckoningSuite's worst failure mode is pose
 error (start drift), the thing a $25 AprilTag setup (a single Logitech
@@ -1288,8 +1290,8 @@ C270 -- see ftc/config.py's APRILTAG_COST_USD) targets directly,
 not obstacle error.
 
 The most useful result is the negative one, and it very nearly got
-mis-attributed. DistanceSensorSuite collides in roughly half its
-trials even at variance_level=0.0 -- ground truth cell-for-cell
+mis-attributed. DistanceSensorSuite collides in the large majority
+(77%) of its trials even at variance_level=0.0 -- ground truth cell-for-cell
 identical to the assumed map, every deviation type at exactly zero. The
 first-draft writeup blamed this on a SLAM-style consistency problem
 (sensed-obstacle positions recorded in the robot's believed frame going
@@ -1363,7 +1365,7 @@ this one only ever imports from, never modifies.
 
 The result: AprilTag is the best-value suite on all three layouts.
 Its per-$100 margin over the runner-up is actually *wider* on sparse
-and corridor (+155.9 and +144.1pp/$100) than on cluttered (+90.0pp/$100)
+and corridor (+78.4 and +63.4pp/$100) than on cluttered (+8.0pp/$100)
 -- with fewer or more concentrated obstacles to route around, obstacle-
 sensing suites like DistanceSensorSuite and the obstacle-sensing half of
 FullSuite have less to buy, while AprilTag's pose-only fix keeps paying
@@ -1414,23 +1416,36 @@ the attribute directly on the `ftc.sensors` module object, not
 print plausible numbers, and measure nothing at all -- exactly the
 failure mode a passing test suite can hide.
 
-The result changed materially once `ftc/config.py`'s sensor costs and
-AprilTag's detection range were corrected against real vendor/FTC-doc
-sources (AprilTag's cost dropped from an unsourced ~$40 to a real
-Logitech C270's $25; its range grew from an understated 6ft to FTC's
-own documented 10ft figure) -- AprilTag's margin over every other
-suite is now wide enough that NOTHING sweept tips the ranking anywhere
-in [0.25x, 4x]: not either drift rate, not AprilTag's own correction-
-quality parameters, not any suite's cost. Before that correction, this
-sweep found real tipping points (dead-reckoning drift rate flipping the
-recommendation to Odometry pods around 2x its estimated value, in
-particular); those numbers are now stale artifacts of an under-priced,
-under-ranged AprilTag model, not a property of the underlying method --
-rerunning `ftc/robustness.py` after any future constant correction is
-the way to find out whether tipping points reappear, not assuming the
-old ones still apply. Full table and plain-language summary in
-`benchmark_results/ftc_robustness_writeup.md`, chart in
-`ftc_robustness.png`.
+The result has changed materially twice since `ftc/config.py`'s sensor
+costs and AprilTag's detection range were first corrected against real
+vendor/FTC-doc sources (AprilTag's cost dropped from an unsourced ~$40
+to a real Logitech C270's $25; its range grew from an understated 6ft
+to FTC's own documented 10ft figure) -- for a time, AprilTag's margin
+over every other suite was wide enough that nothing swept tipped the
+ranking anywhere in [0.25x, 4x]. Fixing `ftc/field.py`'s own grid-
+boundary bug (README.md's "Threats to validity") reintroduced several
+statistically-clean tipping points; fixing the newer rotated-footprint-
+collision gap (also "Threats to validity" -- both change which free
+cells every scenario samples start/goal from) moved the ground again,
+this time toward apparent tips that turn out NOT to survive a
+statistical check: dead-reckoning drift rate nominally tips the
+recommendation to Rear camera at 2.0x its estimated value, Odometry
+pods' cost nominally tips it to Odometry pods at 0.25x, and AprilTag's
+own cost nominally tips it to Rear camera at 4.0x -- but all three are
+"maybe, not confirmed": the new winner's confidence interval still
+overlaps the old one's at that multiplier in every case, plausibly
+sampling noise from only 15 trials/point at this project's now-lower
+absolute success rates. Odometry-pod drift rate, AprilTag's own
+max-correction parameter, AprilTag's range/angle degradation, Distance
+sensors' cost, and Full suite's cost never tip the ranking anywhere in
+[0.25x, 4x] at all. Tipping points -- and whether they survive a
+significance check -- are sensitive to exactly the kind of underlying-
+model correction this project keeps making, not a property fixed once
+and for all -- rerunning `ftc/robustness.py` after any future constant
+(or model) correction is the way to find out whether they've moved
+again, not assuming a past run still applies. Full table and
+plain-language summary in `benchmark_results/ftc_robustness_writeup.md`,
+chart in `ftc_robustness.png`.
 
 What this does and doesn't prove. A tipping point bounds how wrong
 an estimate can be before the conclusion changes -- it says nothing
@@ -1459,11 +1474,9 @@ bound anywhere in the prompt's own example range (30s down to 7s) --
 median match time under 2 seconds even at high field deviation. Once
 `ftc/match.py` gained a trapezoidal acceleration profile (see below),
 every step got charged more realistically and the same sweep now finds
-the budget starts binding around 15-20s, with a real (not
-noise-explainable) ranking change at very tight budgets: DistanceSensorSuite
-overtakes FullSuite as the #1 suite by raw success rate at 2s, since
-FullSuite's extra replanning (see the next paragraph) stops being
-affordable before DistanceSensorSuite's lighter replan load does.
+the budget starts binding at 10s, with a real (not
+noise-explainable) ranking change at very tight budgets: Full suite
+overtakes Odometry pods as the #1 suite by raw success rate at 4s.
 
 A "which suites replan more, and therefore feel a tight budget first"
 hypothesis is checked against measured `avg_replans`/trial data rather
@@ -1473,17 +1486,18 @@ assumed the replan-heavy suites were the obstacle-sensing ones
 obstacle). That assumption was incomplete: AprilTag also replans on
 every successful pose correction (`ftc/match.py`'s `replan_needed = not
 planned_once or tag_corrected`), and empirically out-replans
-DistanceSensorSuite by a wide margin (3.97 vs. 0.63 replans/trial --
-wider than an earlier measurement of this same effect, since correcting
-`APRILTAG_RANGE_CELLS` against FTC's own documented 10ft detection
-range gave AprilTag far more opportunities to detect a tag and
-replan) despite never sensing obstacles at all. At the tightest budget
-tested, AprilTag does indeed
-have the highest over-budget rate -- confirming the *general*
-replan-heavy-suites-degrade-first hypothesis, just not via the specific
-suite the obstacle-sensing framing predicted. Full table, replan-count
-data, and the ranking-change CI check in `benchmark_results/
-ftc_budget_writeup.md`, chart in `ftc_budget_comparison.png`.
+DistanceSensorSuite (0.69 vs. 0.32 replans/trial at the real 30s
+budget) despite never sensing obstacles at all. But at the tightest
+budget actually tested (1.5s), it isn't AprilTag that has the highest
+over-budget rate -- it's Odometry pods (77%), a suite that replans 0.00
+times/trial on average. This does NOT confirm the replan-heavy-suites-
+degrade-first hypothesis at all: `PLANNING_OVERHEAD_S` isn't the
+dominant cost near the budget edge for Odometry pods -- total
+`elapsed_s` (drive + turn time over whatever path length that suite's
+own pose/obstacle error forces) matters at least as much as replan
+count. Full table, replan-count data, and the ranking-change CI check
+in `benchmark_results/ftc_budget_writeup.md`, chart in
+`ftc_budget_comparison.png`.
 
 This CLOSES the "budget rarely binds" limitation for the range actually
 swept -- it's no longer an untested claim that the budget model is
@@ -1528,24 +1542,37 @@ interior cell of the assumed start->goal path, via the same
 identically and confirming they choose the same cell, not just assumed
 from reading the code.
 
-The result: a moving opponent does NOT change which suite is the best
-value -- AprilTag wins on both (+34.0pp/$100 static, +90.0pp/$100
-moving), the same outcome `ftc/layout_benchmark.py` found across field
-layouts. This is a different finding than an earlier run of this same
-module produced, when AprilTag's cost and detection range were both
-under-modeled (an unsourced ~$40 and an understated 6ft, corrected
-against a real Logitech C270 price and FTC's own documented 10ft
-AprilTag detection range respectively) -- with those two constants
-fixed, AprilTag's margin over every other suite grew wide enough to
-absorb what used to be a genuine ranking flip. More surprising, and
-unaffected by that correction: suites that never sense obstacles at all
+The result: a moving opponent DOES appear to change which suite is the
+best value, though not cleanly. Distance sensors is the best-value
+suite against a static blocker (+10.1pp/$100, off a 6% free-baseline
+floor) -- the FIRST time in this project that obstacle-sensing suite
+has won a best-value comparison outright, since a parked blocker on the
+planned route is exactly the failure mode it exists to catch. Against a
+moving blocker, AprilTag (front camera) edges out Rear camera
+(+26.0pp/$100 vs. +12.0pp/$100), but the margin is close enough that
+the two suites' success-rate confidence intervals still overlap at this
+trial count -- treat "AprilTag beats Rear camera against a moving
+opponent" as plausible, not confirmed. What doesn't need hedging:
+neither winner is Full suite, and Distance sensors's static-blocker win
+isn't close. This is a different, messier finding than an earlier run
+of this same module produced, when AprilTag's cost and detection range
+were both under-modeled (an unsourced ~$40 and an understated 6ft,
+corrected against a real Logitech C270 price and FTC's own documented
+10ft AprilTag detection range respectively) and, later, than a version
+measured before `ftc/field.py`'s grid-boundary and rotated-footprint-
+collision bugs were fixed (README.md's "Threats to validity") -- each
+correction has genuinely moved which suite this comparison names,
+which is itself the lesson: this specific ranking is not settled
+science, it is conditional on the model underneath it exactly as much
+as the headline sweep is. More surprising, and consistent across every
+version of this study so far: suites that never sense obstacles at all
 (dead reckoning, odometry, AprilTag) still do substantially better
 against a moving opponent than a static one, purely from timing luck --
 a parked obstacle sits on a blind suite's fixed route for the entire
 match, so a plan that ever crosses that cell collides deterministically;
 a wandering obstacle often isn't there anymore by the time that same
 fixed plan actually reaches the cell (the largest such gain: Odometry
-pods, +47 percentage points). A moving opponent is harder to
+pods, +31 percentage points). A moving opponent is harder to
 *reason about*, but this specific deviation type makes it easier to
 *physically avoid* for a suite that isn't reasoning about it at all.
 Full tables (including collision/replan counts, which show the
@@ -1556,11 +1583,11 @@ advantage) in `benchmark_results/ftc_opponent_writeup.md`, chart in
 This BOUNDS the "no opponent modeling" limitation -- a random walk with
 no goals and no reaction to this robot's presence is still a long way
 from a real opponent, but it's a measured step up from a fixed point.
-Unlike an earlier version of this finding, a moving vs. static opponent
-no longer changes the headline recommendation itself (both point to
-AprilTag) -- the useful result now lives one level down, in how much
-each suite's raw numbers move between the two blocker types, not in
-which suite wins.
+A moving vs. static opponent now DOES change the headline-style
+recommendation this specific comparison names (Distance sensors static,
+AprilTag moving, neither Full suite) -- the useful result lives at both
+levels: which suite wins, and how much each suite's raw numbers move
+between the two blocker types.
 
 ### Trapezoidal drive-time kinematics (`ftc/match.py`'s `_trapezoidal_drive_time_s`)
 
@@ -1724,22 +1751,28 @@ test compares against the actual checked-in CSV rather than trusting
 the guard was applied everywhere it needed to be.
 
 `ftc/fidelity_benchmark.py` reruns the identical full-rigor headline
-sweep at all three tiers side by side. The finding: AprilTag stays the
-best-value suite at optimistic AND realistic, and only flips to
-Rear camera at pessimistic -- AprilTag's overall success rate drops
-from 44% to 32% (realistic) to 24% (pessimistic) as the camera stops
-being omnidirectional and heading drift starts mattering, while
-Rear camera's second, rear-facing camera absorbs part of that same
-FOV-gating hit (44% -> 41% -> 30%) precisely because a second camera
-is exactly what the pessimistic tier's narrower single-camera FOV
-punishes hardest -- and Odometry pods (which fixes pose without ever
-needing a camera pointed anywhere) barely moves at all (45% at every
-tier). AprilTag's per-$100 margin still shrinks sharply across tiers
-even where it stays the nominal winner (+99.3 -> +36.7 pp/$100
-optimistic to realistic), and by pessimistic its own per-$100 value has
-fallen below Rear camera's new +14.7, so "AprilTag still wins" at
-realistic is a real finding, not a reason to ignore how much closer the
-race gets. Full table in `benchmark_results/ftc_fidelity_writeup.md`.
+sweep at all three tiers side by side. The finding: the best-value
+suite does not survive even the first step off optimistic -- AprilTag
+(+16.0pp/$100) is best at the optimistic tier, but Odometry pods
+(+6.1pp/$100) takes over at realistic and stays there at pessimistic
+(+5.8pp/$100) -- only two distinct winners across all three tiers this
+time, not three. AprilTag's own overall success rate drops from 18% to
+12% (realistic), then holds essentially flat into pessimistic (13%), as
+the camera stops being omnidirectional and heading drift starts
+mattering; Rear camera's second, rear-facing camera absorbs part of the
+same FOV-gating hit but still declines steadily (18% -> 15% -> 14%) --
+it no longer overtakes AprilTag on value at any tier the way it once
+did, since Odometry pods gets there first this time. Odometry pods
+(which fixes pose without ever needing a camera pointed anywhere)
+doesn't move at all across tiers (30% at every one) -- unsurprising
+given it has no camera-FOV or heading-drift exposure to begin with, and
+its own pp/$100 value climbs to the top of the ranking simply because
+everything camera-dependent is losing ground around it, not because
+Odometry pods itself is doing anything differently. Full suite's own
+pp/$100 return stays the lowest of any suite that ever leads a tier
+(+0.4, +0.8, +0.5) at every fidelity level -- "best raw performer" and
+"best value" remain two different questions regardless of which tier
+is in view. Full table in `benchmark_results/ftc_fidelity_writeup.md`.
 This BOUNDS the
 camera-FOV/heading-error gap in README.md's "Threats to validity" -- it
 does not CALIBRATE it; every non-optimistic tier's constants are the
@@ -1789,7 +1822,7 @@ suite and visible to the dual-camera one at the realistic tier, and
 BOTH suites see it at the optimistic tier (where "behind" doesn't mean
 anything to an omnidirectional camera). `ftc/newsuites_benchmark.py`'s
 sweep confirms the same shape end to end: a +0% gap at the optimistic
-tier, a real (+3-4pp) gap at the realistic one -- a clean demonstration
+tier, a real +2pp gap at the realistic one -- a clean demonstration
 that the Priority 1 fidelity fix is what makes this suite meaningful to
 model at all, not just a more expensive AprilTag.
 
@@ -1836,14 +1869,16 @@ from it every time the robot changes direction the way TANK's camera
 does) recover some of AprilTag's realistic-tier success-rate loss from
 the fidelity-tier section above?
 
-The answer, measured rather than assumed: mecanum loses at both tiers,
-and NOT for the reason a first guess might expect. The camera-FOV
-theory predicted the tank-vs-mecanum gap for AprilTag would narrow
-going from optimistic to realistic (mecanum's camera stays aimed at the
-tag wall; tank's swings away every direction change); measured, it
-does the opposite -- the gap WIDENS, from -8 percentage points
-(optimistic) to -16 (realistic). The strafe penalty is the whole story
-here, not a partial offset to a real camera-FOV win: a route's travel
+The answer, measured rather than assumed: mecanum loses at both tiers.
+The camera-FOV theory predicted the tank-vs-mecanum gap for AprilTag
+would narrow going from optimistic to realistic (mecanum's camera stays
+aimed at the tag wall; tank's swings away every direction change);
+measured, it does narrow slightly, from -15 percentage points at
+optimistic (19% tank / 4% mecanum) to -13 at realistic (15% / 2%) -- a
+small but real move in the direction the camera-FOV mechanism predicts,
+nowhere near enough to overcome the strafe penalty at this trial
+count. The strafe penalty is the whole story here, not a partial
+offset to a real camera-FOV win: a route's travel
 direction changes on nearly every leg (up to 8 different directions on
 this project's diagonal grid), the held heading is picked once and
 never updates, so unless a route happens to run roughly parallel to
@@ -1856,8 +1891,11 @@ envelope) enough to swamp whatever the held heading was supposed to
 buy. That compounding drift penalty drags down EVERY suite's success
 rate under mecanum, not just AprilTag's (`benchmark_results/
 ftc_drivetrain_writeup.md`'s per-suite table), and mecanum's $130
-premium over tank is not repaid by any suite tested at this trial
-count. This is a real, measured limitation of the *specific* heading
+premium over tank is not repaid by ANY suite tested at this trial count
+-- not even Odometry pods, which came closest under an earlier revision
+of this model but now loses 17 points under mecanum (32% tank vs. 15%
+mecanum) same as everything else. This is a real, measured limitation
+of the *specific* heading
 policy implemented here (hold one heading, chosen once, for the whole
 match) -- not a closed verdict on mecanum drivetrains in general. A
 policy that re-picks its held heading periodically (toward whichever
@@ -1910,15 +1948,16 @@ deliberately a SEPARATE study with its own output files and its own
 base seed, so the original `ftc_drivetrain_writeup.md` numbers already
 cited above and in README.md stay byte-for-byte untouched): `route_
 dominant` is a real, paired-bootstrap-significant improvement over
-`fixed_at_start` (23% -> 28% pooled success rate at the `realistic`
+`fixed_at_start` (7% -> 9% pooled success rate at the `realistic`
 fidelity tier) -- re-aiming genuinely helps, confirming the mechanism
 the original writeup predicted but had no policy to demonstrate.
 `nearest_tag_current`, on the other hand, is NOT a significant
-improvement (22% -- indistinguishable from the 23% baseline):
-optimizing for tag visibility doesn't reliably reduce strafe against
-wherever the robot is actually trying to go, which is a different
-target than `route_dominant` optimizes for. Neither policy closes the
-gap to tank (37%), and neither changes which sensor suite is the best
+improvement (7% -- exactly tied with the 7% baseline at this
+rounding): optimizing for tag visibility doesn't reliably reduce strafe
+against wherever the robot is actually trying to go, which is a
+different target than `route_dominant` optimizes for. Neither policy
+closes the gap to tank (18%), and neither changes which sensor suite is
+the best
 buy on mecanum -- Odometry pods stays the best-value suite under every
 heading policy tested, AprilTag never recovers the lead it holds on
 tank. Re-aiming helps; it does not flip either headline verdict.
@@ -1938,20 +1977,20 @@ per drivetrain, for all 7 headline suites. The "tank" pass reproduces
 `ftc_suite_results.csv` trial-for-trial (the same consistency check
 `ftc/layout_benchmark.py` runs for its own "cluttered" pass), so the
 "mecanum" pass is a genuinely paired comparison, not a separately-tuned
-guess. The answer: AprilTag stays the best-value suite under both
-drivetrains -- every suite's raw success rate drops on mecanum (Full
-suite hardest, 58% -> 24%, since it has the most steps that end up
-strafing on top of already paying the drift/speed penalty for a
-route that keeps changing direction), but the RANKING of which suite
-is worth its price doesn't change. See `benchmark_results/
+guess. The answer: no -- the best-value suite is drivetrain-dependent,
+AprilTag under tank but Odometry pods under mecanum. Every suite's raw
+success rate drops substantially on mecanum regardless, from -8 points
+(Distance sensors) up to -15 (AprilTag (front camera) and Rear camera,
+the largest drops), and this time the RANKING of which suite is worth
+its price changes too, not just the raw numbers. See `benchmark_results/
 ftc_drivetrain_suite_writeup.md` for the full per-suite table.
 
 ### Sensor coverage: can you buy out the distance-sensor blind spot? (`ftc/coverage_benchmark.py`)
 
 `ftc_suite_writeup.md`'s strongest negative finding never answered the
 obvious follow-up question: DistanceSensorSuite's 3 narrow ToF cones
-cover only ~75 of the 360 degrees around the robot and collide in
-roughly half their trials even at zero field deviation, but does buying
+cover only ~75 of the 360 degrees around the robot and collide in the
+large majority of trials (77%) even at zero field deviation, but does buying
 MORE sensors actually fix that, or is a sparse fixed-cone suite doomed
 regardless of count? `ftc/coverage_benchmark.py` answers directly:
 sweeping `DISTANCE_SENSOR_COUNT` over {3, 4, 6, 8} (`ftc/sensors.py`'s
@@ -1971,7 +2010,7 @@ picking a side to leave uncovered stops making sense.
 
 The result: more coverage measurably helps, and there's a hard ceiling
 on how far that goes. Going from 3 to 8 sensors drops the
-zero-deviation collision rate from 49% to 44% -- confirming the
+zero-deviation collision rate from 87% to 80% -- confirming the
 mechanism is real -- but even 8 sensors, the largest count this project
 prices, only covers 200 of 360 degrees; a 160-degree blind arc survives
 no matter how many of these specific sensors get bought, because each
@@ -1996,7 +2035,7 @@ the DOMINANT cause of the zero-deviation collisions, not the only one.
 The lowest-priority, explicitly optional addition: `MAX_DRIVE_SPEED_MPS`
 and `MAX_ACCEL_MPS2` were plain constants, but once `ftc/
 budget_benchmark.py` showed `AUTONOMOUS_PERIOD_S` genuinely starts
-binding around 15-20s under the trapezoidal kinematics model, "buy a
+binding at 10s under the trapezoidal kinematics model, "buy a
 faster motor" became an actually testable purchase for the first time
 -- a robot that never runs out of time has nothing to gain from more
 speed, and prior to that finding this would have been a pure paper
@@ -2051,7 +2090,7 @@ The result, crossed with budget (30s -- the real, non-binding budget;
 15s -- right at the binding point per `ftc/budget_benchmark.py`; 10s --
 binds hard), averaged across all 7 headline suites: faster gearing
 loses at every budget tested, by a wide and CI-clean margin (roughly
--10 percentage points at 30s, widening to roughly -16 at 15s and -15
+-5 percentage points at 30s, widening to roughly -7 at 15s and -7
 at 10s --
 exact figures in `benchmark_results/ftc_gearing_writeup.md`, which
 regenerates them fresh each run). Unlike the pre-correction version of
@@ -2095,7 +2134,7 @@ described twice. So a bundle is costed over the *union of its parts*
 (`ftc/config.py`'s `PART_COSTS_USD`), which does more than fix the
 arithmetic: it gives every bundle a part signature, and two bundles
 with the same signature are the same purchase. 63 raw combinations of
-7 suites collapse to 24 genuinely distinct robots, and the search never
+7 suites collapse to 23 genuinely distinct robots, and the search never
 pays to simulate the same robot twice or offers a team two names for
 one option. A "cost model" that started as a bookkeeping fix turned
 into the deduplication key for the whole search.
@@ -2159,40 +2198,49 @@ removed.
 
 Three results I didn't expect:
 
-- **Nothing between $50 and $305 is worth buying.** The best robot at a
-  $150 budget and at a $300 budget is the same $50 one (front + rear
-  camera). The next rung of the Pareto frontier is out of reach and
-  every intermediate option is a worse buy than something cheaper. A
-  budget table with an "unspent" column makes that visible in a way a
-  ranking never would.
-- **The best-average robot and the most-robust robot used to cost $100
-  different for the same worst case -- now they're literally the same
-  robot.** Optimizing the mean across scenarios and optimizing the
-  *worst* scenario (minimax -- the right objective when you can't
-  predict your division) used to pick two different robots that merely
-  tied on worst-case success. The first draft of the writeup asserted
-  they were "different robots, which is the whole reason this study
-  reports both" -- true in general, false in that run, and it was only
-  false because `rank()` breaks worst-case ties toward the cheaper
-  robot: an artifact of a tiebreaker, not a finding, and the prose was
-  fixed to compare worst-case *rates* and say plainly when the two
-  objectives merely agree rather than literally coincide. Removing
-  lidar as a candidate component (see README.md's "Threats to
-  validity") changed the situation again, further: the best-average and
-  most-robust robots now resolve to the exact same bundle (odometry
-  pods + IMU + front + rear camera, $330), not just a tied worst-case
-  rate on different hardware. Two different bugs-that-weren't, two
-  different fixes, same underlying lesson -- check whether "different"
-  claims about ranked objects are actually about identity, not just an
-  equal score.
-- **Greedy search happens to be enough here, and its steps are the more
-  useful output anyway.** Forward selection lands on the same robot as
-  exhaustive enumeration, but only its first addition (+odometry pods,
-  +16.8%, p<0.001) is statistically significant; a free IMU (+0.8%,
-  p=0.368) after it is not. "Stop when the mean stops going up" would
-  have bought it anyway. `--require-
-  significant` stops when the *evidence* stops, which is a different and
-  better rule.
+- **Big gaps in the frontier, at every step.** The best robot at a $50
+  budget and a $150 budget is the same $25 front camera; the next rung
+  (odometry pods, $280) is out of reach until a $300 budget, and the
+  final rung on the frontier (odometry pods + front camera, $305, 34%)
+  only becomes affordable at a $500 budget. Every dollar in between
+  buys nothing better than the cheaper option already sitting there.
+- **The best-average robot and the most-robust robot keep
+  almost-but-not-quite coinciding, for a different reason each time.**
+  Optimizing the mean across scenarios and optimizing the *worst*
+  scenario (minimax -- the right objective when you can't predict your
+  division) used to pick two different robots that merely tied on
+  worst-case success. The first draft of the writeup asserted they were
+  "different robots, which is the whole reason this study reports both"
+  -- true in general, false in that run, and it was only false because
+  `rank()` breaks worst-case ties toward the cheaper robot: an artifact
+  of a tiebreaker, not a finding, and the prose was fixed to compare
+  worst-case *rates* and say plainly when the two objectives merely
+  agree rather than literally coincide. Removing lidar as a candidate
+  component (see README.md's "Threats to validity") changed the
+  situation again: for a while the best-average and most-robust robots
+  resolved to the exact same $330 bundle. Fixing `ftc/field.py`'s own
+  grid-boundary bug (also "Threats to validity" -- it changes which
+  free cells every scenario samples start/goal from) separated them
+  again, for a while, into a $330 best-average robot and a $25 most-
+  robust one tied on an 8% worst case. Fixing the newer rotated-
+  footprint-collision gap (same section) moved the ground once more:
+  the best-average robot is now the cheaper odometry pods + front
+  camera ($305, 34%, no rear camera needed to lead the ranking anymore),
+  and the most-robust is the free baseline itself (encoders only, $0)
+  -- both tied at a 0% worst case, since nearly every robot in this
+  catalog now has SOME scenario it fails completely. Same lesson, yet
+  again -- check whether "different" claims about ranked objects are
+  actually about identity, not just an equal score, and don't expect a
+  coincidence found once to survive the next correction to the
+  underlying model.
+- **Greedy search happens to be enough here, and its one step is the
+  whole story.** Forward selection lands on the same robot as
+  exhaustive enumeration (odometry pods + front camera): starting from
+  odometry pods alone (26%, $280), its one addition -- AprilTag (front
+  camera) -- is itself statistically significant (+8.8%, 95% CI [+4.0%,
+  +14.4%], p<0.001), and nothing further improves on it. "Stop when the
+  mean stops going up" and `--require-significant` agree here without
+  needing to demonstrate a difference between them.
 
 The honest limitation, stated in the study itself: fusion conflict
 isn't modeled. Capabilities merge optimistically -- sensors union their
@@ -2498,11 +2546,12 @@ that in `benchmark_results/ftc_fusion_writeup.md`, not rounded up to
 
 The result was more dramatic than expected: pooled across `ftc/
 optimizer.py`'s 5 scenario profiles, the AprilTag+odometry bundle
-succeeds in 63% of trials under the existing optimistic merge and 26%
+succeeds in 35% of trials under the existing optimistic merge and 22%
 under confidence-weighted fusion -- a statistically significant drop
-(paired 95% CI [-43.5%, -29.5%]) that doesn't just shrink the bundle's
-advantage over buying AprilTag alone, it inverts it: the fused bundle
-(26%) ends up BELOW AprilTag alone (46%).
+(paired 95% CI [-18.5%, -9.0%]) that doesn't just shrink the bundle's
+advantage over its best single component, it inverts it: the fused
+bundle (22%) ends up BELOW its own best single component, Odometry
+pods (25%).
 
 A result that large is exactly the kind that deserves a second look for
 a bug before being written up as a finding, so before trusting it: is
@@ -2601,23 +2650,27 @@ documented simplification.
 
 The result, in `ftc/fusion_kalman_benchmark.py` (deliberately a
 SEPARATE study writing SEPARATE output files, not a rewrite of `ftc_
-fusion_writeup.md` in place -- that file's 63%-to-26% finding is
+fusion_writeup.md` in place -- that file's 35%-to-22% finding is
 already published and cited elsewhere, and forcing every one of its
 sentences to carry a "this part is on synthetic variance" caveat that
 has nothing to do with what it's actually about would have made it
 worse, not more honest): at this project's SYNTHETIC placeholder
 variance (the pipeline is built and proven; the real measurement still
-doesn't exist), Kalman fusion succeeds in 32% of trials, a real,
+doesn't exist), Kalman fusion succeeds in 26% of trials, a real,
 paired-bootstrap-significant improvement over confidence-weighted
-fusion's 26% -- the properly gated, variance-aware update genuinely
-does recover some of what a fixed confidence weight throws away. It
-does NOT recover the bundle's advantage, though: 32% is still well
-below AprilTag alone (46%) and nowhere near the 63% optimistic-merge
-figure the whole disagreement-modeling investigation set out to check.
-The headline finding from the plain-weighted-average study survives
-in weakened form, not overturned -- exactly the kind of result this
-project reports at full strength either way, not adjusted toward
-whichever answer would look better for the fancier tool.
+fusion's 22% (+5.0%, 95% CI [+2.0%, +8.5%]) -- the properly gated,
+variance-aware update genuinely does recover some of what a fixed
+confidence weight throws away. It edges narrowly back above its own
+best single component's rate (Odometry pods, 25%) -- the inversion the
+plain-weighted-average study found doesn't just shrink under Kalman
+specifically, it reverses, if only barely (+2%, not separately tested
+for significance against the single-component floor), well short of
+the 35% optimistic-merge figure the whole disagreement-modeling
+investigation set out to check. The headline finding from the
+plain-weighted-average study survives in weakened form under Kalman,
+not overturned -- exactly the kind of result this project reports at
+full strength either way, not adjusted toward whichever answer would
+look better for the fancier tool.
 
 ## Planning latency at the tail
 
@@ -2658,9 +2711,9 @@ identical scenario and seed twice, once against real `astar()` and once
 against a version that sleeps an extra 0.1s on every call (more than
 double `PLANNING_OVERHEAD_S`, more than a match with several replans
 would even notice), and confirms `elapsed_s` comes back byte-for-byte
-identical either way -- 13.9372s both times, regardless of roughly a
-full extra second of real, injected delay across the match's 11
-replans.
+identical either way -- 14.1052s both times, regardless of the real,
+injected delay (measured `planning_time_s` goes from 2.3ms to 212.5ms,
+roughly a 100x increase, and `elapsed_s` doesn't move at all).
 
 ### The actual question, and why it has to be a counterfactual
 
@@ -2736,40 +2789,50 @@ benchmark's own writeup and README.md's limitations entry as a real
 constraint on `ftc/field.py`'s `cell_size_in` parameter that this
 study surfaced, not something already known and simply being avoided.
 
-### The result was flatter than expected, and that needed checking too
+### The result was flatter than expected in the median, though not in the max, and that needed checking too
 
-The full sweep (5 grid sizes from 24 to 384 cells/side, 3 layouts, 5
-suites, 12 trials each, 900 matches) found zero outcome flips, at every
-single size tested -- not just at native scale. That's a stronger
-negative result than expected going in, and a flat result across every
-condition is exactly the kind of thing worth doubting before writing
-up, not the kind of thing to take at face value because it's
-convenient.
+The full sweep (5 grid sizes from 24 to 384 cells/side, 3 layouts, 7
+suites, 12 trials each, 1843 individual planning calls) found zero
+outcome flips, at every single size tested -- not just at native scale.
+That's a stronger negative result than expected going in, and a flat
+result across every condition is exactly the kind of thing worth
+doubting before writing up, not the kind of thing to take at face value
+because it's convenient.
 
 The check: does latency actually grow with grid size at all in this
-setup, or does something about the experimental design suppress it? A
-quick, separate, unbounded-path comparison (uniform random start/goal
-across the whole grid, the same sampling the very first timing
-prototype for this study used, before the bounded sampler was written)
-at the same three grid sizes showed the real mechanism directly: at
-size=384, unbounded sampling produces path lengths up to 315 cells and
-a max latency of 174.5ms -- more than 3x `PLANNING_OVERHEAD_S`, and
-nothing close to what the bounded sweep ever produces at that same grid
-size (2.38ms). Path LENGTH drives A*'s cost here, not raw cell count --
-and this study's own scenario sampler deliberately bounds path length
-at every grid size, specifically to keep DRIVE time from swamping the
-budget before planning latency could matter (a match on a 384-cell grid
-with an unbounded, possibly-huge path would fail from drive time long
-before its planning cost became the interesting variable). That design
-choice, made for a good and necessary reason, also suppresses the very
-effect the grid-size sweep was built to look for. Both facts are true
-at once, and the writeup says so plainly rather than picking the
-flattering half: the "zero flips, at any size" finding is real GIVEN
-bounded path lengths, and it would not necessarily hold for a
-genuinely long-distance replan, which this study didn't separately
-measure. Reporting a clean, structural "planning latency's tail doesn't
-matter" finding without that caveat would have been reporting a
-narrower result than what was actually found.
+setup, or does something about the experimental design suppress it? The
+MEDIAN says no -- it stays small and roughly flat at every size (0.35ms
+at 24 cells/side up to 0.73ms at 384), well under `PLANNING_OVERHEAD_S`
+regardless of grid size. The MAX says otherwise: 4.26ms at 24
+cells/side, but 309.99ms at 192 and 1351.35ms at 384 -- real,
+substantial tail growth with grid size, directly visible in the bounded
+sweep's own numbers now, without needing anything else to reveal it.
+(An earlier version of this study, before `ftc/field.py`'s own grid-
+boundary bug was fixed -- see README.md's "Threats to validity" -- found
+the bounded sweep's own max stayed small and flat across every size
+too, and reached for a quick, separate, unbounded-path comparison
+(uniform random start/goal across the whole grid, the same sampling the
+very first timing prototype for this study used) to show that growth
+was being suppressed by the bounded sampler rather than genuinely
+absent -- at size=384, unbounded sampling produced path lengths up to
+315 cells and a max latency of 174.5ms, well above what the bounded
+sweep produced at that grid size at the time. That specific unbounded
+comparison hasn't been rerun against the corrected grid, so its exact
+old figures are not repeated here as current -- but the underlying
+mechanism it demonstrated, that path LENGTH drives A*'s cost here more
+than raw cell count, and that this study's own scenario sampler
+deliberately bounds path length at every grid size specifically to keep
+DRIVE time from swamping the budget before planning latency could
+matter, still holds regardless of which specific numbers illustrate
+it.) Both facts stay true at once regardless: the tail latency, however
+large, never once flips a match's outcome at any size tested here --
+1351.35ms is still three orders of magnitude below the 30-second
+budget. Reporting a clean, structural "planning latency's tail doesn't
+matter, and doesn't even grow with grid size" finding would now be
+reporting something narrower than what the regenerated data actually
+shows -- the correct, current claim is "the tail grows with grid size
+but stays nowhere near large enough to matter at any size tested," not
+"the tail doesn't grow."
 
 ## Scripted auto: what if the robot never replans at all?
 
@@ -2819,15 +2882,17 @@ a nearly blank map, treating every not-yet-seen obstacle as free --
 structurally WORSE than a non-sensing suite's plan against the full
 assumed map, for a reason that has nothing to do with the actual
 question ("does obstacle sensing help without ever rerouting?"). The
-scratch check exposed it concretely: DistanceSensorSuite scored 2%
-under that first version, ten points BELOW DeadReckoningSuite's 13% on
-the identical scenarios -- a suite that senses obstacles doing worse
-than one that doesn't, purely from where its one plan happened to be
+scratch check exposed it concretely: DistanceSensorSuite scored
+measurably BELOW DeadReckoningSuite on the identical scenarios under
+that first version -- a suite that senses obstacles doing worse than
+one that doesn't, purely from where its one plan happened to be
 computed against. The fix: `scripted_auto=True` always plans against
 `assumed_grid`, regardless of `suite.senses_obstacles` -- a stand-in
 for a team authoring a routine against the field's known/CAD layout
 ahead of time, not against one instant of live sensor data. After the
-fix, the same scenarios came back exactly tied (13% vs. 13%) -- neutral,
+fix, the same scenarios come back exactly tied (7% vs. 7%,
+`ftc/scratch/scripted_auto_test.py`'s
+`check_obstacle_sensing_buys_nothing_under_scripted_auto`) -- neutral,
 which is what "no avenue to act on what it senses" should actually
 look like, not a hidden penalty.
 
@@ -2853,8 +2918,8 @@ out to already be too small to separate from noise at this trial
 count -- consistent with, not contradicting, this project's own
 earlier finding (the DistanceSensorSuite blind-spot result, `ftc_
 suite_writeup.md`) that the three modeled distance sensors only cover
-about 75 degrees of the full 360 around the robot and collide in
-roughly half their trials even at zero deviation. A first draft of
+about 75 degrees of the full 360 around the robot and collide in the
+large majority of their trials (77%) even at zero deviation. A first draft of
 this writeup asserted the live-replanning advantage "IS significant"
 without actually checking it, then printed the correct "not
 significant" conclusion for the SCRIPTED row right next to that false

@@ -8,52 +8,54 @@ This is a DIFFERENT, separately-scoped comparison from `ftc_drivetrain_writeup.m
 
 | Suite | Tank | Mecanum | Difference |
 |---|---:|---:|---:|
-| Dead reckoning | 19% | 16% | -3% |
-| Odometry pods | 45% | 45% | -0% |
-| Distance sensors | 21% | 7% | -14% |
-| AprilTag (front camera) | 44% | 36% | -8% |
-| IMU | 19% | 16% | -3% |
-| Rear camera | 44% | 36% | -8% |
-| Full suite | 58% | 24% | -34% |
+| Dead reckoning | 14% | 3% | -11% |
+| Odometry pods | 30% | 17% | -13% |
+| Distance sensors | 10% | 2% | -8% |
+| AprilTag (front camera) | 18% | 3% | -15% |
+| IMU | 14% | 3% | -11% |
+| Rear camera | 18% | 3% | -15% |
+| Full suite | 16% | 4% | -13% |
 
 ## Per-drivetrain value ranking
 
 ### Tank (headline default)
 
-DeadReckoningSuite baseline (variance_level >= 0.3): 19%
+DeadReckoningSuite baseline (variance_level >= 0.3): 14%
 
 | Suite | Cost (incl. drivetrain) | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $439 | 58% | +8.8 |
-| Odometry pods | $320 | 45% | +8.2 |
-| AprilTag (front camera) | $65 | 44% | +38.2 |
-| Rear camera | $90 | 44% | +27.6 |
-| Distance sensors | $134 | 21% | +1.6 |
-| Dead reckoning | $40 | 19% | n/a (free) |
-| IMU | $40 | 19% | +0.0 |
+| Odometry pods | $320 | 30% | +4.7 |
+| AprilTag (front camera) | $65 | 18% | +6.2 |
+| Rear camera | $90 | 18% | +4.4 |
+| Full suite | $439 | 16% | +0.4 |
+| Dead reckoning | $40 | 14% | n/a (free) |
+| IMU | $40 | 14% | +0.0 |
+| Distance sensors | $134 | 10% | -3.0 |
 
 Best value under Tank (headline default): AprilTag (front camera).
 
 ### Mecanum
 
-DeadReckoningSuite baseline (variance_level >= 0.3): 16%
+DeadReckoningSuite baseline (variance_level >= 0.3): 3%
 
 | Suite | Cost (incl. drivetrain) | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Odometry pods | $450 | 45% | +6.4 |
-| AprilTag (front camera) | $195 | 36% | +10.3 |
-| Rear camera | $220 | 36% | +9.1 |
-| Full suite | $569 | 24% | +1.3 |
-| Dead reckoning | $170 | 16% | n/a (free) |
-| IMU | $170 | 16% | +0.0 |
-| Distance sensors | $264 | 7% | -3.3 |
+| Odometry pods | $450 | 17% | +3.0 |
+| Full suite | $569 | 4% | +0.1 |
+| AprilTag (front camera) | $195 | 3% | +0.1 |
+| Rear camera | $220 | 3% | +0.1 |
+| Dead reckoning | $170 | 3% | n/a (free) |
+| IMU | $170 | 3% | +0.0 |
+| Distance sensors | $264 | 2% | -0.3 |
 
-Best value under Mecanum: AprilTag (front camera).
+Best value under Mecanum: Odometry pods.
 
 ## Does the conclusion hold?
 
-AprilTag (front camera) is the best-value suite under both tank and mecanum. The headline recommendation is not tank-specific -- teams running mecanum, a large fraction of the FTC population, should reach the same sensing decision.
+The best-value suite is drivetrain-dependent. Tank (headline default) -> AprilTag (front camera); Mecanum -> Odometry pods. This is a real finding, not a failure of the sweep: mecanum's strafe speed/drift penalty (`MECANUM_STRAFE_SPEED_FACTOR`/`MECANUM_STRAFE_DRIFT_MULTIPLIER`, `ftc/config.py`) changes which sensing investment pays off, not just how well any one of them does. Treat `ftc_suite_writeup.md`'s single-drivetrain recommendation as conditional on tank (or an unstated drivetrain, which is the same thing), not universal.
+
+Note: under Mecanum, Odometry pods's success-rate CI still overlaps AprilTag (front camera)'s at this trial count -- that particular flip could plausibly be sampling noise rather than a genuine drivetrain effect.
 
 ## Consistency check
 
-The 'tank' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__` (tank and 'no drivetrain' are byte-for-byte the same model, `ftc/drivetrain.py`'s own module docstring), so it reruns the identical scenarios. Overall success rate here: Dead reckoning 19%, Odometry pods 45%, Distance sensors 21%, AprilTag (front camera) 44%, IMU 19%, Rear camera 44%, Full suite 58% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what the tank pass measures rather than just adding a mecanum one.
+The 'tank' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__` (tank and 'no drivetrain' are byte-for-byte the same model, `ftc/drivetrain.py`'s own module docstring), so it reruns the identical scenarios. Overall success rate here: Dead reckoning 14%, Odometry pods 30%, Distance sensors 10%, AprilTag (front camera) 18%, IMU 14%, Rear camera 18%, Full suite 16% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what the tank pass measures rather than just adding a mecanum one.

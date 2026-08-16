@@ -6,14 +6,14 @@
 
 | Config | Coverage | Cost | Collision rate (all levels) | Collision rate at variance_level=0.0 | Overall success rate |
 |---|---:|---:|---:|---:|---:|
-| 3 distance sensors | 75 deg | $94 | 53% | 49% | 26% |
-| 4 distance sensors | 100 deg | $126 | 53% | 49% | 26% |
-| 6 distance sensors | 150 deg | $189 | 48% | 44% | 27% |
-| 8 distance sensors | 200 deg | $252 | 43% | 44% | 30% |
+| 3 distance sensors | 75 deg | $94 | 74% | 87% | 14% |
+| 4 distance sensors | 100 deg | $126 | 74% | 87% | 14% |
+| 6 distance sensors | 150 deg | $189 | 73% | 82% | 16% |
+| 8 distance sensors | 200 deg | $252 | 71% | 80% | 16% |
 
 ## Does more coverage actually reduce zero-deviation collisions?
 
-Yes -- going from 3 to 8 distance sensors drops the zero-deviation collision rate from 49% to 44%, confirming the blind-spot finding is really about coverage angle (which the 3-sensor count directly under-covers) and that adding sensors genuinely closes gaps in the perimeter, not just adding redundant cones pointed at the same arcs.
+Yes -- going from 3 to 8 distance sensors drops the zero-deviation collision rate from 87% to 80%, confirming the blind-spot finding is really about coverage angle (which the 3-sensor count directly under-covers) and that adding sensors genuinely closes gaps in the perimeter, not just adding redundant cones pointed at the same arcs.
 
 ## Is full coverage even reachable?
 

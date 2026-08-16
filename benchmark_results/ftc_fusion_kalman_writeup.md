@@ -8,30 +8,30 @@
 
 | Comparison | Rate A | Rate B | B - A [95% CI] | Verdict |
 |---|---:|---:|---:|---|
-| Optimistic merge vs. Confidence-weighted | 63% | 26% | -36.5% [-44.0%, -29.5%] | **Confidence-weighted is significantly worse** |
-| Confidence-weighted vs. Kalman (synthetic variance) | 26% | 32% | +5.5% [+0.5%, +10.5%] | **Kalman (synthetic variance) is significantly better** |
-| Optimistic merge vs. Kalman (synthetic variance) | 63% | 32% | -31.0% [-38.5%, -23.0%] | **Kalman (synthetic variance) is significantly worse** |
+| Optimistic merge vs. Confidence-weighted | 35% | 22% | -13.5% [-18.5%, -8.5%] | **Confidence-weighted is significantly worse** |
+| Confidence-weighted vs. Kalman (synthetic variance) | 22% | 26% | +5.0% [+2.0%, +8.5%] | **Kalman (synthetic variance) is significantly better** |
+| Optimistic merge vs. Kalman (synthetic variance) | 35% | 26% | -8.5% [-12.5%, -4.5%] | **Kalman (synthetic variance) is significantly worse** |
 
-At this project's synthetic placeholder variance, Kalman fusion (32%) does better than confidence-weighted fusion (26%) -- see the pairwise row above for whether that gap is statistically real or noise at this trial count. Even if real, this says the MATH is doing what it should (a properly gated, variance-aware update recovers more of the bundle's advantage than a fixed confidence weight) -- it does not mean a real AprilTag+odometry bundle would perform this well, since nav/kalman.py's fusion path runs on ftc/calibration.py's labeled SYNTHETIC PLACEHOLDER AprilTag detection scatter, not real measured hardware data -- see this module's own docstring.
+At this project's synthetic placeholder variance, Kalman fusion (26%) does better than confidence-weighted fusion (22%) -- see the pairwise row above for whether that gap is statistically real or noise at this trial count. Even if real, this says the MATH is doing what it should (a properly gated, variance-aware update recovers more of the bundle's advantage than a fixed confidence weight) -- it does not mean a real AprilTag+odometry bundle would perform this well, since nav/kalman.py's fusion path runs on ftc/calibration.py's labeled SYNTHETIC PLACEHOLDER AprilTag detection scatter, not real measured hardware data -- see this module's own docstring.
 
 ## Does any fusion strategy beat the bundle's best single component?
 
 | Condition | Success rate | Advantage over best single |
 |---|---:|---:|
-| Best single component (no fusion) | 46% | -- |
-| AprilTag+odometry bundle (optimistic merge) | 63% | +16% |
-| AprilTag+odometry bundle (confidence-weighted fusion) | 26% | -20% |
-| AprilTag+odometry bundle (Kalman fusion, SYNTHETIC variance) | 32% | -15% |
+| Best single component (no fusion) | 25% | -- |
+| AprilTag+odometry bundle (optimistic merge) | 35% | +10% |
+| AprilTag+odometry bundle (confidence-weighted fusion) | 22% | -4% |
+| AprilTag+odometry bundle (Kalman fusion, SYNTHETIC variance) | 26% | +2% |
 
 ## Per-profile breakdown
 
 | Profile | Best single | Optimistic merge | Confidence-weighted | Kalman (synthetic) |
 |---|---:|---:|---:|---:|
-| Heavy pose drift | 55% | 65% | 25% | 32% |
-| Field doesn't match the map | 65% | 92% | 38% | 45% |
-| Opponent parks in the route | 35% | 52% | 22% | 35% |
-| Everything at once (realistic fidelity) | 18% | 35% | 28% | 30% |
-| Tight corridor, mixed deviation | 60% | 70% | 20% | 18% |
+| Heavy pose drift | 8% | 15% | 8% | 12% |
+| Field doesn't match the map | 60% | 60% | 45% | 50% |
+| Opponent parks in the route | 32% | 32% | 20% | 28% |
+| Everything at once (realistic fidelity) | 15% | 15% | 15% | 18% |
+| Tight corridor, mixed deviation | 10% | 52% | 20% | 25% |
 
 ## Honest findings / limitations
 

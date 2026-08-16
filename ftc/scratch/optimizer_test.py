@@ -128,23 +128,36 @@ def check_no_synergy_when_bundling_a_no_op():
     return ok
 
 
+def _dominates(other, r):
+    """Standard Pareto dominance for (minimize cost, maximize rate): at
+    least as good on both axes, strictly better on at least one --
+    matching pareto_frontier's own docstring ("no other result is at
+    least as cheap AND at least as good, with at least one of those
+    strict"). Cheaper at an EQUAL rate counts (dead_reckoning at $0 vs.
+    apriltag at $25, same weighted_success_rate, is a real dominance --
+    there's no reason to ever buy the pricier one); a formula that only
+    ever checked for a strictly higher rate would miss exactly that
+    case and misjudge an equal-rate/cheaper-cost candidate as
+    wrongly-excluded, since the two components are randomized draws
+    from the same free-cell pool and ties across them are expected, not
+    a rare edge case."""
+    if other is r:
+        return False
+    cost_ok = other.cost_usd <= r.cost_usd
+    rate_ok = other.weighted_success_rate >= r.weighted_success_rate
+    strict = other.cost_usd < r.cost_usd or other.weighted_success_rate > r.weighted_success_rate
+    return cost_ok and rate_ok and strict
+
+
 def check_pareto_frontier_is_actually_undominated():
     optimizer = _optimizer()
     results = exhaustive_search(optimizer, TEST_COMPONENTS, min_size=1, max_size=2)
     frontier = pareto_frontier(results)
 
-    undominated = all(
-        not any(other.cost_usd <= r.cost_usd and other.weighted_success_rate > r.weighted_success_rate
-                for other in results)
-        for r in frontier
-    )
+    undominated = all(not any(_dominates(other, r) for other in results) for r in frontier)
     # Nothing off the frontier should itself be undominated.
     off = [r for r in results if r not in frontier]
-    complete = all(
-        any(other.cost_usd <= r.cost_usd and other.weighted_success_rate > r.weighted_success_rate
-            for other in results)
-        for r in off
-    )
+    complete = all(any(_dominates(other, r) for other in results) for r in off)
     ok = undominated and complete
     print(f"  {len(frontier)} of {len(results)} robots on the frontier; undominated={undominated}, "
           f"complete={complete}")

@@ -6,49 +6,49 @@
 
 ### Sparse (near-open field)
 
-DeadReckoningSuite baseline (variance_level >= 0.3): 27%
+DeadReckoningSuite baseline (variance_level >= 0.3): 28%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $399 | 86% | +14.8 |
-| AprilTag (front camera) | $25 | 70% | +170.7 |
-| Rear camera | $50 | 70% | +85.3 |
-| Odometry pods | $280 | 51% | +8.4 |
-| Distance sensors | $94 | 30% | +2.8 |
-| Dead reckoning | $0 | 27% | n/a (free) |
-| IMU | $0 | 27% | undefined (cost_usd == 0) |
+| Full suite | $399 | 75% | +11.7 |
+| AprilTag (front camera) | $25 | 67% | +156.7 |
+| Rear camera | $50 | 67% | +78.3 |
+| Odometry pods | $280 | 49% | +7.4 |
+| Distance sensors | $94 | 30% | +1.4 |
+| Dead reckoning | $0 | 28% | n/a (free) |
+| IMU | $0 | 28% | undefined (cost_usd == 0) |
 
 Best value on this layout: AprilTag (front camera).
 
 ### Cluttered (headline layout)
 
-DeadReckoningSuite baseline (variance_level >= 0.3): 19%
+DeadReckoningSuite baseline (variance_level >= 0.3): 14%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $399 | 58% | +9.7 |
-| Odometry pods | $280 | 45% | +9.3 |
-| AprilTag (front camera) | $25 | 44% | +99.3 |
-| Rear camera | $50 | 44% | +49.7 |
-| Distance sensors | $94 | 21% | +2.3 |
-| Dead reckoning | $0 | 19% | n/a (free) |
-| IMU | $0 | 19% | undefined (cost_usd == 0) |
+| Odometry pods | $280 | 30% | +5.4 |
+| AprilTag (front camera) | $25 | 18% | +16.0 |
+| Rear camera | $50 | 18% | +8.0 |
+| Full suite | $399 | 16% | +0.4 |
+| Dead reckoning | $0 | 14% | n/a (free) |
+| IMU | $0 | 14% | undefined (cost_usd == 0) |
+| Distance sensors | $94 | 10% | -4.2 |
 
 Best value on this layout: AprilTag (front camera).
 
 ### Corridor (single narrow gap)
 
-DeadReckoningSuite baseline (variance_level >= 0.3): 22%
+DeadReckoningSuite baseline (variance_level >= 0.3): 20%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $399 | 67% | +11.2 |
-| AprilTag (front camera) | $25 | 61% | +155.3 |
-| Rear camera | $50 | 61% | +77.7 |
-| Odometry pods | $280 | 47% | +8.9 |
-| Distance sensors | $94 | 24% | +1.4 |
-| Dead reckoning | $0 | 22% | n/a (free) |
-| IMU | $0 | 22% | undefined (cost_usd == 0) |
+| AprilTag (front camera) | $25 | 51% | +126.7 |
+| Rear camera | $50 | 51% | +63.3 |
+| Full suite | $399 | 51% | +7.8 |
+| Odometry pods | $280 | 45% | +9.3 |
+| Distance sensors | $94 | 20% | +0.5 |
+| Dead reckoning | $0 | 20% | n/a (free) |
+| IMU | $0 | 20% | undefined (cost_usd == 0) |
 
 Best value on this layout: AprilTag (front camera).
 
@@ -58,4 +58,4 @@ AprilTag (front camera) is the best-value suite on all three layouts -- sparse, 
 
 ## Consistency check
 
-The 'cluttered' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__`, so it reruns the identical scenarios. Overall success rate here: Dead reckoning 19%, Odometry pods 45%, Distance sensors 21%, AprilTag (front camera) 44%, IMU 19%, Rear camera 44%, Full suite 58% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what 'cluttered' means rather than just adding two more layouts.
+The 'cluttered' pass in this module uses the exact same trial_seed formula as `ftc/suite_benchmark.py`'s own `__main__`, so it reruns the identical scenarios. Overall success rate here: Dead reckoning 14%, Odometry pods 30%, Distance sensors 10%, AprilTag (front camera) 18%, IMU 14%, Rear camera 18%, Full suite 16% -- compare against `ftc_suite_writeup.md`'s table; any mismatch would mean this module accidentally changed what 'cluttered' means rather than just adding two more layouts.

@@ -137,10 +137,15 @@ def check_counterfactual_flips_under_artificially_slow_planning():
     grid, start, goal, ground_truth, actual_start, tag_sites = _apriltag_scenario(seed=5)
 
     original = match_module.astar
-    # Large enough, per call, that a match with just a few replans
-    # blows straight past a 30s budget -- this is checking the
-    # ARITHMETIC, not trying to reproduce a realistic scenario.
-    injected_latency_s = 20.0
+    # Large enough on its own, even for a match that ends up making only
+    # the ONE mandatory initial plan and no replans at all (e.g. an
+    # early footprint/obstacle collision -- ftc/match.py's
+    # footprint_overlaps_cells check -- cuts the match short before a
+    # tag correction ever triggers a replan), to blow straight past a
+    # 30s budget: this is checking the counterfactual ARITHMETIC, not
+    # trying to reproduce a realistic scenario or depending on this
+    # particular seed happening to replan more than once.
+    injected_latency_s = 35.0
 
     def artificially_slow_astar(*args, **kwargs):
         result = original(*args, **kwargs)

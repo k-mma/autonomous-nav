@@ -8,8 +8,8 @@ Restricted to the two OBSTACLE-relevant deviation types (`obstacle_drift`, `unpl
 
 | Replan policy | Dead reckoning | Distance sensors | Difference [95% CI] |
 |---|---:|---:|---:|
-| Live replanning | 26% | 27% | +0.6% [-6.9%, +8.1%] |
-| Scripted auto | 26% | 26% | +0.0% [+0.0%, +0.0%] |
+| Live replanning | 19% | 18% | -0.6% [-7.5%, +6.2%] |
+| Scripted auto | 19% | 19% | +0.0% [+0.0%, +0.0%] |
 
 This comparison doesn't cleanly confirm the predicted mechanism, for a reason worth stating plainly rather than glossing over: distance sensing's advantage over dead reckoning is NOT statistically significant even under LIVE replanning at this trial count, on this scenario mix. That's consistent with this project's own separate, already-documented finding (README.md's "most useful finding is the negative one", `ftc_suite_writeup.md`'s DistanceSensorSuite blind-spot result) that the three distance sensors this project models only cover about 75 degrees of the 360 around the robot, and collide in roughly half their trials even at zero deviation from that blind spot alone -- a weak base advantage under live replanning leaves very little for scripted auto to visibly take away, on top of it. The scripted-auto mechanism this module exists to check is a real, separate question from "does distance sensing help much at all" (already answered elsewhere, unfavorably) -- this particular pooled comparison just can't cleanly isolate it. See the per-deviation-type/level breakdown in `ftc_scripted_auto_results.csv` for scenario slices where distance sensing's live-replanning advantage is larger, if a cleaner before/after comparison is needed.
 
@@ -17,19 +17,19 @@ This comparison doesn't cleanly confirm the predicted mechanism, for a reason wo
 
 | Suite | Live replanning | Scripted auto | Difference |
 |---|---:|---:|---:|
-| Dead reckoning | 19% | 19% | +0% |
-| Odometry pods | 46% | 46% | +0% |
-| Distance sensors | 19% | 19% | -0% |
-| AprilTag (front camera) | 44% | 42% | -2% |
-| IMU | 19% | 19% | +0% |
-| Rear camera | 44% | 42% | -2% |
-| Full suite | 58% | 59% | +1% |
+| Dead reckoning | 14% | 14% | +0% |
+| Odometry pods | 31% | 31% | +0% |
+| Distance sensors | 13% | 14% | +1% |
+| AprilTag (front camera) | 21% | 20% | -2% |
+| IMU | 14% | 14% | +0% |
+| Rear camera | 21% | 20% | -2% |
+| Full suite | 22% | 34% | +12% |
 
 Both pose-fixing suites (AprilTag, Odometry pods) stay measurably ahead of Dead reckoning even under scripted auto -- correcting the believed-to-true position mapping still helps the SAME fixed route land closer to where it was planned, which needs no reroute at all. Pose correction and obstacle-sensing genuinely are different failure-mode fixes with different dependence on live replanning, not just different in degree.
 
 ## Does this change which suite is the best buy?
 
-Full suite (the only suite combining pose-fixing AND obstacle-sensing) goes from 58% under live replanning to 59% under scripted auto -- it loses exactly the obstacle-sensing half of its value proposition and keeps the pose-fixing half, the combined version of the same mechanism above. AprilTag alone (42% scripted) stays the strongest single-sensor pose fix, unchanged from every other study in this project -- this study's headline finding is about DistanceSensorSuite's collapsed advantage, not a reversal of which suite wins overall.
+Full suite (the only suite combining pose-fixing AND obstacle-sensing) goes from 22% under live replanning to 34% under scripted auto -- it loses exactly the obstacle-sensing half of its value proposition and keeps the pose-fixing half, the combined version of the same mechanism above. AprilTag alone (20% scripted) stays the strongest single-sensor pose fix, unchanged from every other study in this project -- this study's headline finding is about DistanceSensorSuite's collapsed advantage, not a reversal of which suite wins overall.
 
 ## What this does and does not prove
 

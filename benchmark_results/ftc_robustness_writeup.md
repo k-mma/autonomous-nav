@@ -8,19 +8,17 @@ What this does and does not prove: a tipping point bounds the estimate error the
 
 | Parameter | Baseline best value | Tips at | New best value | Statistically clean? |
 |---|---|---:|---|---|
-| Dead-reckoning drift rate (DEAD_RECKONING_DRIFT_PER_CELL) | AprilTag (front camera) | 2.0x | Rear camera | yes |
+| Dead-reckoning drift rate (DEAD_RECKONING_DRIFT_PER_CELL) | AprilTag (front camera) | 2.0x | Rear camera | no -- CIs still overlap |
 | Odometry-pod drift rate (ODOMETRY_DRIFT_PER_CELL) | AprilTag (front camera) | never (0.25x-4x) | -- | -- |
 | AprilTag max correction | AprilTag (front camera) | never (0.25x-4x) | -- | -- |
 | AprilTag range+angle degradation | AprilTag (front camera) | never (0.25x-4x) | -- | -- |
-| Odometry pods cost | AprilTag (front camera) | never (0.25x-4x) | -- | -- |
+| Odometry pods cost | AprilTag (front camera) | 0.25x | Odometry pods | no -- CIs still overlap |
 | Distance sensors cost | AprilTag (front camera) | never (0.25x-4x) | -- | -- |
 | AprilTag (front camera) cost | AprilTag (front camera) | 4.0x | Rear camera | no -- CIs still overlap |
 | Full suite cost | AprilTag (front camera) | never (0.25x-4x) | -- | -- |
 
 ## What this means in plain language
 
-The recommendation is not universally robust: Dead-reckoning drift rate (DEAD_RECKONING_DRIFT_PER_CELL) tips the best-value suite at only 2.0x its estimated value -- the least forgiving parameter this sweep found. See the table above for the rest; any row with a real (non-noise) tip is a specific, named number a reviewer can push back on, which is the point of running this at all.
+Some apparent flips did not survive a statistical check: Dead-reckoning drift rate (DEAD_RECKONING_DRIFT_PER_CELL) at 2.0x; Odometry pods cost at 0.25x; AprilTag (front camera) cost at 4.0x -- the new "winner"'s success-rate confidence interval still overlaps the old one's at that multiplier, so this could be sampling noise from only 15 trials/point rather than a genuine ranking change. Treat these as "maybe, not confirmed" rather than real tipping points.
 
-Some apparent flips did not survive a statistical check: AprilTag (front camera) cost at 4.0x -- the new "winner"'s success-rate confidence interval still overlaps the old one's at that multiplier, so this could be sampling noise from only 15 trials/point rather than a genuine ranking change. Treat these as "maybe, not confirmed" rather than real tipping points.
-
-Parameters that never tipped the ranking anywhere in [0.25x, 4x]: Odometry-pod drift rate (ODOMETRY_DRIFT_PER_CELL), AprilTag max correction, AprilTag range+angle degradation, Odometry pods cost, Distance sensors cost, Full suite cost.
+Parameters that never tipped the ranking anywhere in [0.25x, 4x]: Odometry-pod drift rate (ODOMETRY_DRIFT_PER_CELL), AprilTag max correction, AprilTag range+angle degradation, Distance sensors cost, Full suite cost.

@@ -2,7 +2,7 @@
 
 Measured on Darwin 25.5.0, arm64, Python 3.11.9 -- see "Honest findings" below for why this number does not transfer to different hardware, including the actual FTC-legal onboard compute (a REV Control Hub) this project's PLANNING_OVERHEAD_S constant is meant to represent.
 
-12 trials x 5 grid sizes (24, 48, 96, 192, 384 cells/side) x 3 layouts x 7 suites = 1260 matches, 2093 individual planning calls. Raw data (one row per call) in `planning_latency.csv`, chart in `planning_latency_comparison.png`.
+12 trials x 5 grid sizes (24, 48, 96, 192, 384 cells/side) x 3 layouts x 7 suites = 1260 matches, 1843 individual planning calls. Raw data (one row per call) in `planning_latency.csv`, chart in `planning_latency_comparison.png`.
 
 ## What ftc/match.py actually does with planning time
 
@@ -12,13 +12,13 @@ There is no per-tick wall-clock deadline anywhere in this codebase. `elapsed_s` 
 
 | Grid size | n calls | median | p99 | max |
 |---:|---:|---:|---:|---:|
-| 24 | 932 | 0.25ms | 2.07ms | 4.14ms |
-| 48 | 383 | 0.37ms | 3.06ms | 17.70ms |
-| 96 | 266 | 0.61ms | 1.96ms | 2.13ms |
-| 192 | 256 | 0.71ms | 1.99ms | 2.57ms |
-| 384 | 256 | 0.72ms | 2.10ms | 1325.19ms |
+| 24 | 714 | 0.35ms | 3.95ms | 4.26ms |
+| 48 | 349 | 0.44ms | 3.83ms | 8.08ms |
+| 96 | 269 | 0.60ms | 2.32ms | 3.84ms |
+| 192 | 256 | 0.71ms | 2.28ms | 309.99ms |
+| 384 | 255 | 0.73ms | 2.25ms | 1351.35ms |
 
-The median stays well under PLANNING_OVERHEAD_S (50ms) at every size tested -- planning is not the bottleneck on average, at any size here. The MAX does not: at grid size 384, the single slowest observed planning call (1325.2ms) already exceeds the flat constant this project charges for an entire replan. That is exactly the average-fine/tail-not gap this study set out to check for -- on THIS machine, at THIS grid size, for THIS Python implementation of A*.
+The median stays well under PLANNING_OVERHEAD_S (50ms) at every size tested -- planning is not the bottleneck on average, at any size here. The MAX does not: at grid size 192, the single slowest observed planning call (310.0ms) already exceeds the flat constant this project charges for an entire replan. That is exactly the average-fine/tail-not gap this study set out to check for -- on THIS machine, at THIS grid size, for THIS Python implementation of A*.
 
 ## Does the tail change a match outcome?
 
@@ -43,12 +43,12 @@ No synthetic grid size tested flips any match either -- the gap between measured
 | Dead reckoning | 0.00 |
 | Odometry pods | 0.00 |
 | Distance sensors | 0.13 |
-| AprilTag (front camera) | 1.78 |
+| AprilTag (front camera) | 1.25 |
 | IMU | 0.00 |
-| Rear camera | 1.36 |
-| Full suite | 1.36 |
+| Rear camera | 0.96 |
+| Full suite | 0.90 |
 
-AprilTag replans more often than DistanceSensorSuite in this sweep too (1.78 vs. 0.13 per match) -- consistent with ftc/budget_benchmark.py's own docstring claim (AprilTag replans on every pose correction, not just on newly-sensed obstacles) rather than contradicting it.
+AprilTag replans more often than DistanceSensorSuite in this sweep too (1.25 vs. 0.13 per match) -- consistent with ftc/budget_benchmark.py's own docstring claim (AprilTag replans on every pose correction, not just on newly-sensed obstacles) rather than contradicting it.
 
 ## Honest findings
 

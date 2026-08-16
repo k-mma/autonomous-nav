@@ -8,12 +8,13 @@ what level of field/reality deviation does each one become necessary?
 
 ![Sensor suite success rate vs. deviation, one row per deviation type, with 95% bootstrap CI bands](benchmark_results/ftc_suite_comparison.png)
 
-The finding: FullSuite (distance sensors + AprilTag + odometry, ~$400)
-has the highest raw success rate, but AprilTag alone (~$25, a single
-Logitech C270) delivers roughly ten times FullSuite's success-rate gain
-per dollar spent over the free dead-reckoning baseline -- and the most
-useful result is
-negative: DistanceSensorSuite collides in roughly half its trials even
+The finding: Odometry pods (~$280) has the highest raw success rate --
+FullSuite (distance sensors + AprilTag + odometry, ~$400) isn't even
+the runner-up anymore -- but AprilTag alone (~$25, a single Logitech
+C270) delivers over 40 times FullSuite's success-rate gain per dollar
+spent over the free dead-reckoning baseline -- and the most useful
+result is negative: DistanceSensorSuite collides in the large majority
+of its trials (77%) even
 at *zero* field deviation, because 3 narrow ToF cones cover only ~75° of
 the 360° around the robot, not because of anything the field did. Which
 deviation type actually dominates depends on what a suite fixes -- pose
@@ -502,13 +503,13 @@ chart, in `benchmark_results/ftc_suite_writeup.md`,
 
 | Suite | Cost | Overall success rate (variance_level >= 0.3) |
 |---|---:|---:|
-| Full suite | $399 | 58% |
-| Odometry pods | $280 | 45% |
-| AprilTag (front camera) | $25 | 44% |
-| Rear camera | $50 | 44% |
-| Distance sensors | $94 | 21% |
-| Dead reckoning (baseline) | $0 | 19% |
-| IMU | $0 | 19% |
+| Odometry pods | $280 | 30% |
+| AprilTag (front camera) | $25 | 18% |
+| Rear camera | $50 | 18% |
+| Full suite | $399 | 16% |
+| Dead reckoning (baseline) | $0 | 14% |
+| IMU | $0 | 14% |
+| Distance sensors | $94 | 10% |
 
 IMU and Rear camera were promoted into this headline table from
 Priority-3/4 side studies that used to be the only place they were
@@ -539,10 +540,10 @@ DEGRADATION`. The headline finding below was re-checked against this
 more pessimistic model specifically to see if it would survive a less
 generous assumption about its own winner -- it did.)
 
-FullSuite wins on raw success rate, but AprilTag is the best value by a
-wide margin: its success-rate gain over the free dead-reckoning
-baseline, per $100 spent, is roughly ten times FullSuite's (+99.3pp/$100
-vs. +9.7pp/$100, `benchmark_results/ftc_suite_writeup.md`) -- the suites
+Odometry pods wins on raw success rate, but AprilTag is the best value
+by a wide margin: its success-rate gain over the free dead-reckoning
+baseline, per $100 spent, is over 40 times FullSuite's (+16.0pp/$100
+vs. +0.4pp/$100, `benchmark_results/ftc_suite_writeup.md`) -- the suites
 FullSuite stacks on top of AprilTag run into diminishing returns rather
 than each adding their standalone value again. Which deviation type
 actually dominates depends on the suite: dead reckoning's worst failure
@@ -567,10 +568,11 @@ and a real camera only sees what it's actually pointed at. `ftc/
 fidelity_benchmark.py` reruns the identical headline sweep at two more
 tiers, "realistic" (real camera-FOV gating + heading drift) and
 "pessimistic" (narrower FOV, more drift, AprilTag detection dropout);
-AprilTag stays the best-value suite at "realistic" too (its margin
-shrinks from +99.3pp/$100 to +36.7pp/$100, still well ahead of
-FullSuite's +7.7), but the best-value suite flips to Rear camera at
-"pessimistic" (+14.7pp/$100, vs. FullSuite's +7.7) -- see
+the best-value suite does not survive even the first step off the
+optimistic tier -- it flips from AprilTag (+16.0pp/$100) to Odometry
+pods at "realistic" (+6.1pp/$100, still well ahead of FullSuite's
++0.8) and stays there at "pessimistic" (+5.8pp/$100, vs.
+FullSuite's +0.5) -- see
 `benchmark_results/ftc_fidelity_writeup.md` for
 the full three-tier table and "Threats to validity" below for what this
 does and doesn't prove. `ftc/drivetrain_benchmark.py`, `ftc/
@@ -580,9 +582,10 @@ best-value suite holds on mecanum specifically, distance-sensor blind
 spots) the same way -- see "Threats to validity" below and
 `WRITEUPS.md`.
 
-The most useful negative result: DistanceSensorSuite collides in
-roughly half its trials even at zero field deviation. A controlled
-check (same trials, pose drift forced to zero) shows about two-thirds
+The most useful negative result: DistanceSensorSuite collides in the
+large majority of its trials (77%) even at zero field deviation. A
+controlled check (same trials, pose drift forced to zero) shows about
+two-thirds
 of those collisions persist regardless -- the dominant cause isn't pose
 drift, it's that 3 narrow ToF cones at ~12.5&deg; half-angle each cover
 only about 75&deg; of the 360&deg; around the robot. A sparse fixed-cone
@@ -622,7 +625,7 @@ is a shopping question -- given everything on the shelf, which
 the single best sensor, and what's the best robot for the money we
 have? `ftc/bundle.py` composes any 2+ suites into one working suite,
 and `ftc/optimizer.py` searches that space; `ftc/optimizer_benchmark.py`
-runs the study (24 distinct robots x 5 scenario profiles x 25 trials,
+runs the study (23 distinct robots x 5 scenario profiles x 25 trials,
 full writeup in `benchmark_results/ftc_optimizer_writeup.md`).
 
 ![Every buildable robot: cost vs. success with the Pareto frontier, and the winning robot per scenario](benchmark_results/ftc_optimizer_frontier.png)
@@ -631,7 +634,7 @@ Bundles are costed over the **union of their parts**, not the sum of
 their prices: AprilTag ($25, one webcam) + AprilTag-with-IMU ($25, the
 same webcam and a free IMU) is a $25 robot with one camera, and the two
 descriptions collapse to the same candidate before anything is
-simulated. That's what makes 63 raw combinations reduce to 24 genuinely
+simulated. That's what makes 63 raw combinations reduce to 23 genuinely
 distinct robots.
 
 Because every candidate runs the *identical* seeded scenarios, "is this
@@ -645,19 +648,22 @@ dominant source of variance here, and pairing removes it.
 
 | Question | Answer from the sweep |
 |---|---:|
-| Best average across scenarios | odometry pods + IMU + front + rear camera ($330, 61%) |
-| Best worst-case (minimax) | the SAME robot -- odometry pods + IMU + front + rear camera ($330), 32% worst case |
-| Best robot under $300 | front + rear camera ($50, 43%) |
-| Cheapest *significant* upgrade over one sensor | + odometry pods over rear camera (+16.8%, 95% CI [+9.6%, +24.0%]) |
+| Best average across scenarios | odometry pods + front camera ($305, 34%) |
+| Best worst-case (minimax) | encoders only ($0, 0% worst case) |
+| Best robot under $300 | odometry pods ($280, 26%) |
+| Cheapest *significant* upgrade over one sensor | + AprilTag (front camera) over odometry pods (+8.8%, 95% CI [+4.0%, +14.4%]) |
 
-Best-average and most-robust used to be different robots at different
-price points (an earlier version of this table, before lidar was
-removed as a candidate component -- see "Threats to validity" --
-reported odometry pods + IMU + 2 cameras + lidar as the $430 best
-average and a $100-cheaper 2-camera bundle as the more robust pick).
-With lidar gone, both objectives land on the identical $330 robot: not
-a coincidence to distrust, just a catalog where the best-on-average
-choice and the most-robust choice happen to be the same purchase.
+Best-average and most-robust are different robots at different price
+points (an earlier version of this table, before lidar was removed as
+a candidate component -- see "Threats to validity" -- reported odometry
+pods + IMU + 2 cameras + lidar as the $430 best average and a
+$100-cheaper 2-camera bundle as the more robust pick). The current
+best-average robot -- odometry pods + front camera ($305, 34%) -- has a
+0% worst-case success rate; the free baseline (encoders only) ties that
+exact worst-case number. Money above $0 buys average-case performance
+here, not worst-case robustness -- no robustness is being given up by
+taking the best-average robot, since the two objectives already agree
+on worst-case performance.
 
 Three findings worth stating plainly:
 
@@ -668,17 +674,19 @@ Three findings worth stating plainly:
   component lacked. Two sensors that fix the same failure mode largely
   don't stack -- the second is correcting an error the first already
   removed. Buy across failure modes, not the two best sensors.
-- **Nothing between $50 and $330 is worth buying.** The best robot at
-  a $150 budget and at a $300 budget is the same $50 one; the next rung
-  of the frontier is out of reach and every intermediate option is a
-  worse buy than something cheaper.
+- **Big gaps in the frontier, at every step.** The best robot at a $50
+  budget and a $150 budget is the same $25 front camera; the next rung
+  (odometry pods, $280) is out of reach until a $300 budget, and the
+  final rung on the frontier (odometry pods + front camera, $305, 34%)
+  only becomes affordable at a $500 budget. Every dollar in between
+  buys nothing better than the cheaper option already sitting there.
 - **Greedy "buy the best thing, then the next best thing" reasoning
-  happens to work here, and its steps show where it stops paying.**
-  Forward selection lands on the same robot as exhaustive search, but
-  only its *first* addition (odometry pods, +16.8%, p<0.001) is
-  statistically significant. The next one -- the free IMU (+0.8%,
-  p=0.368) -- is not distinguishable from noise, which is why
-  `--require-significant` exists as a stopping rule.
+  happens to work here.** Forward selection lands on the same robot as
+  exhaustive search (odometry pods + front camera): starting from
+  odometry pods alone (26%, $280), its one addition -- AprilTag (front
+  camera) -- is itself statistically significant (+8.8%, 95% CI [+4.0%,
+  +14.4%], p<0.001), and the search finds nothing further worth adding,
+  landing on the actual optimum for this catalog in a single step.
 
 ## Threats to validity / limitations
 
@@ -709,10 +717,11 @@ alone.
   research question centers on. `benchmark_results/
   ftc_fusion_writeup.md`'s finding: at this project's estimated fusion
   constants, the AprilTag+odometry bundle's advantage over its best
-  single component doesn't just shrink, it inverts -- 63% success under
-  optimistic merging vs. 26% under confidence-weighted fusion (paired
-  95% CI [-43.5%, -29.5%], a statistically significant drop), which
-  puts the fused bundle *below* AprilTag alone (46%). The mechanism:
+  single component doesn't just shrink, it inverts -- 35% success under
+  optimistic merging vs. 22% under confidence-weighted fusion (paired
+  95% CI [-18.5%, -9.0%], a statistically significant drop), which
+  puts the fused bundle *below* its own best single component, Odometry
+  pods (25%). The mechanism:
   AprilTag corrects pose often enough in this project's matches that a
   5%-per-detection chance of an outright bad reading (a misidentified
   or occluded tag, `APRILTAG_BAD_DETECTION_PROBABILITY`) compounds to a
@@ -773,12 +782,15 @@ alone.
   check). `benchmark_results/ftc_fusion_kalman_writeup.md` is the
   fusion-strategy comparison this unlocks: at this project's SYNTHETIC
   placeholder variance (the machinery is built, the real measurement
-  still is not), Kalman fusion (32%) beats confidence-weighted fusion
-  (26%) by a statistically real margin, but the AprilTag+odometry
-  bundle's advantage over its best single component still does not
-  recover -- it stays inverted (63% optimistic merge -> 32% Kalman,
-  vs. 46% for AprilTag alone), just less severely than under confidence
-  weighting alone. This BOUNDS the "would a real Kalman filter have
+  still is not), Kalman fusion (26%) beats confidence-weighted fusion
+  (22%) by a statistically real margin (+5.0%, 95% CI [+2.0%, +8.5%]),
+  and edges narrowly back above its own best single component (Odometry
+  pods, 25%) -- the inversion doesn't just shrink under Kalman
+  specifically, it reverses, if only barely (+2%, not separately tested
+  for significance against the single-component floor). Optimistic
+  merging still wins outright (35% vs. 26% Kalman), just by a much
+  smaller margin than confidence-weighted fusion (22%) leaves on the
+  table. This BOUNDS the "would a real Kalman filter have
   fixed the inversion" question -- the math genuinely helps, but not
   enough to flip the verdict at this project's own estimated fusion
   constants -- it does not CLOSE it, since "this project's own
@@ -880,11 +892,11 @@ alone.
   ftc_drivetrain_heading_policy_writeup.md`, own output files, own base
   seed, doesn't touch the original study's numbers) measures what
   re-aiming actually buys: `route_dominant` is a real, paired-
-  bootstrap-significant improvement over `fixed_at_start` (23% -> 28%
+  bootstrap-significant improvement over `fixed_at_start` (7% -> 9%
   pooled success rate at the `realistic` fidelity tier), while
   `nearest_tag_current` is not distinguishable from the fixed baseline
   at this trial count. Neither alternative closes the gap to tank
-  (37%), and neither changes which sensor suite is the best value on
+  (18%), and neither changes which sensor suite is the best value on
   mecanum (still Odometry pods, not AprilTag or Rear camera, under
   every heading policy tested) -- re-aiming genuinely helps, exactly the mechanism
   the original study predicted but had no policy to demonstrate with,
@@ -902,13 +914,13 @@ alone.
   full-rigor sweep -- all 11 variance_level steps, all 3 deviation
   types, 25 trials/point, nothing reduced -- once per drivetrain, for
   all 7 headline suites (own output files, own labeled writeup,
-  doesn't touch either sweep above). The answer: yes -- AprilTag is
-  the best-value suite under both tank and mecanum, though every
-  suite's raw success rate drops on mecanum (e.g. Full suite 58% ->
-  24%, the largest drop, since it stacks the most steps that end up
-  strafing against distance sensors' own narrow cones on top of the
-  drivetrain's own drift penalty) -- see `benchmark_results/
-  ftc_drivetrain_suite_writeup.md`.
+  doesn't touch either sweep above). The answer: no -- the best-value
+  suite is drivetrain-dependent, AprilTag under tank (the headline
+  default) but Odometry pods under mecanum -- and every suite's raw
+  success rate drops substantially on mecanum regardless, from -8
+  points (Distance sensors) up to -15 (AprilTag (front camera) and Rear
+  camera, the largest drops) -- see `benchmark_results/
+  ftc_drivetrain_suite_writeup.md` for the full per-suite table.
 - Camera field of view and heading error -- previously UNSTATED,
   now BOUNDED via `ftc/config.py`'s `MODEL_FIDELITY` tiers, not
   calibrated. Every number in this README before this addition assumed
@@ -926,9 +938,10 @@ alone.
   add real camera-FOV gating, heading drift that actually rotates
   executed motion (not just a reported number), and, at the pessimistic
   tier, AprilTag detection dropout. `ftc/fidelity_benchmark.py`'s
-  finding: AprilTag stays the best-value suite at "realistic" (margin
-  shrinks from +99.3pp/$100 to +36.7pp/$100), but the best-value suite
-  flips to Rear camera at "pessimistic". Fidelity tiers BOUND this
+  finding: the best-value suite does not survive even the first step
+  off "optimistic" -- AprilTag (+16.0pp/$100) flips to Odometry pods at
+  "realistic" (+6.1pp/$100) and stays there at "pessimistic"
+  (+5.8pp/$100). Fidelity tiers BOUND this
   gap -- they
   make its size visible and swept -- they do NOT CALIBRATE it: every
   non-optimistic tier's constants (`CAMERA_FOV_DEG_BY_TIER`,
@@ -943,10 +956,15 @@ alone.
   `MovingObstacle` (a seeded random walk, ticked on simulated match
   time) for a genuinely moving opponent, added alongside the static
   version rather than replacing it. The finding: a moving opponent
-  does NOT change which suite is the best value -- AprilTag is the
-  best-value suite against both a static and a moving obstacle
-  (+34.0pp/$100 static, +90.0pp/$100 moving -- see `benchmark_results/
-  ftc_opponent_writeup.md`), though the raw numbers shift substantially.
+  DOES appear to change which suite is the best value, though not
+  cleanly -- Distance sensors is best against a static blocker
+  (+10.1pp/$100), while AprilTag (front camera) edges out Rear camera
+  against a moving one (+26.0pp/$100 vs. +12.0pp/$100, close enough
+  that the two suites' success-rate confidence intervals still overlap
+  at this trial count -- treat that particular ranking as plausible,
+  not confirmed). What IS confirmed: neither winner is Full suite, and
+  Distance sensors's static-blocker win isn't close -- see
+  `benchmark_results/ftc_opponent_writeup.md`.
   Suites that never sense obstacles at all still do substantially
   better against a moving opponent than a static one, purely from
   timing luck (a parked obstacle blocks a fixed plan deterministically;
@@ -966,13 +984,14 @@ alone.
   (see `ftc/field.py`'s module docstring) is still unchecked.
 - Small, fast trials mean the 30-second budget rarely binds --
   CLOSED. `ftc/budget_benchmark.py` sweeps `AUTONOMOUS_PERIOD_S`
-  downward (30s to 1.5s) and finds it now binds starting around 15-20s
+  downward (30s to 1.5s) and finds it now binds starting at 10s
   under the trapezoidal kinematics model above (it barely bound at all
   under the old naive drive-time formula) -- see `benchmark_results/
   ftc_budget_writeup.md`. Tightening the budget far enough does change
-  which suite wins by raw success rate (DistanceSensorSuite overtakes
-  FullSuite at 2s), though the headline 30s budget itself still never
-  binds in the actual headline sweep.
+  which suite wins by raw success rate (Full suite overtakes Odometry
+  pods as the #1 suite at 4s, a statistically clean change, CIs don't
+  overlap), though the headline 30s budget itself still never binds in
+  the actual headline sweep.
 - Every match in this repo assumes a live, onboard A* replanner --
   BOUNDED. Real FTC teams overwhelmingly run a fixed, hand-tuned
   sequence of moves worked out before the match, not a pathfinder

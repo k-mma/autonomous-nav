@@ -35,10 +35,10 @@ import pygame
 
 from ftc.config import (
     APRILTAG_RANGE_CELLS, CELL_SIZE_IN, DISTANCE_SENSOR_HALF_ANGLE_DEG, DISTANCE_SENSOR_RANGE_CELLS,
-    FIDELITY_TIERS, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS, ROBOT_SIZE_IN,
+    FIDELITY_TIERS, FTC_GRID_SIZE, ROBOT_SIZE_IN,
 )
 from ftc.bundle import CompositeObstacleSensor
-from ftc.field import in_to_cell
+from ftc.field import eroded_obstacle_cells, in_to_cell  # noqa: F401 -- re-exported, see below
 from ftc.sensors import ConeSensor, angular_diff
 
 # --- Field skin -------------------------------------------------------------
@@ -249,43 +249,15 @@ def draw_field_skin(screen, x0, y0, cell_px, grid_size):
     pygame.draw.rect(screen, ALLIANCE_RED, (x0 + w - wall_px, y0, wall_px, h))  # right = red wall (opposite side)
 
 
-def eroded_obstacle_cells(grid, radius=ROBOT_RADIUS_CELLS):
-    """Obstacle cells for DISPLAY only -- approximately undoes ftc/
-    field.py's build_grid Minkowski-sum hard-inflation (every obstacle
-    grown by `radius` so a point-robot plan is safe for the real
-    3-cell-wide robot -- see that module's _hard_inflate docstring) via
-    morphological erosion, the standard inverse of dilation, so what
-    gets drawn reads as the actual game-element footprint a real robot
-    could touch, not the inflated planning keep-out zone. Never used
-    for anything but drawing -- ftc/match.py's own collision check
-    keeps using the real (inflated) ground_truth.cells exactly as it
-    always has.
-
-    This is the actual fix for a robot's drawn 18in footprint visually
-    overlapping an obstacle block: match.py only ever lets the robot's
-    CENTER rest on a cell that's free in the INFLATED grid, and by
-    inflation's own definition that means no real obstacle is within
-    `radius` cells of it -- so no eroded (a subset of real) obstacle
-    cell can be within `radius` of it either. Drawing the un-eroded,
-    already-inflated cells (the first version of this module did)
-    drew the safety buffer itself as if it were solid, and the robot's
-    true footprint legitimately extends into that buffer right up to
-    its edge -- which is what looked like clipping through a wall.
-    """
-    size = grid.size
-
-    def is_obstacle(r, c):
-        return grid.is_valid(r, c) and grid.cells[r][c] == 1
-
-    survivors = set()
-    for row in range(size):
-        for col in range(size):
-            if not is_obstacle(row, col):
-                continue
-            if all(is_obstacle(row + dr, col + dc)
-                    for dr in range(-radius, radius + 1) for dc in range(-radius, radius + 1)):
-                survivors.add((row, col))
-    return survivors
+# eroded_obstacle_cells moved to ftc/field.py (pure grid geometry, no
+# pygame dependency, and ftc/match.py's footprint_overlaps_cells
+# collision check now needs the identical function this module already
+# used for drawing -- see that function's own docstring for why "what's
+# drawn as overlapping" and "what's counted as a collision" being the
+# same computation, not two independently-maintained approximations of
+# it, is the point). Imported above and left callable as
+# `field_view.eroded_obstacle_cells(...)` so nothing downstream
+# (scenario_ftc_suites.py, scenario_ftc_bundles.py) has to change.
 
 
 def draw_obstacles(screen, x0, y0, cell_px, obstacle_cells):
