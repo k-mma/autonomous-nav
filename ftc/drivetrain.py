@@ -53,23 +53,24 @@ fresh each tick from path[path_idx] -> path[path_idx + 1] (see
 next_leg_heading_deg below).
 
 That does NOT make `match_travel` a strictly-better-by-construction
-policy, and in particular it does not reproduce "MECANUM never pays a
-turn cost" the way `fixed_at_start` does: turn_cost_s (below) charges
-for any change in the CHASSIS heading regardless of which policy
-produced it, and `match_travel`'s held heading changes on almost every
-leg -- about as often as TANK's own does -- so it pays a real, nonzero
-turn cost too, just not necessarily the identical amount TANK pays for
-the identical route (measured, not assumed: on the same scenario
-`match_travel` has come out both cheaper AND more expensive than TANK's
-turn cost across different seeds). What `match_travel` actually trades
-away is the STRAFE penalty, not the turn cost -- it faces its direction
-of travel on most legs (avoiding MECANUM_STRAFE_SPEED_FACTOR/_DRIFT_
-MULTIPLIER the way TANK always does) while still being a holonomic
-chassis that never needs to physically rotate before moving, so
-whatever turn cost it does pay is the flat proportional cost of
-updating a HELD heading, not a physical prerequisite to motion.
-Whether that trade nets out ahead of tank is a measured result, not a
-guarantee -- see ftc/drivetrain_benchmark.py's own writeup.
+policy: it still doesn't hold its heading fixed, so unlike
+`fixed_at_start` it can't claim to keep a camera aimed at one spot the
+whole match, and even though it faces its direction of travel on most
+legs it's still only re-aimed once per leg (from the PLANNED path's
+own leg direction, not the tick's true post-error travel heading), so
+it doesn't strafe zero either -- position noise and the gap between a
+leg's nominal direction and the robot's actual realized motion that
+tick both still produce some residual strafe. What it DOES get for
+free, like every other holonomic policy here, is turn_cost_s (below):
+that cost is 0 for any holonomic drivetrain regardless of how often its
+held heading changes -- re-aiming updates the wheel-power mix, not a
+dedicated stop-pivot-accelerate maneuver TANK is physically stuck
+with -- so `match_travel` re-aiming almost every leg costs it nothing
+in elapsed_s the way it would for TANK. Whether avoiding most of the
+strafe penalty (at the cost of the residual strafe noted above, but
+none of TANK's turn cost) actually closes the gap with tank is a
+measured result, not a guarantee -- see ftc/drivetrain_benchmark.py's
+own writeup.
 
 TANK always faces its current direction of travel, exactly matching
 the existing (pre-Priority-2) behavior -- ftc/match.py's
@@ -258,12 +259,33 @@ class Drivetrain:
 
     def turn_cost_s(self, current_heading_deg, new_heading_deg):
         """Time charged for changing the CHASSIS heading -- not the
-        direction of travel. A holonomic drivetrain's chassis heading
-        never changes mid-route (see robot_heading_deg above), so this
-        is always 0 for MECANUM; TANK pays the existing flat per-
-        90-degree cost every time its direction of travel (and
-        therefore its chassis heading) changes, identical to ftc/
-        match.py's pre-Priority-2 formula."""
+        direction of travel. Zero for ANY holonomic drivetrain,
+        regardless of how much the chassis heading itself changes tick
+        to tick (see robot_heading_deg above) -- unlike TANK, which
+        must physically stop translating, pivot in place, and
+        re-accelerate before driving in a new direction (a real,
+        serialized cost this project has always charged, unchanged
+        from before Priority 2), a holonomic chassis updates which way
+        it's "facing" by changing the wheel-power mix, not by a
+        dedicated rotate-in-place maneuver -- whatever rotational
+        component a new held heading calls for can be blended into the
+        SAME wheel commands still driving it toward the goal, with no
+        serialized turn phase to charge time for. This holds regardless
+        of heading_policy: `fixed_at_start`'s chassis heading never
+        changes at all (so this was already 0 for it -- a no-op here),
+        but `nearest_tag_current`/`route_dominant`/`match_travel` DO
+        change their held heading tick to tick as the robot moves and
+        the route progresses -- those changes still happen and still
+        feed robot_heading_deg/speed_and_drift_factor/the footprint
+        collision check exactly as before, they just aren't charged the
+        tank-equivalent pivot cost, because physically they don't need
+        to be.
+
+        TANK pays the existing flat per-90-degree cost every time its
+        direction of travel (and therefore its chassis heading)
+        changes, identical to ftc/match.py's pre-Priority-2 formula."""
+        if self.holonomic:
+            return 0.0
         turn_deg = abs(angular_diff(new_heading_deg, current_heading_deg))
         return (turn_deg / 90.0) * TURN_TIME_PER_90DEG_S
 

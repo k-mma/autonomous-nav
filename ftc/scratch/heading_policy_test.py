@@ -57,15 +57,25 @@ drivetrain.turn_cost_s/speed_and_drift_factor?
     the fixed-at-start heading is a poor fit for most of the route --
     proving heading_policy actually reaches the drivetrain's turn-cost/
     speed/drift math, not just changes what a getter reports.
-11. check_match_travel_pays_nonzero_turn_cost: MECANUM_MATCH_TRAVEL's
-    held heading is re-resolved every tick from whichever leg is
-    immediately next (unlike fixed_at_start, which is invariant), so
-    it does NOT inherit fixed_at_start's "chassis heading never changes
-    mid-route" property -- Drivetrain.turn_cost_s charges for a held-
-    heading change regardless of which policy produced it, and this
-    checks that a real multi-leg zigzag match actually accrues some
-    (proving `match_travel` trades away the strafe penalty, not the
-    turn-cost one -- see the module docstring's own note on this).
+11. check_holonomic_never_pays_turn_cost: a direct unit check of
+    Drivetrain.turn_cost_s on the SAME large heading swing -- 0 for
+    MECANUM_MATCH_TRAVEL (holonomic), nonzero for TANK -- checked on
+    match_travel specifically (not fixed_at_start, which would pass
+    even a stale "0 because the heading never changes" implementation
+    by accident, since its heading truly never changes) so this
+    actually exercises the `self.holonomic` branch turn_cost_s now
+    dispatches on.
+12. check_match_travel_pays_zero_turn_cost_despite_reaiming: on a real
+    multi-leg zigzag match, MECANUM_MATCH_TRAVEL's held heading is
+    tracked and confirmed to actually CHANGE at least once (proving
+    it's genuinely re-aiming, not vacuously passing because nothing
+    ever changed) -- yet every one of those changes is still charged
+    exactly 0s, unlike the equivalent change would cost TANK on the
+    identical route. This is the integration-level proof that a
+    holonomic drivetrain's re-aiming is free in this model, matching
+    the physical claim in ftc/drivetrain.py's own module docstring
+    (blending a rotational component into the wheel mix vs. TANK's
+    forced stop-pivot-accelerate).
 """
 import math
 import random
@@ -256,30 +266,43 @@ def check_alternative_policies_change_match_dynamics():
     return ok
 
 
-def check_match_travel_pays_nonzero_turn_cost():
-    """Unlike fixed_at_start (whose held heading is invariant, so
-    Drivetrain.turn_cost_s is always called with current==new and
-    contributes exactly 0), match_travel's held heading tracks whatever
-    leg is immediately next -- it changes every time the route's
-    direction changes, which on a real zigzag route is almost every
-    leg. turn_cost_s charges for THAT change regardless of which policy
-    produced it (see the module docstring's own note on this), so a
-    real match under match_travel should accrue some nonzero total --
-    proving it trades away the strafe penalty, not the turn-cost one,
-    rather than silently reproducing fixed_at_start's zero-turn-cost
-    property by accident."""
+def check_holonomic_never_pays_turn_cost():
+    """Direct unit check of Drivetrain.turn_cost_s on the identical
+    160-degree heading swing: 0 for MECANUM_MATCH_TRAVEL (holonomic),
+    nonzero for TANK. Checked on match_travel rather than fixed_at_start
+    specifically because fixed_at_start's held heading never changes at
+    all, in which case even a stale "0 because current==new" formula
+    would happen to return 0 -- this exercises the actual `self.
+    holonomic` dispatch instead of coincidentally passing."""
+    large_swing_holonomic = MECANUM_MATCH_TRAVEL.turn_cost_s(10.0, 170.0)
+    large_swing_tank = TANK.turn_cost_s(10.0, 170.0)
+    ok = large_swing_holonomic == 0.0 and large_swing_tank > 0.0
+    print(f"turn_cost_s(match_travel, 160deg swing): {large_swing_holonomic:.4f}s; "
+          f"turn_cost_s(tank, same swing): {large_swing_tank:.4f}s -- {'OK' if ok else 'FAIL'}")
+    return ok
+
+
+def check_match_travel_pays_zero_turn_cost_despite_reaiming():
+    """match_travel's held heading is re-resolved every tick from
+    whichever leg is immediately next -- unlike fixed_at_start, it
+    genuinely changes as the route progresses. This confirms that
+    change actually happens at least once over a real zigzag match
+    (proving the check below isn't vacuously true because nothing ever
+    changed) AND that every one of those changes is still charged
+    exactly 0s by turn_cost_s -- the physical claim ftc/drivetrain.py's
+    own module docstring makes (re-aiming blends into the wheel mix
+    rather than costing a dedicated stop-pivot-accelerate maneuver)."""
     import ftc.drivetrain as drivetrain_module
     grid, start, goal, tag_sites = _zigzag_scenario()
     ground_truth, actual_start = generate_ground_truth(grid, start, goal, 0.0, seed=3)
 
     original_turn_cost_s = drivetrain_module.Drivetrain.turn_cost_s
-    total_turn_cost = 0.0
+    calls = []
 
     def _tracking_turn_cost_s(self, current_heading_deg, new_heading_deg):
-        nonlocal total_turn_cost
         cost = original_turn_cost_s(self, current_heading_deg, new_heading_deg)
         if self.heading_policy == "match_travel":
-            total_turn_cost += cost
+            calls.append((current_heading_deg, new_heading_deg, cost))
         return cost
 
     drivetrain_module.Drivetrain.turn_cost_s = _tracking_turn_cost_s
@@ -289,9 +312,11 @@ def check_match_travel_pays_nonzero_turn_cost():
     finally:
         drivetrain_module.Drivetrain.turn_cost_s = original_turn_cost_s
 
-    ok = total_turn_cost > 1e-6
-    print(f"match_travel total turn_cost_s accrued over the zigzag match: {total_turn_cost:.4f}s -- "
-          f"{'OK' if ok else 'FAIL'}")
+    heading_actually_changed = any(abs(cur - new) > 1e-6 for cur, new, _cost in calls)
+    all_zero_cost = all(cost == 0.0 for _cur, _new, cost in calls)
+    ok = heading_actually_changed and all_zero_cost
+    print(f"match_travel held heading changed at least once over the match: {heading_actually_changed}; "
+          f"every change still cost exactly 0s: {all_zero_cost} -- {'OK' if ok else 'FAIL'}")
     return ok
 
 
@@ -338,8 +363,12 @@ def test_alternative_policies_change_match_dynamics():
     assert check_alternative_policies_change_match_dynamics()
 
 
-def test_match_travel_pays_nonzero_turn_cost():
-    assert check_match_travel_pays_nonzero_turn_cost()
+def test_holonomic_never_pays_turn_cost():
+    assert check_holonomic_never_pays_turn_cost()
+
+
+def test_match_travel_pays_zero_turn_cost_despite_reaiming():
+    assert check_match_travel_pays_zero_turn_cost_despite_reaiming()
 
 
 if __name__ == "__main__":
@@ -354,6 +383,7 @@ if __name__ == "__main__":
         check_unknown_policy_raises(),
         check_mecanum_default_matches_pre_addition_behavior(),
         check_alternative_policies_change_match_dynamics(),
-        check_match_travel_pays_nonzero_turn_cost(),
+        check_holonomic_never_pays_turn_cost(),
+        check_match_travel_pays_zero_turn_cost_despite_reaiming(),
     ]
     print("\nALL PASS" if all(checks) else "\nSOME CHECKS FAILED")

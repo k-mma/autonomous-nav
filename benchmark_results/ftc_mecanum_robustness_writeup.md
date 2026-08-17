@@ -1,0 +1,29 @@
+# How far off would mecanum's strafe estimates have to be to catch tank?
+
+`ftc_drivetrain_heading_policy_writeup.md` found `match_travel` -- the best mecanum heading policy tested -- still significantly worse than tank (13% vs. 18%, -4.1pp), entirely attributable to MECANUM_STRAFE_SPEED_FACTOR (0.8) and MECANUM_STRAFE_DRIFT_MULTIPLIER (1.6): both `ftc/config.py` "ballpark engineering estimate[s], not measured." This sweeps each independently (holding the other at its current value), for both `match_travel` and the original `fixed_at_start` policy, and asks: how far from the current estimate, in mecanum's favor, would either constant have to be before the verdict actually flips? 15 trials/point at levels [0.3, 0.5, 0.7, 0.9], 'cluttered' layout, paired on identical scenarios against a single shared tank baseline -- same rigor tier as the heading-policy sweep it follows up on. Raw data in `ftc_mecanum_robustness.csv`, chart in `ftc_mecanum_robustness.png`.
+
+What this does and does not prove: a tipping point bounds the estimate error the verdict can tolerate -- it does not tell you whether the *real* strafe speed/drift penalty is inside or outside that bound, only measured field/robot data through `ftc/calibration.py` could do that. Each parameter is swept independently, holding the other at its current ballpark value -- a real improvement in mecanum roller/wheel quality would likely move both together, which the "both at physical limit" row below approximates as the best case this model can express.
+
+## Tipping points
+
+| Drivetrain | Parameter | Baseline | Current gap vs. tank | Tips at | Verdict at tip |
+|---|---|---:|---:|---:|---|
+| Mecanum | Strafe speed factor | 0.8 | -9.6% | never (0.8-1.0) | significantly worse than tank |
+| Mecanum | Strafe drift multiplier | 1.6 | -9.6% | never (1.6-1.0) | significantly worse than tank |
+| Mecanum | Both at physical limit (1.0 / 1.0) | -- | -9.6% | -- | significantly worse than tank (9% vs. tank 16%, -7.0%) |
+| Mecanum (match next leg) | Strafe speed factor | 0.8 | -7.7% | never (0.8-1.0) | significantly worse than tank |
+| Mecanum (match next leg) | Strafe drift multiplier | 1.6 | -7.7% | never (1.6-1.0) | significantly worse than tank |
+| Mecanum (match next leg) | Both at physical limit (1.0 / 1.0) | -- | -7.7% | -- | significantly worse than tank (10% vs. tank 16%, -5.9%) |
+
+## What this means in plain language
+
+Neither constant, swept independently across its full physically plausible range, closes the gap with tank for either mecanum policy -- the verdict is robust to either estimate being wrong by itself.
+
+Even with BOTH constants pushed to their physical limit simultaneously (zero strafe penalty of any kind -- the most generous case this model can express), Mecanum is still significantly worse than tank (9% vs. tank's 16%, -7.0%). No realistic recalibration of just these two constants can be the whole explanation for mecanum's real-world popularity -- something this simulator does not model (most plausibly, TeleOp driver maneuverability, which this project only ever measures autonomous-period path-following success under) has to be doing the rest of the work.
+Even with BOTH constants pushed to their physical limit simultaneously (zero strafe penalty of any kind -- the most generous case this model can express), Mecanum (match next leg) is still significantly worse than tank (10% vs. tank's 16%, -5.9%). No realistic recalibration of just these two constants can be the whole explanation for mecanum's real-world popularity -- something this simulator does not model (most plausibly, TeleOp driver maneuverability, which this project only ever measures autonomous-period path-following success under) has to be doing the rest of the work.
+
+## A structural finding this sweep surfaced, unrelated to either tipping point
+
+MECANUM_STRAFE_SPEED_FACTOR produced the EXACT SAME success rate at every one of the 6 values swept (0.6 through 1.0), for both drivetrains -- not just close, bit-for-bit identical trial outcomes (see `ftc_mecanum_robustness.csv`). This mirrors the finding that motivated this sweep in the first place: `turn_cost_s` was fixed to charge holonomic drivetrains nothing for re-aiming, and that fix also changed zero outcomes across 12,600 trials, because time-based penalties (turn cost, drive speed) only ever push a match toward the 30-second AUTONOMOUS_PERIOD_S budget, and typical match durations in this study never come close enough to that budget for either one to flip a single trial's success/failure. MECANUM_STRAFE_DRIFT_MULTIPLIER, by contrast, is a POSITION-accuracy penalty, not a timing one -- it shows a real, mostly-monotonic effect across its own sweep (see `ftc_mecanum_robustness.csv`) and is entirely responsible for the "both at physical limit" row's improvement over baseline above. Any future work on this axis should target drift/position-accuracy, not speed -- this model's success metric does not respond to speed at the match lengths and time budget this project uses.
+
+A second open question this sweep raises but does not answer: even at the strafe-penalty physical limit, match_travel's held heading is only re-resolved once per LEG, from the PLANNED path's nominal direction (ftc/drivetrain.py's next_leg_heading_deg) -- unlike TANK, whose chassis heading always exactly equals its REALIZED, post-error travel direction every single tick, by construction (ftc/match.py's own `travel_heading = heading_deg(true_position, next_true)`). That gap between a held, once-per-leg heading and the tick-by-tick true direction of travel could still cause collisions through the rotated-footprint check (`footprint_overlaps_cells`) that have nothing to do with MECANUM_STRAFE_SPEED_FACTOR or MECANUM_STRAFE_DRIFT_MULTIPLIER at all -- a plausible candidate for the persistent best-case gap above, not confirmed here.

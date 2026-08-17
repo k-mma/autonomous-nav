@@ -406,12 +406,14 @@ def write_writeup_heading_policy(stats, rows, path):
             "None of the alternative policies is a statistically significant improvement over fixed_at_start "
             "at this trial count. Re-aiming more often does not, by itself, guarantee less total strafe over "
             "a real route -- `nearest_tag_current` can still point away from the route's actual direction of "
-            "travel at any given moment (it optimizes for tag visibility, not for minimizing strafe), "
+            "travel at any given moment (it optimizes for tag visibility, not for minimizing strafe), and "
             "`route_dominant` optimizes for the AVERAGE direction over the whole remaining route, which can "
-            "still be a poor fit for any one individual leg, and even `match_travel` -- which DOES aim at the "
-            "immediate next leg exactly, avoiding the strafe penalty most of the time -- pays a real, "
-            "nonzero turn cost for re-aiming that often (unlike fixed_at_start's zero) instead of the strafe "
-            "penalty it avoids, so nothing here guarantees a free win."
+            "still be a poor fit for any one individual leg. Re-aiming itself is free regardless of policy "
+            "(turn_cost_s is 0 for any holonomic drivetrain, ftc/drivetrain.py), so even `match_travel` -- "
+            "which DOES aim at the immediate next leg exactly, avoiding the strafe penalty most of the time -- "
+            "isn't guaranteed a win by construction: it's only re-aimed once per leg from the PLANNED path's "
+            "nominal direction, not the tick's true post-error travel heading, so residual strafe from "
+            "position noise can still cost it."
         )
 
     lines += [
@@ -464,12 +466,14 @@ def write_writeup_heading_policy(stats, rows, path):
         "`route_dominant` optimizes for the route's average direction, and `match_travel` (the one policy "
         "that directly targets the route's own IMMEDIATE next leg -- the gap both `ftc_drivetrain_writeup.md` "
         "and an earlier version of this writeup named as untested) holds the identical heading TANK would "
-        "already be facing on that leg -- avoiding the strafe penalty on most steps, but NOT the turn cost "
-        "of re-aiming that often (see "
-        "ftc/drivetrain.py's own module docstring): Drivetrain.turn_cost_s charges for a held-heading change "
-        "regardless of which policy produced it, and `match_travel`'s held heading changes about as often as "
-        "TANK's own does, so it is a genuine new trade-off to measure rather than a strictly-better-by-"
-        "construction policy.",
+        "already be facing on that leg -- avoiding the strafe penalty on most steps, at NO turn-cost charge "
+        "(Drivetrain.turn_cost_s is 0 for any holonomic drivetrain, ftc/drivetrain.py, regardless of how "
+        "often its held heading changes -- a real mecanum chassis blends re-aiming into the same wheel "
+        "commands still driving it forward, unlike TANK's forced stop-pivot-accelerate). What `match_travel` "
+        "does NOT avoid is residual strafe: it's re-aimed once per leg from the PLANNED path's nominal "
+        "direction, not the tick's true post-error travel heading, so position noise still produces some "
+        "mismatch between chassis heading and actual travel direction -- a genuine trade-off to measure, "
+        "not a strictly-better-by-construction policy.",
     ]
 
     with open(path, "w") as f:
