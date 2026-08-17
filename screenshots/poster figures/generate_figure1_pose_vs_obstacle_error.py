@@ -201,7 +201,7 @@ def main():
     panel_pose_error(ax_left, grid, path)
     panel_obstacle_error(ax_right, grid, truth_grid, path)
 
-    fig.suptitle("Two independent ways an autonomous run fails — and no single sensor fixes both",
+    fig.suptitle("Two independent ways an autonomous run fails",
                   fontsize=16, fontweight="bold", x=0.012, ha="left", y=0.98)
 
     legend_y = 0.055
