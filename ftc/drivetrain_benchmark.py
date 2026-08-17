@@ -49,16 +49,19 @@ change to what those citations point at would be worse than a second,
 clearly-separate study.
 
 A SECOND, separate sweep -- ftc/drivetrain.py's MECANUM_HEADING_POLICY_
-ORDER (tank, and MECANUM under each of its three heading_policy
-choices: fixed_at_start, nearest_tag_current, route_dominant) -- checks
-the exact thing the original study's own writeup names as untested:
-"a policy that re-picks its held heading periodically... isn't tested
-here." Reuses this module's own run_combo/summarize/value_ranking
-(already generic over any DRIVETRAINS key) with a DIFFERENT base seed
-(HEADING_POLICY_BASE_SEED) so its trials never collide with the
-original sweep's, and writes its own separate output files
-(ftc_drivetrain_heading_policy_results.csv/_comparison.png/_writeup.md)
-for the same "don't perturb an already-cited result" reason as above.
+ORDER (tank, and MECANUM under each of its four heading_policy
+choices: fixed_at_start, nearest_tag_current, route_dominant,
+match_travel) -- checks the exact thing the original study's own
+writeup names as untested: "a policy that re-picks its held heading
+periodically... isn't tested here." Reuses this module's own
+run_combo/summarize/value_ranking (already generic over any
+DRIVETRAINS key, and over however many entries MECANUM_HEADING_POLICY_
+ORDER holds -- adding match_travel required no changes to any of the
+three) with a DIFFERENT base seed (HEADING_POLICY_BASE_SEED) so its
+trials never collide with the original sweep's, and writes its own
+separate output files (ftc_drivetrain_heading_policy_results.csv/
+_comparison.png/_writeup.md) for the same "don't perturb an
+already-cited result" reason as above.
 """
 import csv
 import random
@@ -144,7 +147,8 @@ def _bootstrap_seed(drivetrain_name, fidelity, suite):
     # "mecanum") are in the identical order/position as DRIVETRAIN_
     # ORDER's own two entries, so indexing against the longer list here
     # produces the EXACT same seed for those two names as before this
-    # function had to also support the two new heading-policy variants
+    # function had to also support the newer heading-policy variants
+    # (now three: nearest_tag_current, route_dominant, match_travel)
     # -- a byte-for-byte no-op for ftc_drivetrain_writeup.md's own CIs.
     return (9_900_000 + MECANUM_HEADING_POLICY_ORDER.index(drivetrain_name) * 500_000
             + FIDELITY_ORDER.index(fidelity) * 50_000 + SUITE_ORDER.index(suite))
@@ -319,13 +323,13 @@ def write_writeup_heading_policy(stats, rows, path):
     """The follow-up study write_writeup's own closing line points to:
     does re-aiming MECANUM's held heading (instead of fixing it once at
     match start) recover any of the premium `write_writeup` found
-    unpaid? Compares all three heading policies (ftc/drivetrain.py's
-    MECANUM_HEADING_POLICY_ORDER) against tank and against each other,
-    paired (identical seeded scenarios per (fidelity, suite) cell across
-    all four drivetrain variants -- nav/stats.py's bootstrap_paired_
-    diff_ci is used for the headline fixed-at-start-vs-alternatives
-    comparison, the same tool every other paired comparison in this
-    project uses)."""
+    unpaid? Compares all four MECANUM heading policies (ftc/
+    drivetrain.py's MECANUM_HEADING_POLICY_ORDER) against tank and
+    against each other, paired (identical seeded scenarios per
+    (fidelity, suite) cell across all five drivetrain variants --
+    nav/stats.py's bootstrap_paired_diff_ci is used for the headline
+    fixed-at-start-vs-alternatives comparison, the same tool every
+    other paired comparison in this project uses)."""
     mecanum_cost = DRIVETRAINS["mecanum"].cost_usd
     tank_cost = DRIVETRAINS["tank"].cost_usd
     lines = [
@@ -336,13 +340,13 @@ def write_writeup_heading_policy(stats, rows, path):
         "aimed at the nearest AprilTag wall) -- and named the untested alternative explicitly: a policy that "
         "re-picks its held heading as the match progresses. This module checks that alternative directly, "
         "crossing MECANUM_HEADING_POLICY_ORDER (tank, plus MECANUM under `fixed_at_start` / "
-        "`nearest_tag_current` / `route_dominant`, see ftc/drivetrain.py) with the identical fidelity tiers x "
-        f"suites x deviation types x levels {LEVELS} x {TRIALS} trials/point this module's original sweep "
-        "already uses, on a DIFFERENT base seed (HEADING_POLICY_BASE_SEED) so this study's trials never "
-        "overlap with `ftc_drivetrain_writeup.md`'s. Raw data in "
+        "`nearest_tag_current` / `route_dominant` / `match_travel`, see ftc/drivetrain.py) with the identical "
+        f"fidelity tiers x suites x deviation types x levels {LEVELS} x {TRIALS} trials/point this module's "
+        "original sweep already uses, on a DIFFERENT base seed (HEADING_POLICY_BASE_SEED) so this study's "
+        "trials never overlap with `ftc_drivetrain_writeup.md`'s. Raw data in "
         "`ftc_drivetrain_heading_policy_results.csv`, chart in `ftc_drivetrain_heading_policy_comparison.png`.",
         "",
-        "## Does either alternative policy beat fixed_at_start?",
+        "## Does any alternative policy beat fixed_at_start?",
         "",
         "Pooled across every suite, paired on identical scenarios, at the `realistic` fidelity tier (where "
         "the camera-FOV mechanism this whole investigation is about actually applies -- see "
@@ -355,12 +359,20 @@ def write_writeup_heading_policy(stats, rows, path):
     def _pooled_outcomes(drivetrain_name, fidelity):
         return [r["success"] for r in rows if r["drivetrain"] == drivetrain_name and r["fidelity"] == fidelity]
 
+    # Every MECANUM_HEADING_POLICY_ORDER entry other than "tank" and the
+    # bare "mecanum" (== fixed_at_start, the baseline this whole section
+    # compares against) -- derived rather than a literal tuple so a
+    # future 5th policy shows up here automatically instead of silently
+    # being left out of the one table this module's headline verdict is
+    # read from.
+    alternative_policies = [d for d in MECANUM_HEADING_POLICY_ORDER if d not in ("tank", "mecanum")]
+
     baseline_outcomes = _pooled_outcomes("mecanum", "realistic")
     baseline_rate = sum(baseline_outcomes) / len(baseline_outcomes)
     lines.append(f"| fixed_at_start (baseline) | {baseline_rate:.0%} | -- | -- |")
 
-    any_recovers = False
-    for drivetrain_name in ("mecanum_nearest_tag_current", "mecanum_route_dominant"):
+    recovering_policies = []
+    for drivetrain_name in alternative_policies:
         outcomes = _pooled_outcomes(drivetrain_name, "realistic")
         rate = sum(outcomes) / len(outcomes)
         ci_lo, ci_hi, p_value = bootstrap_paired_diff_ci(baseline_outcomes, outcomes,
@@ -368,7 +380,7 @@ def write_writeup_heading_policy(stats, rows, path):
         delta = rate - baseline_rate
         if ci_lo > 0 and p_value < 0.05:
             verdict = "**significantly better**"
-            any_recovers = True
+            recovering_policies.append(drivetrain_name)
         elif ci_hi < 0 and p_value > 0.95:
             verdict = "**significantly worse**"
         else:
@@ -380,24 +392,53 @@ def write_writeup_heading_policy(stats, rows, path):
     tank_rate = sum(tank_outcomes) / len(tank_outcomes)
     lines += ["", f"Tank (no held heading at all, for reference): {tank_rate:.0%}.", ""]
 
-    if any_recovers:
+    if recovering_policies:
+        recovering_labels = ", ".join(DRIVETRAIN_LABELS[d] for d in recovering_policies)
         lines.append(
-            "At least one alternative heading policy is a statistically real improvement over fixed_at_start "
-            "-- re-aiming genuinely helps, exactly the mechanism `ftc_drivetrain_writeup.md` predicted but "
-            "didn't have a policy to demonstrate it with. Whether that improvement is enough to catch up to "
-            "tank (see the per-suite table below) is a separate question from whether it helps at all."
+            f"At least one alternative heading policy ({recovering_labels}) is a statistically real "
+            "improvement over fixed_at_start -- re-aiming genuinely helps, exactly the mechanism "
+            "`ftc_drivetrain_writeup.md` predicted but didn't have a policy to demonstrate it with. Whether "
+            "that improvement is enough to catch up to tank (see the per-suite table below) is a separate "
+            "question from whether it helps at all."
         )
     else:
         lines.append(
-            "Neither alternative policy is a statistically significant improvement over fixed_at_start at "
-            "this trial count. Re-aiming more often does not, by itself, guarantee less total strafe over a "
-            "real route -- `nearest_tag_current` can still point away from the route's actual direction of "
-            "travel at any given moment (it optimizes for tag visibility, not for minimizing strafe), and "
+            "None of the alternative policies is a statistically significant improvement over fixed_at_start "
+            "at this trial count. Re-aiming more often does not, by itself, guarantee less total strafe over "
+            "a real route -- `nearest_tag_current` can still point away from the route's actual direction of "
+            "travel at any given moment (it optimizes for tag visibility, not for minimizing strafe), "
             "`route_dominant` optimizes for the AVERAGE direction over the whole remaining route, which can "
-            "still be a poor fit for any one individual leg. Neither guarantees low strafe on every step the "
-            "way a policy would that re-aimed to match the immediate next leg exactly (untested here -- see "
-            "'What this does not prove' below)."
+            "still be a poor fit for any one individual leg, and even `match_travel` -- which DOES aim at the "
+            "immediate next leg exactly, avoiding the strafe penalty most of the time -- pays a real, "
+            "nonzero turn cost for re-aiming that often (unlike fixed_at_start's zero) instead of the strafe "
+            "penalty it avoids, so nothing here guarantees a free win."
         )
+
+    lines += [
+        "", "## Does any policy actually catch up to tank?", "",
+        "The comparison above is against fixed_at_start (MECANUM's own baseline policy), not against tank -- "
+        "closing part of MECANUM's internal gap is a different question from closing the gap with tank "
+        "itself, which is the one README.md's \"no mecanum-specific strafing advantage\" threat-to-validity "
+        "entry actually asks. Same pooled-across-every-suite, paired-on-identical-scenarios comparison, "
+        "against TANK directly this time:",
+        "",
+        "| Policy | Success rate | vs. tank [95% CI] | Verdict |",
+        "|---|---:|---:|---|",
+    ]
+    for drivetrain_name in ["mecanum"] + alternative_policies:
+        outcomes = _pooled_outcomes(drivetrain_name, "realistic")
+        rate = sum(outcomes) / len(outcomes)
+        ci_lo, ci_hi, p_value = bootstrap_paired_diff_ci(tank_outcomes, outcomes,
+                                                            seed=(hash(drivetrain_name) + 1) % (2**31))
+        delta = rate - tank_rate
+        if ci_lo > 0 and p_value < 0.05:
+            verdict = "**significantly better than tank**"
+        elif ci_hi < 0 and p_value > 0.95:
+            verdict = "**significantly worse than tank**"
+        else:
+            verdict = "not distinguishable from tank"
+        lines.append(f"| {DRIVETRAIN_LABELS[drivetrain_name]} | {rate:.0%} | {delta:+.1%} "
+                      f"[{ci_lo:+.1%}, {ci_hi:+.1%}] | {verdict} |")
 
     lines += ["", "## Best value by policy (realistic fidelity)", "", "| Policy | Best value | pp/$100 |",
               "|---|---|---:|"]
@@ -405,9 +446,9 @@ def write_writeup_heading_policy(stats, rows, path):
         results, baseline, best = value_ranking(stats, drivetrain_name, "realistic", rows)
         lines.append(f"| {DRIVETRAIN_LABELS[drivetrain_name]} | {SUITE_LABELS[best]} | {results[best]['per_100']:+.1f} |")
 
-    lines += ["", "## Per-suite success rate (realistic fidelity)", "",
-              "| Suite | Tank | fixed_at_start | nearest_tag_current | route_dominant |",
-              "|---|---:|---:|---:|---:|"]
+    per_suite_header = "| Suite | " + " | ".join(DRIVETRAIN_LABELS[d] for d in MECANUM_HEADING_POLICY_ORDER) + " |"
+    per_suite_divider = "|---|" + "---:|" * len(MECANUM_HEADING_POLICY_ORDER)
+    lines += ["", "## Per-suite success rate (realistic fidelity)", "", per_suite_header, per_suite_divider]
     for suite in SUITE_ORDER:
         row = [f"| {SUITE_LABELS[suite]} |"]
         for drivetrain_name in MECANUM_HEADING_POLICY_ORDER:
@@ -418,11 +459,17 @@ def write_writeup_heading_policy(stats, rows, path):
         "", "## What this does and does not prove", "",
         "Same reduced-rigor scope as `ftc_drivetrain_writeup.md` (see that module's own docstring) -- enough "
         "to see whether re-aiming helps at all, not a publication-grade estimate of the exact magnitude. "
-        "Both alternative policies are single, specific, documented choices (ftc/drivetrain.py's "
+        "All three alternative policies are single, specific, documented choices (ftc/drivetrain.py's "
         "resolve_held_heading_deg) -- `nearest_tag_current` optimizes for keeping a tag in view, "
-        "`route_dominant` optimizes for the route's average direction, and NEITHER directly minimizes "
-        "per-step strafe against the route's own IMMEDIATE next leg, which a real team implementing this on "
-        "hardware might reasonably try instead. This module does not test that policy.",
+        "`route_dominant` optimizes for the route's average direction, and `match_travel` (the one policy "
+        "that directly targets the route's own IMMEDIATE next leg -- the gap both `ftc_drivetrain_writeup.md` "
+        "and an earlier version of this writeup named as untested) holds the identical heading TANK would "
+        "already be facing on that leg -- avoiding the strafe penalty on most steps, but NOT the turn cost "
+        "of re-aiming that often (see "
+        "ftc/drivetrain.py's own module docstring): Drivetrain.turn_cost_s charges for a held-heading change "
+        "regardless of which policy produced it, and `match_travel`'s held heading changes about as often as "
+        "TANK's own does, so it is a genuine new trade-off to measure rather than a strictly-better-by-"
+        "construction policy.",
     ]
 
     with open(path, "w") as f:

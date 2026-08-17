@@ -1,4 +1,4 @@
-"""Regenerates figure3_bundle_scatter.png for the SEED symposium poster:
+"""Regenerates figure4_bundle_scatter.png for the SEED symposium poster:
 a single, decluttered scatter of cost vs. weighted success rate for
 every buildable robot (individual sensors AND bundles), recomputed
 from benchmark_results/ftc_optimizer_results.csv (ftc/optimizer.py's
@@ -25,7 +25,7 @@ draft's own "Figure 3":
 Regenerate after re-running ftc/optimizer_benchmark.py (i.e. whenever
 benchmark_results/ftc_optimizer_results.csv changes):
 
-    python3 "screenshots/poster figures/generate_figure3_bundle_scatter.py"
+    python3 "screenshots/poster figures/generate_figure4_bundle_scatter.py"
 """
 import csv
 import sys
@@ -180,7 +180,7 @@ def main():
               fontsize=8.5, color="#444444")
 
     fig.tight_layout()
-    out_path = OUT_DIR / "figure3_bundle_scatter.png"
+    out_path = OUT_DIR / "figure4_bundle_scatter.png"
     fig.savefig(out_path, dpi=170, facecolor="white", bbox_inches="tight")
     print(f"wrote {out_path}")
 

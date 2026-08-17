@@ -8,9 +8,9 @@ experimental conditions, not illustrations of them.
 Produced by nav.field_variance.generate_ground_truth, the same function
 every benchmark in this project calls.
 
-Note the overlap with figure5: this figure's middle panel and
-figure5's right panel show the same obstacle-drift mechanism. The two
-are alternatives more than companions -- figure5 contrasts the two
+Note the overlap with figure1: this figure's middle panel and
+figure1's right panel show the same obstacle-drift mechanism. The two
+are alternatives more than companions -- figure1 contrasts the two
 FAILURE MODES (pose vs. obstacle), while this one enumerates the three
 DEVIATION AXES the sweep actually varies. Putting both on one poster
 mostly buys the start-drift and blocker panels.

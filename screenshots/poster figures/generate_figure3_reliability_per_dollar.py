@@ -1,4 +1,4 @@
-"""Regenerates figure2_reliability_per_dollar.png for the SEED symposium
+"""Regenerates figure3_reliability_per_dollar.png for the SEED symposium
 poster: "of the sensors we tested, which one is the best buy?"
 
 Same underlying metric as ftc/suite_benchmark.py's own
@@ -26,7 +26,7 @@ draft's own "Figure 1") had:
 Regenerate after re-running ftc/suite_benchmark.py (i.e. whenever
 benchmark_results/ftc_suite_results.csv changes):
 
-    python3 "screenshots/poster figures/generate_figure2_reliability_per_dollar.py"
+    python3 "screenshots/poster figures/generate_figure3_reliability_per_dollar.py"
 """
 import csv
 import sys
@@ -146,7 +146,7 @@ def main():
               fontsize=9.5, color="#444444", ha="left")
 
     fig.tight_layout()
-    out_path = OUT_DIR / "figure2_reliability_per_dollar.png"
+    out_path = OUT_DIR / "figure3_reliability_per_dollar.png"
     fig.savefig(out_path, dpi=170, facecolor="white", bbox_inches="tight")
     print(f"wrote {out_path}")
 

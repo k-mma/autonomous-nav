@@ -4,9 +4,11 @@ as documented -- "fixed_at_start" staying a byte-for-byte no-op
 against the pre-existing MECANUM behavior, "nearest_tag_current"
 actually tracking the robot's current position instead of its start,
 "route_dominant"'s circular mean landing on the right angle (not just
-some plausible-looking one), and every policy actually changing match
-dynamics once wired through ftc/match.py, not just heading bookkeeping
-that never reaches drivetrain.turn_cost_s/speed_and_drift_factor?
+some plausible-looking one), "match_travel" landing on exactly the
+immediate next leg's own heading (not an average of anything), and
+every policy actually changing match dynamics once wired through
+ftc/match.py, not just heading bookkeeping that never reaches
+drivetrain.turn_cost_s/speed_and_drift_factor?
 
 1. check_fixed_at_start_ignores_current_position: resolve_held_heading_
    deg("fixed_at_start") returns the identical heading regardless of
@@ -25,32 +27,52 @@ that never reaches drivetrain.turn_cost_s/speed_and_drift_factor?
 4. check_route_dominant_falls_back_without_a_path: no path yet (None),
    or path_idx already at/past the last waypoint, both return the
    supplied fallback exactly.
-5. check_tank_ignores_every_heading_policy: resolve_held_heading_deg
+5. check_match_travel_uses_only_the_immediate_next_leg: a hand-built
+   three-leg path where the immediate next leg points a DIFFERENT
+   direction than the route's overall dominant direction --
+   next_leg_heading_deg must reproduce the immediate leg's own exact
+   heading, not something route_dominant_heading_deg would return for
+   the identical path (proving it isn't accidentally averaging).
+6. check_match_travel_falls_back_without_a_path: no path yet (None),
+   path_idx already at/past the last waypoint, or the immediate next
+   leg has zero length, all return the supplied fallback exactly --
+   the identical degenerate-input contract route_dominant_heading_deg
+   follows.
+7. check_tank_ignores_every_heading_policy: resolve_held_heading_deg
    returns None for TANK regardless of which heading_policy string a
    TANK instance happens to carry -- heading policy is holonomic-only.
-6. check_unknown_policy_raises: an unrecognized heading_policy string
+8. check_unknown_policy_raises: an unrecognized heading_policy string
    raises ValueError rather than silently falling back to something.
-7. check_mecanum_default_matches_pre_addition_behavior: running a real
+9. check_mecanum_default_matches_pre_addition_behavior: running a real
    match with MECANUM (heading_policy left at its default) produces the
    IDENTICAL MatchResult this exact scenario/seed produced before the
    heading-policy work existed -- the regression guarantee, checked by
    comparing the two literal ways of asking for "the default" (calling
    resolve_held_heading_deg every tick vs. the old one-time computation,
    reproduced inline here) rather than trusting they must agree.
-8. check_alternative_policies_change_match_dynamics: MECANUM_NEAREST_
-   TAG_CURRENT and MECANUM_ROUTE_DOMINANT complete real matches without
-   error, and produce a DIFFERENT elapsed_s than plain MECANUM on a
-   multi-leg zigzag scenario where the fixed-at-start heading is a poor
-   fit for most of the route -- proving heading_policy actually reaches
-   the drivetrain's turn-cost/speed/drift math, not just changes what a
-   getter reports.
+10. check_alternative_policies_change_match_dynamics: MECANUM_NEAREST_
+    TAG_CURRENT, MECANUM_ROUTE_DOMINANT, and MECANUM_MATCH_TRAVEL all
+    complete real matches without error, and each produces a DIFFERENT
+    elapsed_s than plain MECANUM on a multi-leg zigzag scenario where
+    the fixed-at-start heading is a poor fit for most of the route --
+    proving heading_policy actually reaches the drivetrain's turn-cost/
+    speed/drift math, not just changes what a getter reports.
+11. check_match_travel_pays_nonzero_turn_cost: MECANUM_MATCH_TRAVEL's
+    held heading is re-resolved every tick from whichever leg is
+    immediately next (unlike fixed_at_start, which is invariant), so
+    it does NOT inherit fixed_at_start's "chassis heading never changes
+    mid-route" property -- Drivetrain.turn_cost_s charges for a held-
+    heading change regardless of which policy produced it, and this
+    checks that a real multi-leg zigzag match actually accrues some
+    (proving `match_travel` trades away the strafe penalty, not the
+    turn-cost one -- see the module docstring's own note on this).
 """
 import math
 import random
 
 from ftc.drivetrain import (
-    MECANUM, MECANUM_NEAREST_TAG_CURRENT, MECANUM_ROUTE_DOMINANT, TANK,
-    nearest_tag_heading_deg, resolve_held_heading_deg, route_dominant_heading_deg,
+    MECANUM, MECANUM_MATCH_TRAVEL, MECANUM_NEAREST_TAG_CURRENT, MECANUM_ROUTE_DOMINANT, TANK,
+    nearest_tag_heading_deg, next_leg_heading_deg, resolve_held_heading_deg, route_dominant_heading_deg,
 )
 from ftc.field import TagSite, build_grid, tag_sites_for
 from ftc.match import run_match
@@ -116,11 +138,45 @@ def check_route_dominant_falls_back_without_a_path():
     return ok
 
 
+def check_match_travel_uses_only_the_immediate_next_leg():
+    # Three legs: east, then north, then east again -- the route's own
+    # dominant direction (circular mean) is neither pure east nor pure
+    # north, but the IMMEDIATE next leg at path_idx=0 is exactly east
+    # (0deg) and at path_idx=1 is exactly north (-90deg, this project's
+    # atan2(d_row, d_col) convention). next_leg_heading_deg must land on
+    # those exact single-leg values, not anywhere near the route's
+    # overall average.
+    path = [(5, 5), (5, 6), (4, 6), (4, 7)]
+    got_leg0 = next_leg_heading_deg(path, 0, fallback_heading_deg=999.0)
+    got_leg1 = next_leg_heading_deg(path, 1, fallback_heading_deg=999.0)
+    expected_leg0 = math.degrees(math.atan2(0.0, 1.0))  # 0.0 (east)
+    expected_leg1 = math.degrees(math.atan2(-1.0, 0.0))  # -90.0 (north)
+    dominant = route_dominant_heading_deg(path, 0, fallback_heading_deg=999.0)
+    ok = (abs(got_leg0 - expected_leg0) < TOLERANCE and abs(got_leg1 - expected_leg1) < TOLERANCE
+          and abs(got_leg0 - dominant) > TOLERANCE)
+    print(f"next_leg_heading_deg at idx=0: {got_leg0:.2f}deg (expected {expected_leg0:.2f}), at idx=1: "
+          f"{got_leg1:.2f}deg (expected {expected_leg1:.2f}); route's own circular mean: {dominant:.2f}deg -- "
+          f"{'OK' if ok else 'FAIL'}")
+    return ok
+
+
+def check_match_travel_falls_back_without_a_path():
+    ok_none = next_leg_heading_deg(None, 0, fallback_heading_deg=42.0) == 42.0
+    path = [(0, 0), (0, 1)]
+    ok_exhausted = next_leg_heading_deg(path, 1, fallback_heading_deg=17.0) == 17.0
+    zero_length_path = [(3, 3), (3, 3)]
+    ok_zero_length = next_leg_heading_deg(zero_length_path, 0, fallback_heading_deg=8.0) == 8.0
+    ok = ok_none and ok_exhausted and ok_zero_length
+    print(f"no path -> fallback used: {ok_none}; path_idx at last waypoint -> fallback used: {ok_exhausted}; "
+          f"zero-length immediate leg -> fallback used: {ok_zero_length} -- {'OK' if ok else 'FAIL'}")
+    return ok
+
+
 def check_tank_ignores_every_heading_policy():
     tag_sites = _two_far_tags()
     from dataclasses import replace
     ok = True
-    for policy in ("fixed_at_start", "nearest_tag_current", "route_dominant"):
+    for policy in ("fixed_at_start", "nearest_tag_current", "route_dominant", "match_travel"):
         tank_variant = replace(TANK, heading_policy=policy)
         result = resolve_held_heading_deg(tank_variant, (5, 5), (0, 0), tag_sites, [(0, 0), (1, 1)], 1)
         if result is not None:
@@ -182,19 +238,60 @@ def check_alternative_policies_change_match_dynamics():
 
     results = {}
     for name, drivetrain in [("fixed_at_start", MECANUM), ("nearest_tag_current", MECANUM_NEAREST_TAG_CURRENT),
-                               ("route_dominant", MECANUM_ROUTE_DOMINANT)]:
+                               ("route_dominant", MECANUM_ROUTE_DOMINANT), ("match_travel", MECANUM_MATCH_TRAVEL)]:
         result = run_match(DeadReckoningSuite(), grid, start, goal, ground_truth, actual_start, tag_sites,
                             random.Random(3), drivetrain=drivetrain)
         results[name] = result
 
     differs = (abs(results["fixed_at_start"].elapsed_s - results["nearest_tag_current"].elapsed_s) > 1e-6
-               or abs(results["fixed_at_start"].elapsed_s - results["route_dominant"].elapsed_s) > 1e-6)
+               or abs(results["fixed_at_start"].elapsed_s - results["route_dominant"].elapsed_s) > 1e-6
+               or abs(results["fixed_at_start"].elapsed_s - results["match_travel"].elapsed_s) > 1e-6)
     all_finite = all(r.elapsed_s > 0 for r in results.values())
     ok = differs and all_finite
     print(f"elapsed_s: fixed_at_start={results['fixed_at_start'].elapsed_s:.3f}, "
           f"nearest_tag_current={results['nearest_tag_current'].elapsed_s:.3f}, "
-          f"route_dominant={results['route_dominant'].elapsed_s:.3f} -- differs={differs}, "
+          f"route_dominant={results['route_dominant'].elapsed_s:.3f}, "
+          f"match_travel={results['match_travel'].elapsed_s:.3f} -- differs={differs}, "
           f"all_finite={all_finite} -- {'OK' if ok else 'FAIL'}")
+    return ok
+
+
+def check_match_travel_pays_nonzero_turn_cost():
+    """Unlike fixed_at_start (whose held heading is invariant, so
+    Drivetrain.turn_cost_s is always called with current==new and
+    contributes exactly 0), match_travel's held heading tracks whatever
+    leg is immediately next -- it changes every time the route's
+    direction changes, which on a real zigzag route is almost every
+    leg. turn_cost_s charges for THAT change regardless of which policy
+    produced it (see the module docstring's own note on this), so a
+    real match under match_travel should accrue some nonzero total --
+    proving it trades away the strafe penalty, not the turn-cost one,
+    rather than silently reproducing fixed_at_start's zero-turn-cost
+    property by accident."""
+    import ftc.drivetrain as drivetrain_module
+    grid, start, goal, tag_sites = _zigzag_scenario()
+    ground_truth, actual_start = generate_ground_truth(grid, start, goal, 0.0, seed=3)
+
+    original_turn_cost_s = drivetrain_module.Drivetrain.turn_cost_s
+    total_turn_cost = 0.0
+
+    def _tracking_turn_cost_s(self, current_heading_deg, new_heading_deg):
+        nonlocal total_turn_cost
+        cost = original_turn_cost_s(self, current_heading_deg, new_heading_deg)
+        if self.heading_policy == "match_travel":
+            total_turn_cost += cost
+        return cost
+
+    drivetrain_module.Drivetrain.turn_cost_s = _tracking_turn_cost_s
+    try:
+        run_match(DeadReckoningSuite(), grid, start, goal, ground_truth, actual_start, tag_sites,
+                  random.Random(3), drivetrain=MECANUM_MATCH_TRAVEL)
+    finally:
+        drivetrain_module.Drivetrain.turn_cost_s = original_turn_cost_s
+
+    ok = total_turn_cost > 1e-6
+    print(f"match_travel total turn_cost_s accrued over the zigzag match: {total_turn_cost:.4f}s -- "
+          f"{'OK' if ok else 'FAIL'}")
     return ok
 
 
@@ -217,6 +314,14 @@ def test_route_dominant_falls_back_without_a_path():
     assert check_route_dominant_falls_back_without_a_path()
 
 
+def test_match_travel_uses_only_the_immediate_next_leg():
+    assert check_match_travel_uses_only_the_immediate_next_leg()
+
+
+def test_match_travel_falls_back_without_a_path():
+    assert check_match_travel_falls_back_without_a_path()
+
+
 def test_tank_ignores_every_heading_policy():
     assert check_tank_ignores_every_heading_policy()
 
@@ -233,15 +338,22 @@ def test_alternative_policies_change_match_dynamics():
     assert check_alternative_policies_change_match_dynamics()
 
 
+def test_match_travel_pays_nonzero_turn_cost():
+    assert check_match_travel_pays_nonzero_turn_cost()
+
+
 if __name__ == "__main__":
     checks = [
         check_fixed_at_start_ignores_current_position(),
         check_nearest_tag_current_tracks_current_position(),
         check_route_dominant_circular_mean_is_exact(),
         check_route_dominant_falls_back_without_a_path(),
+        check_match_travel_uses_only_the_immediate_next_leg(),
+        check_match_travel_falls_back_without_a_path(),
         check_tank_ignores_every_heading_policy(),
         check_unknown_policy_raises(),
         check_mecanum_default_matches_pre_addition_behavior(),
         check_alternative_policies_change_match_dynamics(),
+        check_match_travel_pays_nonzero_turn_cost(),
     ]
     print("\nALL PASS" if all(checks) else "\nSOME CHECKS FAILED")

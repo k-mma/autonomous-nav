@@ -1,4 +1,4 @@
-"""Regenerates figure5_pose_vs_obstacle_error.png for the SEED
+"""Regenerates figure1_pose_vs_obstacle_error.png for the SEED
 symposium poster's Background section: the two failure modes the whole
 study is organized around, side by side ("2 things you're solving for:
 pose error vs. obstacle error", which the poster otherwise states only
@@ -22,7 +22,7 @@ divergences shown are produced, not drawn by hand.
 
 Regenerate after any change to ftc/field.py or nav/field_variance.py:
 
-    python3 "screenshots/poster figures/generate_figure5_pose_vs_obstacle_error.py"
+    python3 "screenshots/poster figures/generate_figure1_pose_vs_obstacle_error.py"
 """
 import sys
 from pathlib import Path
@@ -43,7 +43,7 @@ from ftc.field import build_grid, eroded_obstacle_cells  # noqa: E402
 from nav.algorithms import astar  # noqa: E402
 from nav.field_variance import generate_ground_truth  # noqa: E402
 
-OUT = OUT_DIR / "figure5_pose_vs_obstacle_error.png"
+OUT = OUT_DIR / "figure1_pose_vs_obstacle_error.png"
 
 LAYOUT = "cluttered"
 START = (21, 2)

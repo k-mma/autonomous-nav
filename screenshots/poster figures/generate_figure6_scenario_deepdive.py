@@ -1,8 +1,8 @@
-"""Regenerates figure4_scenario_deepdive.png for the SEED symposium
+"""Regenerates figure6_scenario_deepdive.png for the SEED symposium
 poster: a per-scenario deep-dive asking "which specific robot wins THIS
 scenario, at what cost, and how does it compare to the one generalist
 bundle a team would buy without knowing its scenario?" Same source data
-as figure3_bundle_scatter.png (benchmark_results/ftc_optimizer_results.csv),
+as figure4_bundle_scatter.png (benchmark_results/ftc_optimizer_results.csv),
 no new simulation run -- this only re-presents that CSV.
 
 Two bars per scenario:
@@ -10,11 +10,11 @@ Two bars per scenario:
     OR bundle, whichever wins) scores highest on THAT scenario alone,
     ties broken toward the cheaper option. Colored orange if the
     winner is a single sensor, blue if it's a bundle -- same color
-    coding figure3 uses, so a reader who's seen that chart doesn't
+    coding figure4 uses, so a reader who's seen that chart doesn't
     relearn a mapping.
   - "Generalist pick" -- odometry pods + front camera ($304.99), the
-    single bundle figure3's Pareto frontier says is the best buy ON
-    AVERAGE across all 5 scenarios. Same green as figure3's frontier
+    single bundle figure4's Pareto frontier says is the best buy ON
+    AVERAGE across all 5 scenarios. Same green as figure4's frontier
     star, for the same cross-chart-consistency reason.
 
 Where the two bars tie, that IS the finding (the generalist already is
@@ -25,7 +25,7 @@ bundle beats sticking with the generalist.
 Regenerate after re-running ftc/optimizer_benchmark.py (i.e. whenever
 benchmark_results/ftc_optimizer_results.csv changes):
 
-    python3 "screenshots/poster figures/generate_figure4_scenario_deepdive.py"
+    python3 "screenshots/poster figures/generate_figure6_scenario_deepdive.py"
 """
 import csv
 import sys
@@ -121,7 +121,7 @@ def main():
         Patch(facecolor=BUNDLE_FACE, edgecolor=BUNDLE_EDGE, linewidth=1.3,
               label="Best pick: bundle"),
         Patch(facecolor=GENERALIST_FACE, edgecolor=GENERALIST_EDGE, linewidth=1.3,
-              label=f"Generalist bundle (${generalist['cost']:.0f}, from Fig. 3)"),
+              label=f"Generalist bundle (${generalist['cost']:.0f}, from Fig. 4)"),
     ]
 
     for xi, r in zip(x, rows):
@@ -152,7 +152,7 @@ def main():
               fontsize=8.7, color="#444444")
 
     fig.tight_layout()
-    out_path = OUT_DIR / "figure4_scenario_deepdive.png"
+    out_path = OUT_DIR / "figure6_scenario_deepdive.png"
     fig.savefig(out_path, dpi=170, facecolor="white", bbox_inches="tight")
     print(f"wrote {out_path}")
 

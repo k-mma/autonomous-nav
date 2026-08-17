@@ -1,4 +1,4 @@
-"""Regenerates figure1_ftc_field.png for the SEED symposium poster's
+"""Regenerates figure2_ftc_field.png for the SEED symposium poster's
 Pillar 1: "we simulated the field, and here's how we picked A* to plan
 across it."
 
@@ -23,7 +23,7 @@ Regenerate after any change to ftc/field.py, ftc/match.py, or the
 footprint/collision geometry those two share, or after re-running
 nav/benchmark.py:
 
-    python3 "screenshots/poster figures/generate_figure1_ftc_field.py"
+    python3 "screenshots/poster figures/generate_figure2_ftc_field.py"
 """
 import csv
 import math
@@ -329,7 +329,7 @@ def main():
               "start · goal · driven · remaining",
               fontsize=13, color="#333333")
 
-    out_path = OUT_DIR / "figure1_ftc_field.png"
+    out_path = OUT_DIR / "figure2_ftc_field.png"
     fig.savefig(out_path, facecolor="white")
     print(f"wrote {out_path}")
 

@@ -41,11 +41,35 @@ benchmark_results/ftc_drivetrain_writeup.md): a route's actual travel
 direction changes on almost every leg, so a heading fixed once at match
 start ends up strafing on most steps, and the resulting drift/speed
 penalty swamps the camera-alignment benefit the policy was chosen to
-demonstrate. TWO alternative policies exist specifically to check
+demonstrate. THREE alternative policies exist specifically to check
 whether that's a property of mecanum drivetrains in general or of this
 one particular (never re-aimed) policy -- see HEADING_POLICIES below
 and ftc/drivetrain_benchmark.py's own policy x fidelity sweep for the
-answer.
+answer. Two of those three (`nearest_tag_current`, `route_dominant`)
+still don't directly minimize per-step strafe against the route's own
+IMMEDIATE next leg; the third, `match_travel`, does exactly that --
+holding the heading TANK would already be facing on that leg, computed
+fresh each tick from path[path_idx] -> path[path_idx + 1] (see
+next_leg_heading_deg below).
+
+That does NOT make `match_travel` a strictly-better-by-construction
+policy, and in particular it does not reproduce "MECANUM never pays a
+turn cost" the way `fixed_at_start` does: turn_cost_s (below) charges
+for any change in the CHASSIS heading regardless of which policy
+produced it, and `match_travel`'s held heading changes on almost every
+leg -- about as often as TANK's own does -- so it pays a real, nonzero
+turn cost too, just not necessarily the identical amount TANK pays for
+the identical route (measured, not assumed: on the same scenario
+`match_travel` has come out both cheaper AND more expensive than TANK's
+turn cost across different seeds). What `match_travel` actually trades
+away is the STRAFE penalty, not the turn cost -- it faces its direction
+of travel on most legs (avoiding MECANUM_STRAFE_SPEED_FACTOR/_DRIFT_
+MULTIPLIER the way TANK always does) while still being a holonomic
+chassis that never needs to physically rotate before moving, so
+whatever turn cost it does pay is the flat proportional cost of
+updating a HELD heading, not a physical prerequisite to motion.
+Whether that trade nets out ahead of tank is a measured result, not a
+guarantee -- see ftc/drivetrain_benchmark.py's own writeup.
 
 TANK always faces its current direction of travel, exactly matching
 the existing (pre-Priority-2) behavior -- ftc/match.py's
@@ -67,14 +91,15 @@ from ftc.config import (
 from ftc.field import in_to_cell
 from ftc.sensors import angular_diff, heading_deg
 
-# The three heading policies a holonomic (MECANUM) drivetrain can hold,
+# The four heading policies a holonomic (MECANUM) drivetrain can hold,
 # see resolve_held_heading_deg below for what each one actually
 # computes and module docstring above for why more than one exists.
-HEADING_POLICIES = ["fixed_at_start", "nearest_tag_current", "route_dominant"]
+HEADING_POLICIES = ["fixed_at_start", "nearest_tag_current", "route_dominant", "match_travel"]
 HEADING_POLICY_LABELS = {
     "fixed_at_start": "Fixed at match start (nearest tag wall)",
     "nearest_tag_current": "Re-aim toward nearest tag from current position",
     "route_dominant": "Aim along the route's own dominant direction",
+    "match_travel": "Match the immediate next leg's own direction",
 }
 
 
@@ -129,6 +154,33 @@ def route_dominant_heading_deg(path, path_idx, fallback_heading_deg):
     return math.degrees(math.atan2(sum_dr, sum_dc))
 
 
+def next_leg_heading_deg(path, path_idx, fallback_heading_deg):
+    """The direction of travel of ONLY the immediate next leg --
+    heading_deg(path[path_idx], path[path_idx + 1]) -- the same rule
+    TANK already applies every step (Drivetrain.robot_heading_deg's
+    non-holonomic branch just returns step_heading_deg directly), but
+    computed here as a HELD heading a holonomic drivetrain can adopt
+    instead. Unlike route_dominant_heading_deg's circular mean over
+    every remaining leg, this uses no averaging at all -- it only ever
+    looks at the single leg about to be driven, so it changes every
+    time path_idx advances onto a leg with a different direction,
+    rather than drifting slowly as the route's remaining-leg average
+    shifts.
+
+    Falls back to `fallback_heading_deg` under the identical degenerate
+    conditions route_dominant_heading_deg does (`path` is None/empty,
+    `path_idx` already at or past the last waypoint, or the one leg in
+    question happens to have zero length) rather than returning an
+    arbitrary angle from a zero-length vector."""
+    if not path or path_idx >= len(path) - 1:
+        return fallback_heading_deg
+    dr = path[path_idx + 1][0] - path[path_idx][0]
+    dc = path[path_idx + 1][1] - path[path_idx][1]
+    if math.hypot(dr, dc) < 1e-9:
+        return fallback_heading_deg
+    return heading_deg(path[path_idx], path[path_idx + 1])
+
+
 def resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites, path, path_idx):
     """The one entry point ftc/match.py calls, every tick, to get the
     CURRENT held heading for a holonomic drivetrain -- returns None
@@ -140,9 +192,9 @@ def resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites,
       EVERY tick instead of caching it once produces the exact same
       floating-point result every time (same inputs, same pure
       function, zero rng draws) -- a real behavior change for the other
-      two policies below, a byte-for-byte no-op for this one. This is
+      three policies below, a byte-for-byte no-op for this one. This is
       what lets MECANUM's existing default stay exactly as measured in
-      benchmark_results/ftc_drivetrain_writeup.md while the other two
+      benchmark_results/ftc_drivetrain_writeup.md while the other
       policies become real, live alternatives.
     - "nearest_tag_current": nearest_tag_heading_deg(true_position,
       tag_sites) -- re-evaluated against wherever the robot actually is
@@ -153,8 +205,15 @@ def resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites,
       true_position, tag_sites) when no path exists yet (before the
       first plan) or the path is exhausted, so this policy still
       produces a sensible heading at tick 0 instead of None.
+    - "match_travel": next_leg_heading_deg(path, path_idx, fallback),
+      aimed along ONLY the immediate next leg -- path[path_idx] ->
+      path[path_idx + 1] -- the same rule TANK's own robot_heading_deg
+      branch already applies every step, adopted here as a heading a
+      HOLONOMIC drivetrain holds instead of merely turning to match.
+      Identical fallback to "route_dominant" and for the identical
+      reason: no path yet, or the path is exhausted.
 
-    All three policies happen to agree at tick 0 (true_position ==
+    All four policies happen to agree at tick 0 (true_position ==
     actual_start, no path exists yet) -- they only diverge as the match
     actually progresses, which is exactly the property that makes them
     directly comparable rather than accidentally different from the
@@ -170,6 +229,9 @@ def resolve_held_heading_deg(drivetrain, true_position, actual_start, tag_sites,
     if policy == "route_dominant":
         fallback = nearest_tag_heading_deg(true_position, tag_sites)
         return route_dominant_heading_deg(path, path_idx, fallback)
+    if policy == "match_travel":
+        fallback = nearest_tag_heading_deg(true_position, tag_sites)
+        return next_leg_heading_deg(path, path_idx, fallback)
     raise ValueError(f"unknown heading_policy {policy!r} -- must be one of {HEADING_POLICIES}")
 
 
@@ -238,26 +300,31 @@ MECANUM_NEAREST_TAG_CURRENT = Drivetrain(name="mecanum_nearest_tag_current", cos
                                            holonomic=True, heading_policy="nearest_tag_current")
 MECANUM_ROUTE_DOMINANT = Drivetrain(name="mecanum_route_dominant", cost_usd=MECANUM_WHEEL_COST_USD,
                                       holonomic=True, heading_policy="route_dominant")
+MECANUM_MATCH_TRAVEL = Drivetrain(name="mecanum_match_travel", cost_usd=MECANUM_WHEEL_COST_USD,
+                                    holonomic=True, heading_policy="match_travel")
 DRIVETRAINS = {
     "tank": TANK,
     "mecanum": MECANUM,
     "mecanum_nearest_tag_current": MECANUM_NEAREST_TAG_CURRENT,
     "mecanum_route_dominant": MECANUM_ROUTE_DOMINANT,
+    "mecanum_match_travel": MECANUM_MATCH_TRAVEL,
 }
 # The original two-entry axis (ftc/drivetrain_benchmark.py's original
 # study) stays available as DRIVETRAIN_ORDER for any caller that only
 # wants tank-vs-mecanum; MECANUM_HEADING_POLICY_ORDER is the new axis
-# comparing MECANUM's three heading policies against each other and
+# comparing MECANUM's four heading policies against each other and
 # against TANK, used by ftc/drivetrain_benchmark.py's own policy sweep.
 DRIVETRAIN_ORDER = ["tank", "mecanum"]
-MECANUM_HEADING_POLICY_ORDER = ["tank", "mecanum", "mecanum_nearest_tag_current", "mecanum_route_dominant"]
+MECANUM_HEADING_POLICY_ORDER = ["tank", "mecanum", "mecanum_nearest_tag_current", "mecanum_route_dominant",
+                                  "mecanum_match_travel"]
 DRIVETRAIN_LABELS = {
     # "mecanum"'s label stays exactly "Mecanum" (not "Mecanum (fixed at
     # start)") deliberately -- ftc_drivetrain_writeup.md already cites
-    # this exact label text, and the two new variants below are
+    # this exact label text, and the newer variants below are
     # distinguishable from it without changing what's already published.
     "tank": "Tank",
     "mecanum": "Mecanum",
     "mecanum_nearest_tag_current": "Mecanum (re-aim to nearest tag)",
     "mecanum_route_dominant": "Mecanum (aim along route)",
+    "mecanum_match_travel": "Mecanum (match next leg)",
 }

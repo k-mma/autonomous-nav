@@ -1,12 +1,12 @@
 """Shared field-drawing helper for the poster figures that render the
-FTC field (figure5, figure9). Same visual language as
-generate_figure1_ftc_field.py's own draw_field (colors, wall
+FTC field (figure1, figure9). Same visual language as
+generate_figure2_ftc_field.py's own draw_field (colors, wall
 convention, eroded obstacle cells) so every field panel across the
 poster reads as one set rather than as separate drawings.
 
-figure1 keeps its own copy of that drawing code rather than importing
+figure2 keeps its own copy of that drawing code rather than importing
 this: it predates this module and is the only two-panel figure, so
-leaving it alone keeps a working figure working. If figure1 is ever
+leaving it alone keeps a working figure working. If figure2 is ever
 reworked, folding it onto these helpers is the obvious cleanup.
 """
 import math
@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ftc.field import _footprint_corners, eroded_obstacle_cells  # noqa: E402
 
-# Shared with generate_figure1_ftc_field.py -- keep in sync.
+# Shared with generate_figure2_ftc_field.py -- keep in sync.
 FIELD_BG = "#eef0f2"
 CELL_BG = "#b7b9bc"
 GRID_LINE = "#8f9194"

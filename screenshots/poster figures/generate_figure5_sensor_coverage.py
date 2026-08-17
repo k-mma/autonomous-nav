@@ -1,8 +1,8 @@
-"""Regenerates figure7_sensor_coverage.png for the SEED symposium
+"""Regenerates figure5_sensor_coverage.png for the SEED symposium
 poster: the mechanism behind this project's headline NEGATIVE result --
 three distance sensors cover only ~75 degrees of the robot's 360, so
 most of the field around the robot is simply unsensed. This is what
-explains the negative bar in figure2 and the worst point in figure3.
+explains the negative bar in figure3 and the worst point in figure4.
 
 Every number here is read from ftc/config.py, not drawn to taste:
 DISTANCE_SENSOR_COUNT (3), DISTANCE_SENSOR_HALF_ANGLE_DEG (12.5, so a
@@ -12,7 +12,7 @@ figure changes with it.
 
 Regenerate after any change to ftc/config.py's distance-sensor block:
 
-    python3 "screenshots/poster figures/generate_figure7_sensor_coverage.py"
+    python3 "screenshots/poster figures/generate_figure5_sensor_coverage.py"
 """
 import sys
 from pathlib import Path
@@ -32,7 +32,7 @@ from ftc.config import (  # noqa: E402
     DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_RANGE_CELLS,
 )
 
-OUT = OUT_DIR / "figure7_sensor_coverage.png"
+OUT = OUT_DIR / "figure5_sensor_coverage.png"
 
 SENSED = "#3aa17e"
 UNSENSED = "#d8dde2"
