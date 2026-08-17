@@ -121,7 +121,7 @@ def main():
         Patch(facecolor=BUNDLE_FACE, edgecolor=BUNDLE_EDGE, linewidth=1.3,
               label="Best pick: bundle"),
         Patch(facecolor=GENERALIST_FACE, edgecolor=GENERALIST_EDGE, linewidth=1.3,
-              label=f"Generalist bundle (${generalist['cost']:.0f}, from Fig. 4)"),
+              label=f"Generalist bundle (${generalist['cost']:.0f}, from Fig. 5)"),
     ]
 
     for xi, r in zip(x, rows):

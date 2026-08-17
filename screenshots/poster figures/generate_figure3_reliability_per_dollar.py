@@ -48,7 +48,7 @@ SUITE_LABELS = {
     "odometry_pods": "Odometry pods",
     "distance_sensors": "Distance sensors",
     "apriltag": "AprilTag (front camera)",
-    "dual_camera_apriltag": "Rear camera",
+    "dual_camera_apriltag": "Front + rear cameras",
     "full_suite": "Full suite",
     "imu": "IMU",
 }
