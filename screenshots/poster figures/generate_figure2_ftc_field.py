@@ -1,45 +1,39 @@
 """Regenerates figure2_ftc_field.png for the SEED symposium poster's
-Pillar 1: "we simulated the field, and here's how we picked A* to plan
-across it."
+Pillar 1: "here's how we picked A* to plan across the simulated field."
 
-Two panels, built from two different (and independent) pieces of this
-project's real code -- neither panel is a mockup:
+One panel, built from real benchmark data (not a mockup): aggregate
+stats pulled straight from benchmark_results/results.csv, nav/
+benchmark.py's own 20-trial Dijkstra vs A* vs RRT vs RRT* output -- the
+comparison Pillar 1's own poster text cites for why A* was the one
+selected to plan every match in this project.
 
-  Left  -- ftc.field.build_grid("cluttered"), an actual FTC-scale
-           (144in x 144in, 6in cells = 24x24) grid, planned with
-           nav.algorithms.astar, with the robot's footprint drawn via
-           the same rotated-footprint corner math ftc/field.py's
-           footprint_overlaps_cells collision check uses
-           (_footprint_corners), over the *eroded* (real, uninflated)
-           obstacle cells eroded_obstacle_cells() returns.
+This figure used to carry a second, left-hand panel rendering the
+simulated field with the robot mid-route on its A*-planned path. It's
+gone now: Figure 1's two panels (pose error / obstacle error) already
+render that same field, route, and robot -- by the time a reader
+reaches this figure they've seen that visual twice, and the panel
+wasn't earning its half of the canvas. Cutting it hands the whole
+figure to the one thing this panel is actually for -- comparing five
+algorithms -- so labels, bars, and annotations can all run bigger.
+draw_field's old code (grid rendering, footprint math, etc.) still
+lives in poster_common.py / generate_figure1's imports if a field panel
+is ever needed here again.
 
-  Right -- aggregate stats pulled straight from benchmark_results/
-           results.csv, nav/benchmark.py's own 20-trial Dijkstra vs A*
-           vs RRT vs RRT* output -- the comparison Pillar 1's own
-           poster text cites for why A* was the one selected to plan
-           every match in this project.
-
-Regenerate after any change to ftc/field.py, ftc/match.py, or the
-footprint/collision geometry those two share, or after re-running
-nav/benchmark.py:
+Regenerate after re-running nav/benchmark.py or nav/replan_benchmark.py:
 
     python3 "screenshots/poster figures/generate_figure2_ftc_field.py"
 """
 import csv
-import math
 import sys
 from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch, Rectangle
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from ftc.field import _footprint_corners, build_grid, eroded_obstacle_cells
-from nav.algorithms import astar
 from nav.replan_benchmark import verdict
 
 OUT_DIR = Path(__file__).resolve().parent
@@ -48,114 +42,6 @@ REPLAN_CSV = REPO_ROOT / "benchmark_results" / "replan_results.csv"
 # The benchmark grid size closest to this project's 24x24 FTC field --
 # what "at field scale" means in the D* Lite row below.
 REPLAN_FIELD_SIZE = 25
-
-LAYOUT = "cluttered"
-START = (21, 2)
-GOAL = (2, 21)
-# How far along the A*-planned path the robot has driven, as a fraction
-# of the route -- purely illustrative ("mid-route" framing), not tied
-# to any timing model.
-ROBOT_PROGRESS = 0.35
-
-FIELD_BG = "#eef0f2"
-CELL_BG = "#b7b9bc"
-GRID_LINE = "#8f9194"
-OBSTACLE = "#3c4452"
-WALL_BLUE = "#2f5fd0"
-WALL_RED = "#d0332f"
-WALL_BLACK = "#1a1a1a"
-ROBOT_BLUE = "#1f6fd6"
-GOLD = "#e8a33d"
-ROUTE_BLUE = "#2f5fd0"
-GREEN = "#2e8b3d"
-
-
-def heading_deg(prev_cell, next_cell):
-    """atan2(d_row, d_col), in degrees -- the same heading convention
-    every consumer in ftc/ uses (see ftc/field.py's _footprint_corners
-    docstring)."""
-    dr = next_cell[0] - prev_cell[0]
-    dc = next_cell[1] - prev_cell[1]
-    return math.degrees(math.atan2(dr, dc))
-
-
-def draw_field(ax, grid, path, robot_idx):
-    size = grid.size
-    ax.set_facecolor(FIELD_BG)
-    ax.set_xlim(-0.6, size + 0.6)
-    ax.set_ylim(size + 0.6, -0.6)
-    ax.set_aspect("equal")
-    ax.axis("off")
-
-    ax.add_patch(Rectangle((0, 0), size, size, facecolor=CELL_BG, edgecolor="none", zorder=0))
-    for i in range(4, size, 3):
-        ax.axvline(i, color=GRID_LINE, linewidth=1, zorder=1)
-        ax.axhline(i, color=GRID_LINE, linewidth=1, zorder=1)
-
-    # Perimeter walls -- blue (left) / red (right) alliance walls, black
-    # top/bottom, matching FTC field convention.
-    wall_w = 6
-    ax.plot([0, 0], [0, size], color=WALL_BLUE, linewidth=wall_w, solid_capstyle="butt", zorder=5)
-    ax.plot([size, size], [0, size], color=WALL_RED, linewidth=wall_w, solid_capstyle="butt", zorder=5)
-    ax.plot([0, size], [0, 0], color=WALL_BLACK, linewidth=wall_w, solid_capstyle="butt", zorder=5)
-    ax.plot([0, size], [size, size], color=WALL_BLACK, linewidth=wall_w, solid_capstyle="butt", zorder=5)
-
-    # Obstacles -- the REAL (eroded) game-element cells, not the
-    # planner's hard-inflated safety margin.
-    for (r, c) in eroded_obstacle_cells(grid):
-        pad = 0.12
-        ax.add_patch(FancyBboxPatch(
-            (c + pad, r + pad), 1 - 2 * pad, 1 - 2 * pad,
-            boxstyle="round,pad=0,rounding_size=0.08",
-            facecolor=OBSTACLE, edgecolor="none", zorder=2,
-        ))
-
-    # Path: gold = driven so far, bold blue = route remaining.
-    driven = path[:robot_idx + 1]
-    remaining = path[robot_idx:]
-    for segment, color, lw in ((driven, GOLD, 4), (remaining, ROUTE_BLUE, 5)):
-        xs = [c + 0.5 for (r, c) in segment]
-        ys = [r + 0.5 for (r, c) in segment]
-        ax.plot(xs, ys, color=color, linewidth=lw, solid_joinstyle="round",
-                 solid_capstyle="round", zorder=3)
-
-    # Start marker (green square outline).
-    sr, sc = START
-    ax.add_patch(Rectangle((sc + 0.15, sr + 0.15), 0.7, 0.7, facecolor="none",
-                            edgecolor=GREEN, linewidth=3, zorder=4))
-
-    # Goal marker (red square outline + downward flag/arrow glyph).
-    gr, gc = GOAL
-    ax.add_patch(Rectangle((gc + 0.15, gr + 0.15), 0.7, 0.7, facecolor="none",
-                            edgecolor=WALL_RED, linewidth=3, zorder=4))
-    ax.annotate("", xy=(gc + 0.5, gr + 0.75), xytext=(gc + 0.5, gr + 0.25),
-                arrowprops=dict(arrowstyle="-|>", color=WALL_RED, linewidth=2.5), zorder=5)
-
-    # Robot: actual rotated footprint (the same corner math ftc/field.py's
-    # collision check uses), corner dots, and a heading triangle.
-    r_row, r_col = path[robot_idx]
-    prev_idx = max(robot_idx - 1, 0)
-    next_idx = min(robot_idx + 1, len(path) - 1)
-    hdg = heading_deg(path[prev_idx], path[next_idx])
-    corners, fwd_axis, right_axis = _footprint_corners((r_row + 0.5, r_col + 0.5), hdg)
-    poly_xy = [(c, r) for (r, c) in corners]
-    ax.add_patch(plt.Polygon(poly_xy, closed=True, facecolor=ROBOT_BLUE,
-                              edgecolor="white", linewidth=2, zorder=6))
-    for (r, c) in corners:
-        ax.add_patch(plt.Circle((c, r), 0.07, facecolor="black", edgecolor="none", zorder=7))
-    tip = (r_col + 0.5 + 0.55 * fwd_axis[1], r_row + 0.5 + 0.55 * fwd_axis[0])
-    left = (r_col + 0.5 - 0.28 * right_axis[1] - 0.15 * fwd_axis[1],
-             r_row + 0.5 - 0.28 * right_axis[0] - 0.15 * fwd_axis[0])
-    right = (r_col + 0.5 + 0.28 * right_axis[1] - 0.15 * fwd_axis[1],
-              r_row + 0.5 + 0.28 * right_axis[0] - 0.15 * fwd_axis[0])
-    ax.add_patch(plt.Polygon([tip, left, right], closed=True, facecolor="white",
-                              edgecolor="none", zorder=8))
-
-    ax.set_title(
-        f"Simulated FTC field ({int(grid.size * 6)}in × {int(grid.size * 6)}in)\n"
-        "Robot mid-route on its A*-planned path",
-        fontsize=15.5, fontweight="bold", pad=12, loc="left",
-    )
 
 
 def load_benchmark_stats():
@@ -276,58 +162,50 @@ def draw_benchmark(ax, stats):
             # row reads as "measured, but not on this axis" rather than
             # as a missing or zero value. The rule above it marks where
             # the shared planning-time axis stops applying.
-            ax.axhline(y + 0.55, color="#c9ced6", linewidth=1, linestyle=(0, (4, 3)), zorder=1)
-            ax.text(0.062, y, "—", va="center", ha="left", fontsize=17, color=color)
-            ax.text(1.04, y, note, va="center", ha="left", fontsize=10.5,
-                    color="#5b6470", linespacing=1.4, style="italic",
+            ax.axhline(y + 0.55, color="#c9ced6", linewidth=1.4, linestyle=(0, (4, 3)), zorder=1)
+            ax.text(0.062, y, "—", va="center", ha="left", fontsize=26, color=color)
+            ax.text(1.06, y, note, va="center", ha="left", fontsize=15.5,
+                    color="#5b6470", linespacing=1.45, style="italic",
                     transform=ax.get_yaxis_transform())
             continue
         edge = "black" if selected else "none"
-        lw = 2.5 if selected else 0
-        ax.barh(y, t, color=color, edgecolor=edge, linewidth=lw, height=0.55, zorder=3)
-        ax.text(t * 1.15, y, f"{t:.2f} ms", va="center", fontsize=15, fontweight=weight)
-        ax.text(1.04, y, note, va="center", ha="left", fontsize=12.5,
-                fontweight=weight, linespacing=1.3, transform=ax.get_yaxis_transform())
+        lw = 3.5 if selected else 0
+        ax.barh(y, t, color=color, edgecolor=edge, linewidth=lw, height=0.6, zorder=3)
+        ax.text(t * 1.15, y, f"{t:.2f} ms", va="center", fontsize=22, fontweight=weight)
+        ax.text(1.06, y, note, va="center", ha="left", fontsize=18,
+                fontweight=weight, linespacing=1.35, transform=ax.get_yaxis_transform())
     ax.set_yticks(ys)
-    ax.set_yticklabels([a[0] for a in algos], fontsize=16, fontweight="bold")
+    ax.set_yticklabels([a[0] for a in algos], fontsize=23, fontweight="bold")
     for tick, (_, t, color, selected, _) in zip(ax.get_yticklabels(), algos):
         if selected:
             tick.set_color("#2e8b3d")
         elif t is None:
             tick.set_color(color)
-    ax.set_xlabel(f"Planning time (ms, log scale, n={n})", fontsize=12.5)
-    ax.set_title("5 pathfinding algorithms tested", fontsize=17, fontweight="bold", pad=12, loc="left")
+    ax.set_xlabel(f"Planning time (ms, log scale, n={n})", fontsize=18)
+    ax.tick_params(axis="x", labelsize=15)
+    ax.set_title("5 pathfinding algorithms tested — which one plans the route",
+                  fontsize=26, fontweight="bold", pad=16, loc="left")
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.tick_params(left=False)
     ax.grid(axis="x", which="major", color="#dddddd", zorder=0)
 
 
 def main():
-    grid = build_grid(LAYOUT)
-    path, settled, came_from = astar(grid, START, GOAL)
-    if path is None:
-        raise RuntimeError(f"no path from {START} to {GOAL} on layout {LAYOUT!r}")
-    robot_idx = max(1, min(len(path) - 2, round(len(path) * ROBOT_PROGRESS)))
-
     stats = load_benchmark_stats()
 
-    fig = plt.figure(figsize=(20, 9.6), dpi=150)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 0.85], wspace=0.05,
-                            left=0.05, right=0.99, top=0.88, bottom=0.1)
-    ax_field = fig.add_subplot(gs[0, 0])
-    ax_bench = fig.add_subplot(gs[0, 1])
-    # Shrink the bar-chart axes within its gridspec cell so the per-bar
-    # annotation text (placed at axes-fraction x=1.04 in draw_benchmark)
+    fig = plt.figure(figsize=(20, 9.6), dpi=200)
+    # Left margin wide enough for the bold, 23pt y-tick labels (the
+    # longest is "A*  (selected)") -- these used to sit in a narrower
+    # gridspec cell next to a field panel and don't fit flush against
+    # the figure edge at this larger poster-legible size.
+    ax = fig.add_axes([0.145, 0.1, 0.855, 0.8])
+    # Shrink the bar-chart axes within the figure so the per-bar
+    # annotation text (placed at axes-fraction x=1.06 in draw_benchmark)
     # has room to the right of the bars without running off the figure.
-    pos = ax_bench.get_position()
-    ax_bench.set_position([pos.x0, pos.y0, pos.width * 0.6, pos.height])
+    pos = ax.get_position()
+    ax.set_position([pos.x0, pos.y0, pos.width * 0.5, pos.height])
 
-    draw_field(ax_field, grid, path, robot_idx)
-    draw_benchmark(ax_bench, stats)
-
-    fig.text(0.045, 0.03,
-              "start · goal · driven · remaining",
-              fontsize=13, color="#333333")
+    draw_benchmark(ax, stats)
 
     out_path = OUT_DIR / "figure2_ftc_field.png"
     fig.savefig(out_path, facecolor="white")
