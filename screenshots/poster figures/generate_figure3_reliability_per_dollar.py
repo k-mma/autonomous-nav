@@ -41,6 +41,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 OUT_DIR = Path(__file__).resolve().parent
+
+
+def usd(cost):
+    """Whole-dollar display rounding for a cost. Plain round()/f"{:.0f}"
+    both use banker's rounding, which turns a real $94.50 sensor cost
+    into a displayed "$94" -- not wrong, but reads as a typo next to
+    the exact number. This always rounds a .50 case up, matching how
+    a price tag would actually be written."""
+    return int(cost + 0.5)
 RESULTS_CSV = REPO_ROOT / "benchmark_results" / "ftc_suite_results.csv"
 MIN_LEVEL = 0.3
 
@@ -126,7 +135,7 @@ def main():
 
     ax.set_yticks(ys)
     ax.set_yticklabels(
-        [f"{SUITE_LABELS[s]}\n${stats[s]['cost']:.0f} · {stats[s]['success_rate']:.0%} success"
+        [f"{SUITE_LABELS[s]}\n${usd(stats[s]['cost'])} · {stats[s]['success_rate']:.0%} success"
           for s in chartable],
         fontsize=11.5,
     )

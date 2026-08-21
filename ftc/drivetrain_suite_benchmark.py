@@ -54,6 +54,7 @@ import matplotlib.pyplot as plt
 
 from nav.stats import bootstrap_ci
 
+from ftc.config import usd
 from ftc.drivetrain import DRIVETRAIN_LABELS, DRIVETRAIN_ORDER, DRIVETRAINS
 from ftc.field import build_grid, tag_sites_for
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
@@ -131,7 +132,7 @@ def plot_drivetrain_comparison(per_drivetrain, path):
         bars = ax.bar([SUITE_LABELS[s] for s in suites], heights, color=colors)
         for bar, suite in zip(bars, suites):
             marker = " *best*" if suite == best else ""
-            ax.annotate(f"${SUITES[suite].cost_usd:.0f}{marker}", (bar.get_x() + bar.get_width() / 2,
+            ax.annotate(f"${usd(SUITES[suite].cost_usd)}{marker}", (bar.get_x() + bar.get_width() / 2,
                         bar.get_height()), ha="center", va="bottom" if bar.get_height() >= 0 else "top",
                         fontsize=8, rotation=0)
         ax.axhline(0, color="black", linewidth=0.8)
@@ -197,7 +198,7 @@ def write_writeup(per_drivetrain, stats_by_drivetrain, path):
         for suite in sorted(SUITE_ORDER, key=lambda s: -overall[s]):
             cost = SUITES[suite].cost_usd + DRIVETRAINS[drivetrain_name].cost_usd
             per_100_str = "n/a (free)" if suite == "dead_reckoning" else f"{results[suite]['per_100']:+.1f}"
-            lines.append(f"| {SUITE_LABELS[suite]} | ${cost:.0f} | {overall[suite]:.0%} | {per_100_str} |")
+            lines.append(f"| {SUITE_LABELS[suite]} | ${usd(cost)} | {overall[suite]:.0%} | {per_100_str} |")
         lines += ["", f"Best value under {DRIVETRAIN_DISPLAY_LABELS[drivetrain_name]}: {SUITE_LABELS[best]}.", ""]
 
     winners = {d: per_drivetrain[d][2] for d in DRIVETRAIN_ORDER}

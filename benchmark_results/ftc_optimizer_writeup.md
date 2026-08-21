@@ -11,18 +11,18 @@ Two things make this different from `ftc_suite_writeup.md`'s seven-suite compari
 
 | Rank | Robot | Cost | Weighted success | Worst scenario | pp/$100 |
 |---:|---|---:|---:|---:|---:|
-| 1 | odometry pods + front camera | $304.99 | 34% | 0% | +6.8 |
-| 2 | odometry pods + IMU + front camera | $304.99 | 34% | 0% | +6.8 |
-| 3 | odometry pods + front camera + rear camera | $329.99 | 34% | 0% | +6.3 |
-| 4 | odometry pods + IMU + front camera + rear camera | $329.99 | 34% | 0% | +6.3 |
-| 5 | odometry pods | $279.99 | 26% | 0% | +4.3 |
-| 6 | odometry pods + IMU | $279.99 | 26% | 0% | +4.3 |
-| 7 | odometry pods + front camera + 3 ToF sensors | $399.49 | 20% | 0% | +1.6 |
-| 8 | odometry pods + IMU + front camera + 3 ToF sensors | $399.49 | 20% | 0% | +1.6 |
-| 9 | odometry pods + front camera + rear camera + 3 ToF sensors | $424.49 | 20% | 0% | +1.5 |
+| 1 | odometry pods + front camera | $219.85 | 34% | 0% | +9.5 |
+| 2 | odometry pods + IMU + front camera | $219.85 | 34% | 0% | +9.5 |
+| 3 | odometry pods + front camera + rear camera | $244.85 | 34% | 0% | +8.5 |
+| 4 | odometry pods + IMU + front camera + rear camera | $244.85 | 34% | 0% | +8.5 |
+| 5 | odometry pods | $194.85 | 26% | 0% | +6.2 |
+| 6 | odometry pods + IMU | $194.85 | 26% | 0% | +6.2 |
+| 7 | odometry pods + front camera + 3 ToF sensors | $314.35 | 20% | 0% | +2.0 |
+| 8 | odometry pods + IMU + front camera + 3 ToF sensors | $314.35 | 20% | 0% | +2.0 |
+| 9 | odometry pods + front camera + rear camera + 3 ToF sensors | $339.35 | 20% | 0% | +1.9 |
 | 10 | front camera | $25.00 | 17% | 0% | +12.8 |
 
-Best average: odometry pods + front camera ($304.99, 34%). Most robust -- highest success rate on its OWN WORST scenario, the right objective if you can't predict your division: encoders only ($0.00, 0% worst-case vs. 0% for the best-average robot). Those worst-case rates are the same, so no robustness is being given up by taking the best-average robot here -- the two objectives happen to agree on worst-case performance, but still name different robots at different prices: $0.00 vs. $304.99 for +21% average success, which is the real choice on offer.
+Best average: odometry pods + front camera ($219.85, 34%). Most robust -- highest success rate on its OWN WORST scenario, the right objective if you can't predict your division: encoders only ($0.00, 0% worst-case vs. 0% for the best-average robot). Those worst-case rates are the same, so no robustness is being given up by taking the best-average robot here -- the two objectives happen to agree on worst-case performance, but still name different robots at different prices: $0.00 vs. $219.85 for +21% average success, which is the real choice on offer.
 
 ## Does bundling actually beat buying one sensor?
 
@@ -53,8 +53,8 @@ Every robot NOT on this list is one you should never buy -- something else is bo
 |---|---:|---:|---:|---:|
 | encoders only | $0.00 | 14% | 0% | 0 |
 | front camera | $25.00 | 17% | 0% | 1 |
-| odometry pods | $279.99 | 26% | 0% | 1 |
-| odometry pods + front camera | $304.99 | 34% | 0% | 2 |
+| odometry pods | $194.85 | 26% | 0% | 1 |
+| odometry pods + front camera | $219.85 | 34% | 0% | 2 |
 
 ### Best robot at each budget
 
@@ -62,10 +62,10 @@ Every robot NOT on this list is one you should never buy -- something else is bo
 |---:|---|---:|---:|---:|
 | $50 | front camera | $25.00 | $25.00 | 17% |
 | $150 | front camera | $25.00 | $125.00 | 17% |
-| $300 | odometry pods | $279.99 | $20.01 | 26% |
-| $500 | odometry pods + front camera | $304.99 | $195.01 | 34% |
+| $300 | odometry pods + front camera | $219.85 | $80.15 | 34% |
+| $500 | odometry pods + front camera | $219.85 | $280.15 | 34% |
 
-Note the unspent columns: at $50 and $150, the best available robot is still front camera at $25.00. Nothing purchasable in between improves on it -- the next rung of the frontier is out of reach, and the intermediate options are worse buys than something cheaper. A team at those budgets should bank the difference (or spend it on drivetrain/gearing, which ftc/drivetrain_benchmark.py and ftc/gearing_benchmark.py price separately) rather than stretch to a mid-priced sensor.
+Note the unspent columns: at $50, $150 and $500, the best available robot is still front camera at $25.00. Nothing purchasable in between improves on it -- the next rung of the frontier is out of reach, and the intermediate options are worse buys than something cheaper. A team at those budgets should bank the difference (or spend it on drivetrain/gearing, which ftc/drivetrain_benchmark.py and ftc/gearing_benchmark.py price separately) rather than stretch to a mid-priced sensor.
 
 ## Different scenarios, different answers
 
@@ -74,10 +74,10 @@ The single strongest argument against a one-number ranking: the winning robot ch
 | Scenario | Best robot | Its success rate | Cost |
 |---|---|---:|---:|
 | Heavy pose drift | front camera + 3 ToF sensors | 4% | $119.50 |
-| Field doesn't match the map | odometry pods | 68% | $279.99 |
-| Opponent parks in the route | odometry pods | 36% | $279.99 |
+| Field doesn't match the map | odometry pods | 68% | $194.85 |
+| Opponent parks in the route | odometry pods | 36% | $194.85 |
 | Everything at once (realistic fidelity) | encoders only | 8% | $0.00 |
-| Tight corridor, mixed deviation | odometry pods + front camera | 60% | $304.99 |
+| Tight corridor, mixed deviation | odometry pods + front camera | 60% | $219.85 |
 
 4 different robots win at least one scenario out of 5. A team that knows its own dominant failure mode -- which is exactly what ftc/calibration.py's measured field/odometry CSVs are for -- can buy a cheaper robot than the overall ranking suggests and do better in the matches it actually plays.
 
@@ -87,15 +87,15 @@ Greedy forward selection (start from the best single sensor, keep adding whichev
 
 | Step | Added | Robot after adding | Cost | Weighted success | Marginal gain | 95% CI (paired) | p | Significant |
 |---:|---|---|---:|---:|---:|---|---:|---|
-| 1 | (best single, the starting point) | odometry pods | $279.99 | 26% | -- | -- | -- | -- |
-| 2 | AprilTag (front camera) | odometry pods + front camera | $304.99 | 34% | +8.8% | [+4.0%, +14.4%] | 0.000 | yes |
+| 1 | (best single, the starting point) | odometry pods | $194.85 | 26% | -- | -- | -- | -- |
+| 2 | AprilTag (front camera) | odometry pods + front camera | $219.85 | 34% | +8.8% | [+4.0%, +14.4%] | 0.000 | yes |
 
 Greedy lands on the same robot as exhaustive search (odometry pods + front camera), so for this catalog the cheap search is sufficient -- worth knowing for anyone extending the parts list past the point where 2^N enumeration is affordable.
 
 
 ## Honest findings
 
-- The best single suite (Odometry pods = odometry pods, $279.99) reaches 26% against the best bundle's 34% at $304.99. Bundling buys +9% for $+25.00 -- read the per-dollar column before reading that as an endorsement.
+- The best single suite (Odometry pods = odometry pods, $194.85) reaches 26% against the best bundle's 34% at $219.85. Bundling buys +9% for $+25.00 -- read the per-dollar column before reading that as an endorsement.
 - Success rates here are lower across the board than `ftc_suite_writeup.md`'s, and that is expected, not a discrepancy: these profiles combine deviation axes and include a realistic-fidelity one, where the headline sweep isolates a single axis at the optimistic tier. The two studies' per-axis numbers agree where they overlap.
 - Every dollar figure here is hardware only. A bundle's `parts` count is the closest this project gets to pricing integration effort, and it is not a dollar figure: a 5-part robot is five wiring harnesses, five failure modes, and five things to debug at 1am before a competition. ImuSuite costs $0 and is not free.
 - The composition model is exact where it can be checked and approximate where it can't. A bundle reproduces the suites it's built from tick-for-tick (`ftc/scratch/bundle_test.py` fails otherwise, including the three-component bundle that must equal FullSuite), but combining two pose-fixing suites uses the union of their camera mounts on one detection pipeline rather than modeling two independent pipelines that could disagree with each other. Sensor FUSION conflict -- two sensors reporting different poses -- is not modeled at all here.

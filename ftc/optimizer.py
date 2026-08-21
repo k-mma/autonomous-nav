@@ -135,7 +135,9 @@ class ScenarioProfile:
 # costs a full set of trials and separates nothing -- the first draft
 # of this list ran the combined profiles at variance_level 0.5 with
 # every axis at 1.0 and scored 0% for every candidate including the
-# $399 one, which is a measurement of the profile, not of the robots.
+# $314 one (the full suite -- $399 before odometry pods' price was
+# corrected, see README.md), which is a measurement of the profile,
+# not of the robots.
 DEFAULT_PROFILES = [
     ScenarioProfile("pose_drift", "Heavy pose drift", variance_level=0.5, start_drift_scale=1.0),
     ScenarioProfile("map_error", "Field doesn't match the map", variance_level=0.5, obstacle_drift_scale=1.0),

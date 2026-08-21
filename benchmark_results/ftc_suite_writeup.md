@@ -8,15 +8,15 @@ Overall success rate, variance_level >= 0.3 across all three deviation types (ex
 
 | Suite | Cost | Overall success rate |
 |---|---:|---:|
-| Odometry pods | $280 | 30% |
+| Odometry pods | $195 | 30% |
 | AprilTag (front camera) | $25 | 18% |
 | Rear camera | $50 | 18% |
-| Full suite | $399 | 16% |
+| Full suite | $314 | 16% |
 | Dead reckoning | $0 | 14% |
 | IMU | $0 | 14% |
-| Distance sensors | $94 | 10% |
+| Distance sensors | $95 | 10% |
 
-Odometry pods has the highest overall success rate (30%) at $280. See `ftc_reliability_per_dollar.png` and the value section below for whether that's actually the best *spend*, not just the best raw number.
+Odometry pods has the highest overall success rate (30%) at $195. See `ftc_reliability_per_dollar.png` and the value section below for whether that's actually the best *spend*, not just the best raw number.
 
 ## Which deviation type dominates real failure
 
@@ -38,12 +38,12 @@ With no sensing at all (DeadReckoningSuite, the baseline every FTC team already 
 
 - AprilTag (front camera) ($25): +4% success rate over the free baseline -- +16.0pp/$100.
 - Rear camera ($50): +4% success rate over the free baseline -- +8.0pp/$100.
-- Odometry pods ($280): +15% success rate over the free baseline -- +5.4pp/$100.
-- Full suite ($399): +2% success rate over the free baseline -- +0.4pp/$100.
-- Distance sensors ($94): -4% success rate over the free baseline -- -4.2pp/$100.
+- Odometry pods ($195): +15% success rate over the free baseline -- +7.8pp/$100.
+- Full suite ($314): +2% success rate over the free baseline -- +0.5pp/$100.
+- Distance sensors ($95): -4% success rate over the free baseline -- -4.2pp/$100.
 - IMU ($0): +0% success rate over the free baseline -- undefined (cost_usd == 0).
 
-AprilTag (front camera) is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+0.4pp/$100) is lower than AprilTag (front camera)'s: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
+AprilTag (front camera) is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+0.5pp/$100) is lower than AprilTag (front camera)'s: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
 
 IMU gained +0% success rate over dead reckoning for $0 -- a real gain (or loss) with no dollar figure to divide it by (every REV Control Hub already ships one; the only real cost is the integration effort of reading and fusing it, ftc/sensors.py's ImuSuite, which this project's dollar-based cost model has no way to price). "Is the free hardware worth the code" has to be answered by the gain itself, not a per-dollar ranking.
 

@@ -17,10 +17,10 @@ The camera-FOV mechanism is still visible underneath that, though: the tank-vs-m
 
 | Drivetrain | Fidelity | Best value | pp/$100 |
 |---|---|---|---:|
-| Tank | optimistic | AprilTag (front camera) | +6.8 |
-| Tank | realistic | Odometry pods | +5.6 |
-| Mecanum | optimistic | Odometry pods | +2.7 |
-| Mecanum | realistic | Odometry pods | +3.0 |
+| Tank | optimistic | Odometry pods | +7.1 |
+| Tank | realistic | Odometry pods | +7.6 |
+| Mecanum | optimistic | Odometry pods | +3.4 |
+| Mecanum | realistic | Odometry pods | +3.7 |
 
 ## Does mecanum's own premium get repaid?
 

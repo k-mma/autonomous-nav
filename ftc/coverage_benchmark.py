@@ -55,7 +55,7 @@ import matplotlib.pyplot as plt
 from nav.field_variance import generate_ground_truth
 from nav.stats import bootstrap_ci
 
-from ftc.config import DISTANCE_SENSOR_COUNTS_SWEPT, DISTANCE_SENSOR_HALF_ANGLE_DEG
+from ftc.config import DISTANCE_SENSOR_COUNTS_SWEPT, DISTANCE_SENSOR_HALF_ANGLE_DEG, usd
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
 from ftc.sensors import make_distance_sensor_suite
@@ -197,7 +197,7 @@ def write_writeup(stats, path):
     for config_name in CONFIG_ORDER:
         s = stats[config_name]
         lines.append(
-            f"| {CONFIG_LABELS[config_name]} | {s['coverage_deg']:.0f} deg | ${s['cost']:.0f} | "
+            f"| {CONFIG_LABELS[config_name]} | {s['coverage_deg']:.0f} deg | ${usd(s['cost'])} | "
             f"{s['collision_rate']:.0%} | {s['zero_dev_collision_rate']:.0%} | {s['rate']:.0%} |"
         )
 
@@ -283,5 +283,5 @@ if __name__ == "__main__":
     print(f"Writeup saved to {OUTPUT_DIR / 'ftc_coverage_writeup.md'}\n")
     for config_name in CONFIG_ORDER:
         s = stats[config_name]
-        print(f"{config_name}: coverage={s['coverage_deg']:.0f}deg cost=${s['cost']:.0f} "
+        print(f"{config_name}: coverage={s['coverage_deg']:.0f}deg cost=${usd(s['cost'])} "
               f"zero_dev_collision_rate={s['zero_dev_collision_rate']:.0%} overall_rate={s['rate']:.0%}")

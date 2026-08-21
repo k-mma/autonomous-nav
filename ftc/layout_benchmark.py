@@ -46,6 +46,7 @@ import matplotlib.pyplot as plt
 
 from nav.stats import bootstrap_ci
 
+from ftc.config import usd
 from ftc.field import LAYOUTS, build_grid, tag_sites_for
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
 from ftc.suite_benchmark import (
@@ -143,7 +144,7 @@ def plot_layout_comparison(per_layout, path):
         bars = ax.bar([SUITE_LABELS[s] for s in suites], heights, color=colors)
         for bar, suite in zip(bars, suites):
             marker = " *best*" if suite == best else ""
-            ax.annotate(f"${SUITES[suite].cost_usd:.0f}{marker}", (bar.get_x() + bar.get_width() / 2,
+            ax.annotate(f"${usd(SUITES[suite].cost_usd)}{marker}", (bar.get_x() + bar.get_width() / 2,
                         bar.get_height()), ha="center", va="bottom" if bar.get_height() >= 0 else "top",
                         fontsize=8, rotation=0)
         ax.axhline(0, color="black", linewidth=0.8)
@@ -191,7 +192,7 @@ def write_writeup(per_layout, stats_by_layout, path):
                 per_100_str = "undefined (cost_usd == 0)"
             else:
                 per_100_str = f"{results[suite]['per_100']:+.1f}"
-            lines.append(f"| {SUITE_LABELS[suite]} | ${cost:.0f} | {overall[suite]:.0%} | {per_100_str} |")
+            lines.append(f"| {SUITE_LABELS[suite]} | ${usd(cost)} | {overall[suite]:.0%} | {per_100_str} |")
         lines += ["", f"Best value on this layout: {SUITE_LABELS[best]}.", ""]
 
     winners = {layout: per_layout[layout][2] for layout in LAYOUT_ORDER}

@@ -2208,12 +2208,17 @@ removed.
 
 Three results I didn't expect:
 
-- **Big gaps in the frontier, at every step.** The best robot at a $50
-  budget and a $150 budget is the same $25 front camera; the next rung
-  (odometry pods, $280) is out of reach until a $300 budget, and the
-  final rung on the frontier (odometry pods + front camera, $305, 34%)
-  only becomes affordable at a $500 budget. Every dollar in between
-  buys nothing better than the cheaper option already sitting there.
+- **The frontier gap shrank once the odometry-pod price was fixed.**
+  The best robot at a $50 budget and a $150 budget is still the same
+  $25 front camera -- nothing between $25 and $195 beats it. But under
+  the old ($280/$305) pricing, the top-of-frontier bundle needed a $500
+  budget to reach; under the corrected ($195/$220) pricing it's
+  affordable at $300 with $80 to spare (`ftc_optimizer_writeup.md`'s
+  "Best robot at each budget"). There's no longer a budget tier where
+  odometry pods alone, rather than the full bundle, is the right call.
+  CORRECTION: odometry pods used to be priced at goBILDA's $279.99
+  2-pod-plus-Pinpoint-computer bundle; see README.md's "FTC
+  sensor-suite study: results" for why that was wrong.
 - **The best-average robot and the most-robust robot keep
   almost-but-not-quite coinciding, for a different reason each time.**
   Optimizing the mean across scenarios and optimizing the *worst*
@@ -2235,7 +2240,7 @@ Three results I didn't expect:
   robust one tied on an 8% worst case. Fixing the newer rotated-
   footprint-collision gap (same section) moved the ground once more:
   the best-average robot is now the cheaper odometry pods + front
-  camera ($305, 34%, no rear camera needed to lead the ranking anymore),
+  camera ($220, 34%, no rear camera needed to lead the ranking anymore),
   and the most-robust is the free baseline itself (encoders only, $0)
   -- both tied at a 0% worst case, since nearly every robot in this
   catalog now has SOME scenario it fails completely. Same lesson, yet
@@ -2246,7 +2251,7 @@ Three results I didn't expect:
 - **Greedy search happens to be enough here, and its one step is the
   whole story.** Forward selection lands on the same robot as
   exhaustive enumeration (odometry pods + front camera): starting from
-  odometry pods alone (26%, $280), its one addition -- AprilTag (front
+  odometry pods alone (26%, $195), its one addition -- AprilTag (front
   camera) -- is itself statistically significant (+8.8%, 95% CI [+4.0%,
   +14.4%], p<0.001), and nothing further improves on it. "Stop when the
   mean stops going up" and `--require-significant` agree here without

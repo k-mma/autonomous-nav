@@ -8,21 +8,21 @@ Overall success rate, variance_level >= 0.3 across all three deviation types:
 
 | Suite | Cost | Optimistic | Realistic | Pessimistic |
 |---|---:|---:|---:|---:|
-| Odometry pods | $280 | 30% | 30% | 30% |
+| Odometry pods | $195 | 30% | 30% | 30% |
 | AprilTag (front camera) | $25 | 18% | 12% | 13% |
 | Rear camera | $50 | 18% | 15% | 14% |
-| Full suite | $399 | 16% | 16% | 15% |
+| Full suite | $314 | 16% | 16% | 15% |
 | Dead reckoning | $0 | 14% | 12% | 13% |
 | IMU | $0 | 14% | 14% | 14% |
-| Distance sensors | $94 | 10% | 10% | 9% |
+| Distance sensors | $95 | 10% | 10% | 9% |
 
 ## Best-value suite at each tier (success-rate gain over dead reckoning, per $100)
 
 | Tier | Best value | pp/$100 | Full suite's pp/$100 |
 |---|---|---:|---:|
-| optimistic | AprilTag (front camera) | +16.0 | +0.4 |
-| realistic | Odometry pods | +6.1 | +0.8 |
-| pessimistic | Odometry pods | +5.8 | +0.5 |
+| optimistic | AprilTag (front camera) | +16.0 | +0.5 |
+| realistic | Odometry pods | +8.8 | +1.1 |
+| pessimistic | Odometry pods | +8.4 | +0.7 |
 
 ## Does the best-value recommendation survive tightening the model?
 

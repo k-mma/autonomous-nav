@@ -53,7 +53,7 @@ from nav.algorithms import astar
 from nav.field_variance import generate_ground_truth
 from nav.stats import bootstrap_ci
 
-from ftc.config import DISTANCE_SENSOR_COUNT, DISTANCE_SENSOR_HALF_ANGLE_DEG
+from ftc.config import DISTANCE_SENSOR_COUNT, DISTANCE_SENSOR_HALF_ANGLE_DEG, usd
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
@@ -321,7 +321,7 @@ def plot_reliability_per_dollar(stats, path):
     colors = [SUITE_COLORS[s] for s in suites]
     bars = ax.bar([SUITE_LABELS[s] for s in suites], gains_per_100, color=colors)
     for bar, suite in zip(bars, suites):
-        ax.annotate(f"${SUITES[suite].cost_usd:.0f}", (bar.get_x() + bar.get_width() / 2, bar.get_height()),
+        ax.annotate(f"${usd(SUITES[suite].cost_usd)}", (bar.get_x() + bar.get_width() / 2, bar.get_height()),
                      ha="center", va="bottom" if bar.get_height() >= 0 else "top", fontsize=9)
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_ylabel("Success-rate gain over DeadReckoningSuite\nper $100 spent (percentage points / $100)")
@@ -366,13 +366,13 @@ def write_writeup(stats, rows, path):
     ]
     overall = {s: overall_success_rate(stats, s) for s in SUITE_ORDER}
     for suite in sorted(SUITE_ORDER, key=lambda s: -overall[s]):
-        lines.append(f"| {SUITE_LABELS[suite]} | ${SUITES[suite].cost_usd:.0f} | {overall[suite]:.0%} |")
+        lines.append(f"| {SUITE_LABELS[suite]} | ${usd(SUITES[suite].cost_usd)} | {overall[suite]:.0%} |")
 
     best_suite = max(SUITE_ORDER, key=lambda s: overall[s])
     lines += [
         "",
         f"{SUITE_LABELS[best_suite]} has the highest overall success rate "
-        f"({overall[best_suite]:.0%}) at ${SUITES[best_suite].cost_usd:.0f}. See "
+        f"({overall[best_suite]:.0%}) at ${usd(SUITES[best_suite].cost_usd)}. See "
         "`ftc_reliability_per_dollar.png` and the value section below for whether that's actually "
         "the best *spend*, not just the best raw number.",
         "",
@@ -444,7 +444,7 @@ def write_writeup(stats, rows, path):
     for suite, cost, gain, per_100 in sorted(value_lines, key=lambda x: (x[3] is not None, x[3] or 0.0),
                                               reverse=True):
         per_100_str = f"{per_100:+.1f}pp/$100" if per_100 is not None else "undefined (cost_usd == 0)"
-        lines.append(f"- {SUITE_LABELS[suite]} (${cost:.0f}): {gain:+.0%} success rate over the free "
+        lines.append(f"- {SUITE_LABELS[suite]} (${usd(cost)}): {gain:+.0%} success rate over the free "
                        f"baseline -- {per_100_str}.")
 
     priced_value_lines = [v for v in value_lines if v[3] is not None]
@@ -586,7 +586,7 @@ if __name__ == "__main__":
     print(f"Writeup saved to {OUTPUT_DIR / 'ftc_suite_writeup.md'}")
     for suite in SUITE_ORDER:
         rate = overall_success_rate(stats, suite)
-        print(f"\n{SUITE_LABELS[suite]} (${SUITES[suite].cost_usd:.0f}): overall success rate {rate:.0%}")
+        print(f"\n{SUITE_LABELS[suite]} (${usd(SUITES[suite].cost_usd)}): overall success rate {rate:.0%}")
         for deviation_type in DEVIATION_TYPE_ORDER:
             worst_rate = sum(stats[(suite, deviation_type, l)]["success_rate"] for l in VARIANCE_LEVELS
                               if l >= 0.5) / len([l for l in VARIANCE_LEVELS if l >= 0.5])

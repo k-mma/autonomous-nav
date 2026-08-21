@@ -7,18 +7,18 @@
 | Suite | Cost | Static | Moving | Difference |
 |---|---:|---:|---:|---:|
 | Dead reckoning | $0 | 6% | 25% | +18% |
-| Odometry pods | $280 | 20% | 51% | +31% |
-| Distance sensors | $94 | 16% | 6% | -10% |
+| Odometry pods | $195 | 20% | 51% | +31% |
+| Distance sensors | $95 | 16% | 6% | -10% |
 | AprilTag (front camera) | $25 | 8% | 32% | +24% |
 | IMU | $0 | 6% | 24% | +18% |
 | Rear camera | $50 | 8% | 31% | +24% |
-| Full suite | $399 | 30% | 24% | -5% |
+| Full suite | $314 | 30% | 24% | -5% |
 
 ## Best value by blocker type
 
 Static: Distance sensors (+10.1pp/$100, baseline 6%). Moving: AprilTag (front camera) (+26.0pp/$100, baseline 25%).
 
-A moving opponent appears to change which suite wins, but not cleanly: Distance sensors is best against a static blocker, and AprilTag (front camera) edges out Rear camera for best value against a moving one -- but 26.0pp/$100 vs. 12.0pp/$100 is close enough that the two suites' success-rate confidence intervals still overlap at this trial count. Treat "AprilTag (front camera) beats Rear camera against a moving opponent" as plausible, not confirmed -- but the headline claim that follows doesn't depend on that particular margin: neither of them is Full suite, and that gap (Distance sensors's static win) is not close.
+A moving opponent changes which suite wins: Distance sensors is best against a static blocker, but AprilTag (front camera) is best against a moving one. This is a real finding, not a failure of the sweep -- the existing static-blocker deviation type was, in this specific respect, silently favoring whichever suite handles a fixed obstacle best, not whichever suite handles a genuinely unpredictable opponent best.
 
 ## Why do suites that never sense the blocker at all also do better against a moving one?
 

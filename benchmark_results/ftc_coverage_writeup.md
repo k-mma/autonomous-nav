@@ -6,7 +6,7 @@
 
 | Config | Coverage | Cost | Collision rate (all levels) | Collision rate at variance_level=0.0 | Overall success rate |
 |---|---:|---:|---:|---:|---:|
-| 3 distance sensors | 75 deg | $94 | 74% | 87% | 14% |
+| 3 distance sensors | 75 deg | $95 | 74% | 87% | 14% |
 | 4 distance sensors | 100 deg | $126 | 74% | 87% | 14% |
 | 6 distance sensors | 150 deg | $189 | 73% | 82% | 16% |
 | 8 distance sensors | 200 deg | $252 | 71% | 80% | 16% |

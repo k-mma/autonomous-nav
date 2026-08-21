@@ -8,10 +8,10 @@ what level of field/reality deviation does each one become necessary?
 
 ![Sensor suite success rate vs. deviation, one row per deviation type, with 95% bootstrap CI bands](benchmark_results/ftc_suite_comparison.png)
 
-The finding: Odometry pods (~$280) has the highest raw success rate --
-FullSuite (distance sensors + AprilTag + odometry, ~$400) isn't even
+The finding: Odometry pods (~$195) has the highest raw success rate --
+FullSuite (distance sensors + AprilTag + odometry, ~$315) isn't even
 the runner-up anymore -- but AprilTag alone (~$25, a single Logitech
-C270) delivers over 40 times FullSuite's success-rate gain per dollar
+C270) delivers 32 times FullSuite's success-rate gain per dollar
 spent over the free dead-reckoning baseline -- and the most useful
 result is negative: DistanceSensorSuite collides in the large majority
 of its trials (77%) even
@@ -503,13 +503,13 @@ chart, in `benchmark_results/ftc_suite_writeup.md`,
 
 | Suite | Cost | Overall success rate (variance_level >= 0.3) |
 |---|---:|---:|
-| Odometry pods | $280 | 30% |
+| Odometry pods | $195 | 30% |
 | AprilTag (front camera) | $25 | 18% |
 | Rear camera | $50 | 18% |
-| Full suite | $399 | 16% |
+| Full suite | $314 | 16% |
 | Dead reckoning (baseline) | $0 | 14% |
 | IMU | $0 | 14% |
-| Distance sensors | $94 | 10% |
+| Distance sensors | $95 | 10% |
 
 IMU and Rear camera were promoted into this headline table from
 Priority-3/4 side studies that used to be the only place they were
@@ -524,13 +524,23 @@ separate measurably from their single-sensor baseline at the
 `realistic`/`pessimistic` tiers -- see "Model fidelity" below.
 
 Every cost above is a real, currently-listed vendor price, not a
-ballpark placeholder -- REV Robotics, goBILDA, and Logitech street
+ballpark placeholder -- REV Robotics, Optii, and Logitech street
 prices as of this writing; see `ftc/config.py`'s per-constant source
 comments for the exact product each figure comes from (e.g. AprilTag's
 $25 is a single Logitech C270, the webcam FTC's own vision docs call
-the workhorse of the program; Odometry pods' $280 is goBILDA's real
-2-pod-plus-Pinpoint-computer bundle, not a single pod; IMU's $0 is the
-integrated Bosch IMU every REV Control Hub already ships with).
+the workhorse of the program; Odometry pods' $195 is three Optii
+Odometry V2 pods at $64.95 each, wired straight into a REV hub's
+encoder ports with no separate fusion computer needed, per Optii's own
+wiring docs; IMU's $0 is the integrated Bosch IMU every REV Control
+Hub already ships with).
+
+CORRECTION: this used to price odometry pods at goBILDA's $279.99
+2-pod-plus-Pinpoint-computer bundle, on the assumption that dead-wheel
+odometry needs a separate fusion computer to read. It doesn't -- Optii's
+wiring docs confirm their pods plug directly into a hub encoder port,
+and goBILDA's own pods are readable the same way. Fixing it changes
+this project's own reliability-per-dollar headline; see the table
+above and `benchmark_results/ftc_suite_writeup.md`.
 
 (AprilTag's correction model accounts for range- and viewing-angle-
 dependent degradation, not a flat correction whenever a tag is merely
@@ -648,9 +658,9 @@ dominant source of variance here, and pairing removes it.
 
 | Question | Answer from the sweep |
 |---|---:|
-| Best average across scenarios | odometry pods + front camera ($305, 34%) |
+| Best average across scenarios | odometry pods + front camera ($220, 34%) |
 | Best worst-case (minimax) | encoders only ($0, 0% worst case) |
-| Best robot under $300 | odometry pods ($280, 26%) |
+| Best robot under $200 | odometry pods ($195, 26%) |
 | Cheapest *significant* upgrade over one sensor | + AprilTag (front camera) over odometry pods (+8.8%, 95% CI [+4.0%, +14.4%]) |
 
 Best-average and most-robust are different robots at different price
@@ -658,7 +668,7 @@ points (an earlier version of this table, before lidar was removed as
 a candidate component -- see "Threats to validity" -- reported odometry
 pods + IMU + 2 cameras + lidar as the $430 best average and a
 $100-cheaper 2-camera bundle as the more robust pick). The current
-best-average robot -- odometry pods + front camera ($305, 34%) -- has a
+best-average robot -- odometry pods + front camera ($220, 34%) -- has a
 0% worst-case success rate; the free baseline (encoders only) ties that
 exact worst-case number. Money above $0 buys average-case performance
 here, not worst-case robustness -- no robustness is being given up by
@@ -674,16 +684,18 @@ Three findings worth stating plainly:
   component lacked. Two sensors that fix the same failure mode largely
   don't stack -- the second is correcting an error the first already
   removed. Buy across failure modes, not the two best sensors.
-- **Big gaps in the frontier, at every step.** The best robot at a $50
-  budget and a $150 budget is the same $25 front camera; the next rung
-  (odometry pods, $280) is out of reach until a $300 budget, and the
-  final rung on the frontier (odometry pods + front camera, $305, 34%)
-  only becomes affordable at a $500 budget. Every dollar in between
-  buys nothing better than the cheaper option already sitting there.
+- **The frontier gap shrank once the odometry-pod price was fixed.**
+  The best robot at a $50 budget and a $150 budget is still the same
+  $25 front camera -- nothing between $25 and $195 beats it. But under
+  the old ($280/$305) pricing, the top-of-frontier bundle needed a $500
+  budget to reach; under the corrected ($195/$220) pricing it's
+  affordable at $300 with $80 to spare (see `ftc_optimizer_writeup.md`'s
+  "Best robot at each budget"). There's no longer a budget tier where odometry pods
+  alone, rather than the full bundle, is the right call.
 - **Greedy "buy the best thing, then the next best thing" reasoning
   happens to work here.** Forward selection lands on the same robot as
   exhaustive search (odometry pods + front camera): starting from
-  odometry pods alone (26%, $280), its one addition -- AprilTag (front
+  odometry pods alone (26%, $195), its one addition -- AprilTag (front
   camera) -- is itself statistically significant (+8.8%, 95% CI [+4.0%,
   +14.4%], p<0.001), and the search finds nothing further worth adding,
   landing on the actual optimum for this catalog in a single step.

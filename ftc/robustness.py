@@ -63,6 +63,7 @@ import ftc.sensors as sensors_module
 from ftc.config import (
     DEAD_RECKONING_DRIFT_PER_CELL, ODOMETRY_DRIFT_PER_CELL,
     APRILTAG_CORRECTION_FACTOR_MAX, APRILTAG_RANGE_DEGRADATION, APRILTAG_ANGLE_DEGRADATION,
+    usd,
 )
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
@@ -392,9 +393,9 @@ def write_writeup(all_points, tipping_points, path):
     lines = [
         "# Robustness: how wrong would the estimated constants have to be?",
         "",
-        f"The headline finding (`ftc_suite_writeup.md`) is that AprilTag (${apriltag_cost:.0f}) is the "
+        f"The headline finding (`ftc_suite_writeup.md`) is that AprilTag (${usd(apriltag_cost)}) is the "
         f"best-value sensor suite by success-rate-gained-per-dollar, well ahead of FullSuite's "
-        f"(${full_suite_cost:.0f}) return. That rests on estimated constants in ftc/config.py -- "
+        f"(${usd(full_suite_cost)}) return. That rests on estimated constants in ftc/config.py -- "
         "documented ballpark engineering figures, not measurements. This sweeps each one from 0.25x to "
         "4x its estimated value and asks one question: does the best-value suite actually "
         f"change? {ROBUSTNESS_TRIALS} trials/point at levels {ROBUSTNESS_LEVELS} (reduced "

@@ -24,15 +24,15 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 14%
 
 | Suite | Cost (incl. drivetrain) | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Odometry pods | $320 | 30% | +4.7 |
+| Odometry pods | $235 | 30% | +6.5 |
 | AprilTag (front camera) | $65 | 18% | +6.2 |
 | Rear camera | $90 | 18% | +4.4 |
-| Full suite | $439 | 16% | +0.4 |
+| Full suite | $354 | 16% | +0.5 |
 | Dead reckoning | $40 | 14% | n/a (free) |
 | IMU | $40 | 14% | +0.0 |
 | Distance sensors | $134 | 10% | -3.0 |
 
-Best value under Tank (headline default): AprilTag (front camera).
+Best value under Tank (headline default): Odometry pods.
 
 ### Mecanum
 
@@ -40,8 +40,8 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 3%
 
 | Suite | Cost (incl. drivetrain) | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Odometry pods | $450 | 17% | +3.0 |
-| Full suite | $569 | 4% | +0.1 |
+| Odometry pods | $365 | 17% | +3.7 |
+| Full suite | $484 | 4% | +0.1 |
 | AprilTag (front camera) | $195 | 3% | +0.1 |
 | Rear camera | $220 | 3% | +0.1 |
 | Dead reckoning | $170 | 3% | n/a (free) |
@@ -52,9 +52,7 @@ Best value under Mecanum: Odometry pods.
 
 ## Does the conclusion hold?
 
-The best-value suite is drivetrain-dependent. Tank (headline default) -> AprilTag (front camera); Mecanum -> Odometry pods. This is a real finding, not a failure of the sweep: mecanum's strafe speed/drift penalty (`MECANUM_STRAFE_SPEED_FACTOR`/`MECANUM_STRAFE_DRIFT_MULTIPLIER`, `ftc/config.py`) changes which sensing investment pays off, not just how well any one of them does. Treat `ftc_suite_writeup.md`'s single-drivetrain recommendation as conditional on tank (or an unstated drivetrain, which is the same thing), not universal.
-
-Note: under Mecanum, Odometry pods's success-rate CI still overlaps AprilTag (front camera)'s at this trial count -- that particular flip could plausibly be sampling noise rather than a genuine drivetrain effect.
+Odometry pods is the best-value suite under both tank and mecanum. The headline recommendation is not tank-specific -- teams running mecanum, a large fraction of the FTC population, should reach the same sensing decision.
 
 ## Consistency check
 

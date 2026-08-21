@@ -61,7 +61,7 @@ from nav.field_variance import generate_ground_truth
 from nav.obstacles import MovingObstacle
 from nav.stats import bootstrap_ci
 
-from ftc.config import OPPONENT_REPOSITION_PERIOD_MS
+from ftc.config import OPPONENT_REPOSITION_PERIOD_MS, usd
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
@@ -273,7 +273,7 @@ def write_writeup(stats, rows, path):
         static_rate = overall_success_rate(stats, suite, "static")
         moving_rate = overall_success_rate(stats, suite, "moving")
         cost = SUITES[suite].cost_usd
-        lines.append(f"| {SUITE_LABELS[suite]} | ${cost:.0f} | {static_rate:.0%} | {moving_rate:.0%} | "
+        lines.append(f"| {SUITE_LABELS[suite]} | ${usd(cost)} | {static_rate:.0%} | {moving_rate:.0%} | "
                       f"{(moving_rate - static_rate):+.0%} |")
 
     static_results, static_baseline, static_best = value_ranking(stats, "static")

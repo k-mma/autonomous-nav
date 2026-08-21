@@ -33,6 +33,7 @@ matplotlib.use("Agg")
 matplotlib.rcParams["text.parse_math"] = False
 import matplotlib.pyplot as plt
 
+from ftc.config import usd
 from ftc.field import build_grid, tag_sites_for
 from ftc.sensors import SUITES, SUITE_ORDER, SUITE_LABELS
 from ftc.suite_benchmark import (
@@ -146,7 +147,7 @@ def write_writeup(stats_by_tier, path):
     }
     for suite in sorted(SUITE_ORDER, key=lambda s: -overall_by_tier["optimistic"][s]):
         lines.append(
-            f"| {SUITE_LABELS[suite]} | ${SUITES[suite].cost_usd:.0f} | "
+            f"| {SUITE_LABELS[suite]} | ${usd(SUITES[suite].cost_usd)} | "
             f"{overall_by_tier['optimistic'][suite]:.0%} | {overall_by_tier['realistic'][suite]:.0%} | "
             f"{overall_by_tier['pessimistic'][suite]:.0%} |"
         )
