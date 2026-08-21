@@ -50,7 +50,7 @@ DEVIATION_LABELS = {
 SUITES = [
     ("dead_reckoning", "Dead reckoning ($0)", "#d62728"),
     ("apriltag", "AprilTag ($25)", "#9467bd"),
-    ("odometry_pods", "Odometry pods ($280)", "#ff7f0e"),
+    ("odometry_pods", "Odometry pods ($195)", "#ff7f0e"),
 ]
 
 

@@ -75,6 +75,7 @@ import matplotlib.pyplot as plt
 from nav.field_variance import generate_ground_truth
 from nav.stats import bootstrap_ci, bootstrap_paired_diff_ci
 
+from ftc.config import usd
 from ftc.drivetrain import DRIVETRAIN_LABELS, DRIVETRAIN_ORDER, DRIVETRAINS, MECANUM_HEADING_POLICY_ORDER
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
@@ -199,7 +200,7 @@ def write_writeup(stats, rows, path):
     lines = [
         "# Does a mecanum drivetrain's cost premium get repaid?",
         "",
-        f"ftc/drivetrain.py adds TANK (${tank_cost:.0f}) and MECANUM (${mecanum_cost:.0f}) as an axis "
+        f"ftc/drivetrain.py adds TANK (${usd(tank_cost)}) and MECANUM (${usd(mecanum_cost)}) as an axis "
         "orthogonal to sensor suite: TANK must rotate to face its direction of travel (the existing flat "
         "per-90-degree turn cost, unchanged from before this addition); MECANUM holds a fixed heading -- "
         "aimed at the nearest AprilTag wall site -- for the whole match, paying no turn cost but a "
@@ -293,10 +294,10 @@ def write_writeup(stats, rows, path):
                           f"{results[best]['per_100']:+.1f} |")
 
     lines += ["", "## Does mecanum's own premium get repaid?", "",
-              f"Comparing each suite's success rate on mecanum vs. tank, at mecanum's ${mecanum_premium:.0f} "
+              f"Comparing each suite's success rate on mecanum vs. tank, at mecanum's ${usd(mecanum_premium)} "
               "total premium (MECANUM_WHEEL_COST_USD - TANK_WHEEL_COST_USD, ftc/config.py) on top of that "
               "suite's own sensor cost:", "",
-              f"| Suite | Tank rate | Mecanum rate | Difference | Worth the ${mecanum_premium:.0f} premium? |",
+              f"| Suite | Tank rate | Mecanum rate | Difference | Worth the ${usd(mecanum_premium)} premium? |",
               "|---|---:|---:|---:|---|"]
     for suite in SUITE_ORDER:
         tank_rate = stats[("tank", "realistic", suite)]["rate"]

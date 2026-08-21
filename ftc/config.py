@@ -158,20 +158,29 @@ MAX_STALL_RETRIES = 3
 # buy; still not a procurement quote (no tax, shipping, spares, or the
 # motors/hubs every suite shares).
 
-# goBILDA Odometry Pack -- two odometry pods plus one Pinpoint odometry
-# computer, listed at $279.99 as a bundle (Swingarm and 4-Bar packs are
-# the same price). Pods are $99.99 EACH separately and the Pinpoint V2
-# computer is $79.99, so the pack is the cheapest real path to working
-# dead-wheel odometry, which is why it's priced here rather than a
-# single pod.
+# Optii Odometry V2 pods, $64.95 EACH. Unlike goBILDA's pack (see
+# CORRECTION below), these wire directly into a REV Control/Expansion
+# Hub encoder port -- no separate fusion computer (e.g. goBILDA's
+# Pinpoint) in the loop, per Optii's own wiring docs
+# (docs.optii.com.au/odometry-v2/user-guide/wiring: "Odometry V2 should
+# be connected to an Encoder port on the REV Control or Expansion
+# Hub"). ODOMETRY_POD_COUNT matches DISTANCE_SENSOR_COUNT's pattern
+# below: a real per-unit price times how many a team actually buys,
+# not a single bundled package price.
 #
-# CORRECTION: this was previously $100.0, described as a "pod set +
-# mounting." That was wrong by nearly 3x -- $100 is roughly ONE pod,
-# not a working two-pod setup with the computer needed to fuse them.
-# Fixing it materially changes this project's reliability-per-dollar
-# headline; see README.md's "Threats to validity" and
-# benchmark_results/ftc_suite_writeup.md.
-ODOMETRY_POD_COST_USD = 279.99
+# CORRECTION: this was previously a flat $279.99, priced as goBILDA's
+# 2-pod-plus-Pinpoint-computer bundle (2 pods at $99.99 each + a $79.99
+# Pinpoint computer needed to fuse them) rather than as N individually
+# priced pods -- that computer isn't required for Optii's pods (see
+# citation above), and goBILDA's own pods are also readable straight
+# off a hub's encoder ports without it, so pricing this as "N loose
+# pods" rather than "a fixed 2-pod computer bundle" is the correct
+# model change, not just a cheaper vendor swap. This materially changes
+# this project's reliability-per-dollar headline; see README.md's
+# "Threats to validity" and benchmark_results/ftc_suite_writeup.md.
+ODOMETRY_POD_UNIT_COST_USD = 64.95
+ODOMETRY_POD_COUNT = 3  # matches DISTANCE_SENSOR_COUNT's 3-sensor default
+ODOMETRY_POD_COST_USD = ODOMETRY_POD_UNIT_COST_USD * ODOMETRY_POD_COUNT
 # REV 2m Distance Sensor (REV-31-1505), listed at $31.50.
 DISTANCE_SENSOR_COST_USD = 31.50
 DISTANCE_SENSOR_COUNT = 3  # narrow ToF cones at fixed mounts (spec: 2-4)
@@ -187,6 +196,17 @@ DISTANCE_SENSOR_COUNT = 3  # narrow ToF cones at fixed mounts (spec: 2-4)
 # CORRECTION: previously $40.0 ("~$30-40"), which matched no listed
 # calibration-supported camera.
 APRILTAG_COST_USD = 25.0
+
+
+def usd(cost):
+    """Whole-dollar display rounding for a cost. Plain round()/f"{:.0f}"
+    both use banker's rounding, which turns a real $94.50 sensor cost
+    into a displayed "$94" -- not wrong, but reads as a typo next to
+    the exact number. This always rounds a .50 case up, matching how
+    a price tag would actually be written. Used everywhere a suite's
+    or bundle's cost_usd is shown to one dollar of precision instead
+    of cents (chart labels, markdown tables, CLI output)."""
+    return int(cost + 0.5)
 
 # Distance sensor (ToF) geometry -- VERIFIED against REV's own
 # REV-31-1505 datasheet/product page: measurement range 5cm-200cm

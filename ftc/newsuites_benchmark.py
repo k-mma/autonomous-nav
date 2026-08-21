@@ -55,6 +55,7 @@ import matplotlib.pyplot as plt
 from nav.field_variance import generate_ground_truth
 from nav.stats import bootstrap_ci
 
+from ftc.config import usd
 from ftc.field import build_grid, tag_sites_for
 from ftc.match import run_match
 from ftc.sensors import SUITES, SUITE_LABELS
@@ -181,7 +182,7 @@ def write_writeup(stats, path):
     ]
     for suite in SUITE_ORDER_LOCAL:
         cost = stats[("optimistic", suite)]["cost"]
-        lines.append(f"| {SUITE_LABELS[suite]} | ${cost:.0f} | {stats[('optimistic', suite)]['rate']:.0%} | "
+        lines.append(f"| {SUITE_LABELS[suite]} | ${usd(cost)} | {stats[('optimistic', suite)]['rate']:.0%} | "
                       f"{stats[('realistic', suite)]['rate']:.0%} |")
 
     lines += ["", "## Value ranking (success-rate gain over dead reckoning, per $100)", ""]
@@ -193,7 +194,7 @@ def write_writeup(stats, path):
                                                                    else float("-inf"))):
             per_100_str = "undefined (cost_usd == 0)" if v["per_100"] is None else f"{v['per_100']:+.1f}"
             marker = " *best priced value*" if suite == best_priced else ""
-            lines.append(f"| {SUITE_LABELS[suite]} | ${v['cost']:.0f} | {v['gain']:+.0%} | {per_100_str}{marker} |")
+            lines.append(f"| {SUITE_LABELS[suite]} | ${usd(v['cost'])} | {v['gain']:+.0%} | {per_100_str}{marker} |")
         imu_gain = results["imu"]["gain"]
         lines += ["", (
             f"ImuSuite gained {imu_gain:+.0%} success rate over dead reckoning for $0 -- a real gain (or "

@@ -44,6 +44,13 @@ sys.path.insert(0, str(REPO_ROOT))
 OUT_DIR = Path(__file__).resolve().parent
 RESULTS_CSV = REPO_ROOT / "benchmark_results" / "ftc_optimizer_results.csv"
 
+
+def usd(cost):
+    """Whole-dollar display rounding for a cost -- see generate_figure3_
+    reliability_per_dollar.py's usd() for why plain round()/f"{:.0f}"
+    (banker's rounding) isn't used here."""
+    return int(cost + 0.5)
+
 PROFILE_ORDER = ["pose_drift", "map_error", "opponent", "combined_realistic", "corridor"]
 
 
@@ -103,18 +110,18 @@ def pareto_frontier(points):
 # to shift these, points falling back to the default offset will still
 # render, just not optimally spaced.
 LABEL_OFFSETS = {
-    (0.0, 0.1364): (6, -18, "left"),
+    (0.0, 0.136): (6, -18, "left"),
     (25.0, 0.168): (6, 14, "left"),
     (50.0, 0.168): (10, -15, "left"),
     (94.5, 0.096): (0, -18, "center"),
     (119.5, 0.128): (10, 10, "left"),
-    (144.5, 0.128): (10, -16, "left"),
-    (279.99, 0.256): (-10, 14, "right"),
-    (304.99, 0.344): (-10, 16, "right"),
-    (329.99, 0.344): (10, -6, "left"),
-    (374.49, 0.128): (10, -16, "left"),
-    (399.49, 0.2): (-10, 10, "right"),
-    (424.49, 0.2): (10, -6, "left"),
+    (144.5, 0.128): (10, -14, "left"),
+    (194.85, 0.256): (-10, 14, "right"),
+    (219.85, 0.344): (-10, 16, "right"),
+    (244.85, 0.344): (10, -6, "left"),
+    (289.35, 0.128): (10, -36, "left"),
+    (314.35, 0.2): (-10, 18, "right"),
+    (339.35, 0.2): (10, -18, "left"),
 }
 
 
@@ -153,7 +160,7 @@ def main():
         # and the shorter label is most of what keeps 12 labels from
         # colliding with only 4 of them being genuinely load-bearing.
         if on_frontier:
-            text = f"{p['label']}{note}\n${p['cost']:.0f} · {p['rate']:.0%}"
+            text = f"{p['label']}{note}\n${usd(p['cost'])} · {p['rate']:.0%}"
         else:
             text = f"{p['label']}{note}"
         fontsize = 10 if on_frontier else 8.7

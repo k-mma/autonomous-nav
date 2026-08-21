@@ -10,8 +10,8 @@ Pooled across every suite, paired on identical scenarios, at the `realistic` fid
 |---|---:|---:|---|
 | fixed_at_start (baseline) | 7% | -- | -- |
 | Mecanum (re-aim to nearest tag) | 7% | +0.0% [-1.0%, +1.0%] | not distinguishable from noise |
-| Mecanum (aim along route) | 9% | +1.8% [+0.7%, +2.9%] | **significantly better** |
-| Mecanum (match next leg) | 13% | +6.7% [+5.2%, +8.3%] | **significantly better** |
+| Mecanum (aim along route) | 9% | +1.8% [+0.7%, +3.0%] | **significantly better** |
+| Mecanum (match next leg) | 13% | +6.7% [+5.2%, +8.4%] | **significantly better** |
 
 Tank (no held heading at all, for reference): 18%.
 
@@ -23,8 +23,8 @@ The comparison above is against fixed_at_start (MECANUM's own baseline policy), 
 
 | Policy | Success rate | vs. tank [95% CI] | Verdict |
 |---|---:|---:|---|
-| Mecanum | 7% | -10.8% [-12.7%, -9.0%] | **significantly worse than tank** |
-| Mecanum (re-aim to nearest tag) | 7% | -10.8% [-12.7%, -8.9%] | **significantly worse than tank** |
+| Mecanum | 7% | -10.8% [-12.8%, -9.0%] | **significantly worse than tank** |
+| Mecanum (re-aim to nearest tag) | 7% | -10.8% [-12.8%, -8.9%] | **significantly worse than tank** |
 | Mecanum (aim along route) | 9% | -9.0% [-10.8%, -7.1%] | **significantly worse than tank** |
 | Mecanum (match next leg) | 13% | -4.1% [-5.9%, -2.5%] | **significantly worse than tank** |
 
@@ -32,11 +32,11 @@ The comparison above is against fixed_at_start (MECANUM's own baseline policy), 
 
 | Policy | Best value | pp/$100 |
 |---|---|---:|
-| Tank | Odometry pods | +7.1 |
-| Mecanum | Odometry pods | +3.0 |
-| Mecanum (re-aim to nearest tag) | Odometry pods | +3.2 |
-| Mecanum (aim along route) | Odometry pods | +3.1 |
-| Mecanum (match next leg) | Odometry pods | +3.8 |
+| Tank | Odometry pods | +9.7 |
+| Mecanum | Odometry pods | +3.7 |
+| Mecanum (re-aim to nearest tag) | Odometry pods | +4.0 |
+| Mecanum (aim along route) | Odometry pods | +3.8 |
+| Mecanum (match next leg) | Odometry pods | +4.7 |
 
 ## Per-suite success rate (realistic fidelity)
 

@@ -10,11 +10,11 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 28%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Full suite | $399 | 75% | +11.7 |
+| Full suite | $314 | 75% | +14.8 |
 | AprilTag (front camera) | $25 | 67% | +156.7 |
 | Rear camera | $50 | 67% | +78.3 |
-| Odometry pods | $280 | 49% | +7.4 |
-| Distance sensors | $94 | 30% | +1.4 |
+| Odometry pods | $195 | 49% | +10.7 |
+| Distance sensors | $95 | 30% | +1.4 |
 | Dead reckoning | $0 | 28% | n/a (free) |
 | IMU | $0 | 28% | undefined (cost_usd == 0) |
 
@@ -26,13 +26,13 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 14%
 
 | Suite | Cost | Overall success rate | Value (pp/$100) |
 |---|---:|---:|---:|
-| Odometry pods | $280 | 30% | +5.4 |
+| Odometry pods | $195 | 30% | +7.8 |
 | AprilTag (front camera) | $25 | 18% | +16.0 |
 | Rear camera | $50 | 18% | +8.0 |
-| Full suite | $399 | 16% | +0.4 |
+| Full suite | $314 | 16% | +0.5 |
 | Dead reckoning | $0 | 14% | n/a (free) |
 | IMU | $0 | 14% | undefined (cost_usd == 0) |
-| Distance sensors | $94 | 10% | -4.2 |
+| Distance sensors | $95 | 10% | -4.2 |
 
 Best value on this layout: AprilTag (front camera).
 
@@ -44,9 +44,9 @@ DeadReckoningSuite baseline (variance_level >= 0.3): 20%
 |---|---:|---:|---:|
 | AprilTag (front camera) | $25 | 51% | +126.7 |
 | Rear camera | $50 | 51% | +63.3 |
-| Full suite | $399 | 51% | +7.8 |
-| Odometry pods | $280 | 45% | +9.3 |
-| Distance sensors | $94 | 20% | +0.5 |
+| Full suite | $314 | 51% | +10.0 |
+| Odometry pods | $195 | 45% | +13.3 |
+| Distance sensors | $95 | 20% | +0.5 |
 | Dead reckoning | $0 | 20% | n/a (free) |
 | IMU | $0 | 20% | undefined (cost_usd == 0) |
 

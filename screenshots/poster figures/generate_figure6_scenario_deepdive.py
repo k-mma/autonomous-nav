@@ -12,7 +12,7 @@ Two bars per scenario:
     winner is a single sensor, blue if it's a bundle -- same color
     coding figure4 uses, so a reader who's seen that chart doesn't
     relearn a mapping.
-  - "Generalist pick" -- odometry pods + front camera ($304.99), the
+  - "Generalist pick" -- odometry pods + front camera ($219.85), the
     single bundle figure4's Pareto frontier says is the best buy ON
     AVERAGE across all 5 scenarios. Same green as figure4's frontier
     star, for the same cross-chart-consistency reason.
@@ -44,6 +44,13 @@ sys.path.insert(0, str(REPO_ROOT))
 
 OUT_DIR = Path(__file__).resolve().parent
 RESULTS_CSV = REPO_ROOT / "benchmark_results" / "ftc_optimizer_results.csv"
+
+
+def usd(cost):
+    """Whole-dollar display rounding for a cost -- see generate_figure3_
+    reliability_per_dollar.py's usd() for why plain round()/f"{:.0f}"
+    (banker's rounding) isn't used here."""
+    return int(cost + 0.5)
 
 PROFILE_ORDER = ["pose_drift", "map_error", "opponent", "combined_realistic", "corridor"]
 PROFILE_LABELS = {
@@ -121,13 +128,13 @@ def main():
         Patch(facecolor=BUNDLE_FACE, edgecolor=BUNDLE_EDGE, linewidth=1.3,
               label="Best pick: bundle"),
         Patch(facecolor=GENERALIST_FACE, edgecolor=GENERALIST_EDGE, linewidth=1.3,
-              label=f"Generalist bundle (${generalist['cost']:.0f}, from Fig. 5)"),
+              label=f"Generalist bundle (${usd(generalist['cost'])}, from Fig. 5)"),
     ]
 
     for xi, r in zip(x, rows):
         star = "*" if r["n_tied_individuals"] > 1 and not r["is_bundle"] else ""
         label = r["winner_label"] if r["n_tied_individuals"] <= 1 else f"any of {r['n_tied_individuals']} individuals"
-        ax.annotate(f"{label}{star}\n${r['winner_cost']:.0f} · {r['winner_rate']:.0%}",
+        ax.annotate(f"{label}{star}\n${usd(r['winner_cost'])} · {r['winner_rate']:.0%}",
                     (xi - bar_w / 2 - 0.01, r["winner_rate"]), textcoords="offset points",
                     xytext=(0, 6), ha="center", fontsize=9, linespacing=1.25, zorder=4)
         ax.annotate(f"{r['generalist_rate']:.0%}",

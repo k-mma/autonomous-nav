@@ -52,6 +52,7 @@ matplotlib.rcParams["text.parse_math"] = False
 import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
 
+from ftc.config import usd
 from ftc.optimizer import (
     BASELINE_SUITE, DEFAULT_COMPONENTS, DEFAULT_PROFILES, PROFILES_BY_NAME, BundleOptimizer,
     best_per_profile, best_under_budget, exhaustive_search, greedy_search, pareto_frontier, rank,
@@ -155,7 +156,7 @@ def plot_frontier(results, frontier, per_profile, path):
         # exists to deliver, and a clipped one ("odometry pods + IMU +
         # front camera") names a different, cheaper robot than the
         # winner.
-        ax_profiles.annotate(fill(f"{winner.parts_label} (${winner.cost_usd:.0f})", 42), (0.015, i),
+        ax_profiles.annotate(fill(f"{winner.parts_label} (${usd(winner.cost_usd)})", 42), (0.015, i),
                              va="center", fontsize=7, linespacing=1.3,
                              color="white" if rate > 0.35 else "black")
     ax_profiles.set_xlabel("Winning bundle's success rate on that scenario")
@@ -380,9 +381,9 @@ def write_writeup(summary_data, path):
               "|---:|---|---:|---:|---:|"]
     for budget, pick in budget_picks:
         if pick is None:
-            lines.append(f"| ${budget:.0f} | nothing in the catalog is this cheap | -- | -- | -- |")
+            lines.append(f"| ${usd(budget)} | nothing in the catalog is this cheap | -- | -- | -- |")
         else:
-            lines.append(f"| ${budget:.0f} | {pick.parts_label} | ${pick.cost_usd:.2f} | "
+            lines.append(f"| ${usd(budget)} | {pick.parts_label} | ${pick.cost_usd:.2f} | "
                          f"${budget - pick.cost_usd:.2f} | {pick.weighted_success_rate:.0%} |")
     # A budget whose best pick leaves most of the money unspent is a
     # finding, not a formatting quirk: it means the next rung of the
@@ -392,8 +393,8 @@ def write_writeup(summary_data, path):
     if unspent:
         lines += ["", (
             "Note the unspent columns: at "
-            + (" and ".join(f"${b:.0f}" for b, _ in unspent) if len(unspent) < 3 else
-               ", ".join(f"${b:.0f}" for b, _ in unspent[:-1]) + f" and ${unspent[-1][0]:.0f}")
+            + (" and ".join(f"${usd(b)}" for b, _ in unspent) if len(unspent) < 3 else
+               ", ".join(f"${usd(b)}" for b, _ in unspent[:-1]) + f" and ${usd(unspent[-1][0])}")
             + f", the best available robot is still {unspent[0][1].parts_label} at "
             f"${unspent[0][1].cost_usd:.2f}. Nothing purchasable in between improves on it -- the next "
             "rung of the frontier is out of reach, and the intermediate options are worse buys than "

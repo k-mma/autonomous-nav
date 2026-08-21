@@ -162,7 +162,7 @@ Built by generate_figure6_scenario_deepdive.py, same source CSV as
 figure4. For each of the 5 scenario profiles: the best scenario-specific
 robot (individual sensor or bundle, whichever wins, ties broken toward
 the cheaper option) vs. figure4's Pareto-best "generalist" bundle
-(odometry pods + front camera, $304.99) evaluated on that same
+(odometry pods + front camera, $219.85) evaluated on that same
 scenario. They tie in 4 of 5 scenarios -- the generalist already is
 scenario-optimal there -- except Heavy pose drift, where a cheaper,
 scenario-specific bundle measurably beats it. Color coding matches
