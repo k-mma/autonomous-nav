@@ -1,5 +1,4 @@
-"""Regenerates figure9_deviation_types.png for the SEED symposium
-poster: the three deviation types swept in Pillar 3, as three field
+"""Regenerates figure9_deviation_types.png: the three deviation types swept in Pillar 3, as three field
 thumbnails instead of three table rows. Each panel turns ON exactly one
 deviation axis (the other two held at 0), which is the same isolation
 ftc/suite_benchmark.py's sweep uses -- so the panels show the literal

@@ -1,5 +1,4 @@
-"""Regenerates figure1_pose_vs_obstacle_error.png for the SEED
-symposium poster's Background section: the two failure modes the whole
+"""Regenerates figure1_pose_vs_obstacle_error.png: the two failure modes the whole
 study is organized around, side by side ("2 things you're solving for:
 pose error vs. obstacle error", which the poster otherwise states only
 in prose).

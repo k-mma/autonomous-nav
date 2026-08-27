@@ -1,5 +1,4 @@
-"""Regenerates figure8_severity_curves.png for the SEED symposium
-poster: the one thing none of the other poster figures show --
+"""Regenerates figure8_severity_curves.png: the one thing none of the other poster figures show --
 DEGRADATION. Every other chart is a single-point summary; this one
 shows success rate collapsing as the field deviates further from the
 map, and that the three deviation types collapse at very different

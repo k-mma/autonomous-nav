@@ -1,5 +1,4 @@
-"""Regenerates figure6_match_lifecycle.png for the SEED symposium
-poster's Pillar 3 (methods): what one simulated match actually does, as
+"""Regenerates figure6_match_lifecycle.png: what one simulated match actually does, as
 a loop rather than four paragraphs of prose.
 
 Mirrors ftc/match.py's real control flow: plan once from the BELIEVED

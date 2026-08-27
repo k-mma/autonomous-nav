@@ -1,5 +1,4 @@
-"""Regenerates figure4_bundle_scatter.png for the SEED symposium poster:
-a single, decluttered scatter of cost vs. weighted success rate for
+"""Regenerates figure4_bundle_scatter.png: a single, decluttered scatter of cost vs. weighted success rate for
 every buildable robot (individual sensors AND bundles), recomputed
 from benchmark_results/ftc_optimizer_results.csv (ftc/optimizer.py's
 bundle search -- 23 distinct robots, 5 scenario profiles x 25 trials

@@ -1,5 +1,4 @@
-"""Regenerates figure6_scenario_deepdive.png for the SEED symposium
-poster: a per-scenario deep-dive asking "which specific robot wins THIS
+"""Regenerates figure6_scenario_deepdive.png: a per-scenario deep-dive asking "which specific robot wins THIS
 scenario, at what cost, and how does it compare to the one generalist
 bundle a team would buy without knowing its scenario?" Same source data
 as figure4_bundle_scatter.png (benchmark_results/ftc_optimizer_results.csv),
@@ -128,7 +127,7 @@ def main():
         Patch(facecolor=BUNDLE_FACE, edgecolor=BUNDLE_EDGE, linewidth=1.3,
               label="Best pick: bundle"),
         Patch(facecolor=GENERALIST_FACE, edgecolor=GENERALIST_EDGE, linewidth=1.3,
-              label=f"Generalist bundle (${usd(generalist['cost'])}, from Fig. 5)"),
+              label=f"Generalist bundle (${usd(generalist['cost'])}, from Fig. 4)"),
     ]
 
     for xi, r in zip(x, rows):

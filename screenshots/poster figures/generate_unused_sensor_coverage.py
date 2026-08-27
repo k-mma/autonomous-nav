@@ -1,5 +1,4 @@
-"""Regenerates figure5_sensor_coverage.png for the SEED symposium
-poster: the mechanism behind this project's headline NEGATIVE result --
+"""Regenerates figure5_sensor_coverage.png: the mechanism behind this project's headline NEGATIVE result --
 three distance sensors cover only ~75 degrees of the robot's 360, so
 most of the field around the robot is simply unsensed. This is what
 explains the negative bar in figure3 and the worst point in figure4.

@@ -1,5 +1,4 @@
-"""Regenerates figure2_ftc_field.png for the SEED symposium poster's
-Pillar 1: "here's how we picked A* to plan across the simulated field."
+"""Regenerates figure2_ftc_field.png: "here's how we picked A* to plan across the simulated field."
 
 One panel, built from real benchmark data (not a mockup): aggregate
 stats pulled straight from benchmark_results/results.csv, nav/
@@ -141,11 +140,11 @@ def draw_benchmark(ax, stats):
         ("Dijkstra", stats["dijkstra"]["time"], "#3c6fce", False,
          f"{stats['dijkstra']['cells']:.0f} cells explored"),
         ("A*  (selected)", stats["astar"]["time"], "#2e8b3d", True,
-         f"{stats['astar']['cells']:.0f} cells (−{stats['astar']['fewer_pct']:.0f}% vs. Dijkstra)"),
+         f"{stats['astar']['cells']:.0f} cells explored ({stats['astar']['fewer_pct']:.0f}% fewer than Dijkstra)"),
         ("RRT", stats["rrt"]["time"], "#e0863c", False,
-         f"+{stats['rrt']['over_pct']:.1f}% longer path"),
+         f"{stats['rrt']['over_pct']:.1f}% longer route than shortest possible"),
         ("RRT*", stats["rrt_star"]["time"], "#7a4a35", False,
-         f"−{abs(stats['rrt_star']['over_pct']):.0f}% path, {stats['rrt_star']['slower_x']:.0f}× slower"),
+         f"{abs(stats['rrt_star']['over_pct']):.0f}% shorter route than A*, {stats['rrt_star']['slower_x']:.0f}× longer to compute"),
         ("D* Lite", None, "#9aa0a8", False,
          f"repairs a route, doesn't plan one\n{ds['summary']}"),
     ]
