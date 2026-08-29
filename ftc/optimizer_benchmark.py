@@ -134,7 +134,7 @@ def write_csv(rows, path):
         writer.writerows(rows)
 
 
-def plot_frontier(results, frontier, per_profile, path, profiles):
+def plot_frontier(results, frontier, per_profile, path, profiles, trials):
     fig, (ax_scatter, ax_profiles) = plt.subplots(1, 2, figsize=(14, 6))
 
     singles = [r for r in results if len(r.component_names) == 1]
@@ -184,7 +184,7 @@ def plot_frontier(results, frontier, per_profile, path, profiles):
     ax_profiles.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
     ax_profiles.invert_yaxis()
 
-    fig.suptitle(f"Sensor bundle optimizer ({TRIALS_PER_PROFILE} trials x {len(profiles)} scenario "
+    fig.suptitle(f"Sensor bundle optimizer ({trials} trials x {len(profiles)} scenario "
                  f"profiles per candidate)", fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(path, dpi=150)
@@ -231,6 +231,7 @@ def write_writeup(summary_data, path):
     budget_picks = summary_data["budget_picks"]
     profiles = summary_data["profiles"]
     file_stem = summary_data["file_stem"]
+    trials = summary_data["trials"]
 
     best = ranked[0]
     most_robust = robust_ranked[0]
@@ -243,10 +244,10 @@ def write_writeup(summary_data, path):
         "",
         f"Every buildable combination of {len(DEFAULT_COMPONENTS)} sensor suites (ftc/sensors.py), up to "
         f"{MAX_BUNDLE_SIZE} suites per bundle, composed by ftc/bundle.py and evaluated by ftc/optimizer.py "
-        f"over {len(profiles)} scenario profiles x {TRIALS_PER_PROFILE} seeded trials each. "
+        f"over {len(profiles)} scenario profiles x {trials} seeded trials each. "
         f"{summary_data['raw_combinations']} raw combinations collapse to {len(results)} distinct robots "
         "once bundles that buy identical hardware are recognized as the same purchase "
-        f"({len(results) * len(profiles) * TRIALS_PER_PROFILE} matches). Raw data in "
+        f"({len(results) * len(profiles) * trials} matches). Raw data in "
         f"`{file_stem}_results.csv`, charts in `{file_stem}_frontier.png` and "
         f"`{file_stem}_synergy.png`.",
         "",
@@ -377,7 +378,7 @@ def write_writeup(summary_data, path):
         lines.append(
             "No bundle in this sweep beat its own best single component by a statistically significant "
             "margin. That is a real (and, for a study built to find bundles, an inconvenient) result: at "
-            f"{TRIALS_PER_PROFILE} trials per profile the gains from combining are inside the noise, and a "
+            f"{trials} trials per profile the gains from combining are inside the noise, and a "
             "team would be spending real money on a difference this study cannot demonstrate. Rerun with "
             "more trials before concluding either that the gains are absent or that they're merely "
             "unmeasured here."
@@ -543,6 +544,14 @@ def main():
                              "realistic -- what the poster's scenario-deepdive figure reads). Running with "
                              "no arguments reproduces the original default-catalog outputs byte-for-byte; "
                              "'match' writes to separately-named files instead of overwriting them.")
+    parser.add_argument("--trials", type=int, default=TRIALS_PER_PROFILE,
+                        help=f"Trials per scenario profile (default {TRIALS_PER_PROFILE}, matching the "
+                             "default catalog's rigor). Raising this only shrinks per-scenario sampling "
+                             "noise -- it doesn't change methodology -- so it's most useful on a 'match' "
+                             "run, where a 25-trial draw can leave one or two scenarios tied by chance "
+                             "even when the underlying gap is real (checked at higher trial counts in "
+                             "ftc/optimizer.py's MATCH_PROFILES comment). Left at the default, a 'default' "
+                             "run still reproduces the original outputs byte-for-byte.")
     args = parser.parse_args()
 
     profiles = PROFILE_CATALOGS[args.profiles]
@@ -554,11 +563,12 @@ def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     profile_labels = {p.name: p.label for p in profiles}
-    optimizer = BundleOptimizer(profiles=profiles, trials_per_profile=TRIALS_PER_PROFILE,
+    optimizer = BundleOptimizer(profiles=profiles, trials_per_profile=args.trials,
                                 on_progress=lambda b: print(f"  evaluating {b.parts_label()} "
                                                             f"(${b.cost_usd:.2f}) ..."))
 
-    print(f"Scenario catalog: {args.profiles} ({', '.join(p.label for p in profiles)})")
+    print(f"Scenario catalog: {args.profiles} ({', '.join(p.label for p in profiles)}), "
+          f"{args.trials} trials/profile")
     print(f"Exhaustive search over {len(DEFAULT_COMPONENTS)} components, up to {MAX_BUNDLE_SIZE} per bundle:")
     results = exhaustive_search(optimizer, DEFAULT_COMPONENTS, min_size=1, max_size=MAX_BUNDLE_SIZE)
     raw_combinations = sum(comb(len(DEFAULT_COMPONENTS), k) for k in range(1, MAX_BUNDLE_SIZE + 1))
@@ -586,13 +596,15 @@ def main():
 
     rows = collect_rows(results, profile_labels)
     write_csv(rows, OUTPUT_DIR / f"{file_stem}_results.csv")
-    plot_frontier(results, frontier, per_profile, OUTPUT_DIR / f"{file_stem}_frontier.png", profiles)
+    plot_frontier(results, frontier, per_profile, OUTPUT_DIR / f"{file_stem}_frontier.png", profiles,
+                 args.trials)
     plot_synergy(synergies, OUTPUT_DIR / f"{file_stem}_synergy.png")
     write_writeup({
         "results": results, "frontier": frontier, "synergies": synergies, "per_profile": per_profile,
         "greedy_steps": greedy_steps, "baseline_rate": baseline_rate, "ranked": ranked,
         "robust_ranked": robust_ranked, "budget_picks": budget_picks,
         "raw_combinations": raw_combinations, "profiles": profiles, "file_stem": file_stem,
+        "trials": args.trials,
     }, OUTPUT_DIR / f"{file_stem}_writeup.md")
 
     print(f"\nWrote {len(rows)} trials ({len(results)} distinct robots) to "
