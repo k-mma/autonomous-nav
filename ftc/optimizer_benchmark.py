@@ -40,7 +40,16 @@ success with the Pareto frontier drawn, plus per-scenario winners),
 benchmark_results/ftc_optimizer_synergy.png (each top bundle's paired
 gain over its own best single component, with 95% CIs), and
 benchmark_results/ftc_optimizer_writeup.md.
+
+Run with `--profiles match` to evaluate ftc/optimizer.py's MATCH_PROFILES
+catalog instead of the default DEFAULT_PROFILES -- the mixed-axis
+scenarios that back the poster's scenario-deepdive figure, as opposed to
+the single-axis-isolated ones this module's own writeup and Figure 4
+depend on for their capability-attribution argument. That run writes to
+ftc_optimizer_match_results.csv / _frontier.png / _synergy.png /
+_writeup.md instead, so it never overwrites the default study.
 """
+import argparse
 import csv
 from math import comb
 from pathlib import Path
@@ -54,12 +63,22 @@ from matplotlib.ticker import PercentFormatter
 
 from ftc.config import usd
 from ftc.optimizer import (
-    BASELINE_SUITE, DEFAULT_COMPONENTS, DEFAULT_PROFILES, PROFILES_BY_NAME, BundleOptimizer,
+    BASELINE_SUITE, DEFAULT_COMPONENTS, DEFAULT_PROFILES, MATCH_PROFILES, PROFILES_BY_NAME, BundleOptimizer,
     best_per_profile, best_under_budget, exhaustive_search, greedy_search, pareto_frontier, rank,
     report_synergy,
 )
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "benchmark_results"
+
+# Which scenario catalog a run uses, and the output-file suffix that
+# keeps it from clobbering the other one. "default" is DEFAULT_PROFILES
+# -- the single-axis-isolated catalog Figure 4 and this module's own
+# writeup depend on for their capability-attribution argument -- so it
+# keeps the original, un-suffixed filenames; running with no arguments
+# must reproduce them byte-identically. "match" is MATCH_PROFILES, the
+# mixed-axis catalog that backs the poster's scenario-deepdive figure,
+# and writes to its own ftc_optimizer_match_* files instead.
+PROFILE_CATALOGS = {"default": DEFAULT_PROFILES, "match": MATCH_PROFILES}
 
 TRIALS_PER_PROFILE = 25
 # 3 components is where the space stops growing usefully: with 8
@@ -115,7 +134,7 @@ def write_csv(rows, path):
         writer.writerows(rows)
 
 
-def plot_frontier(results, frontier, per_profile, path):
+def plot_frontier(results, frontier, per_profile, path, profiles):
     fig, (ax_scatter, ax_profiles) = plt.subplots(1, 2, figsize=(14, 6))
 
     singles = [r for r in results if len(r.component_names) == 1]
@@ -165,7 +184,7 @@ def plot_frontier(results, frontier, per_profile, path):
     ax_profiles.xaxis.set_major_formatter(PercentFormatter(xmax=1.0))
     ax_profiles.invert_yaxis()
 
-    fig.suptitle(f"Sensor bundle optimizer ({TRIALS_PER_PROFILE} trials x {len(DEFAULT_PROFILES)} scenario "
+    fig.suptitle(f"Sensor bundle optimizer ({TRIALS_PER_PROFILE} trials x {len(profiles)} scenario "
                  f"profiles per candidate)", fontsize=11)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(path, dpi=150)
@@ -210,6 +229,8 @@ def write_writeup(summary_data, path):
     ranked = summary_data["ranked"]
     robust_ranked = summary_data["robust_ranked"]
     budget_picks = summary_data["budget_picks"]
+    profiles = summary_data["profiles"]
+    file_stem = summary_data["file_stem"]
 
     best = ranked[0]
     most_robust = robust_ranked[0]
@@ -222,12 +243,12 @@ def write_writeup(summary_data, path):
         "",
         f"Every buildable combination of {len(DEFAULT_COMPONENTS)} sensor suites (ftc/sensors.py), up to "
         f"{MAX_BUNDLE_SIZE} suites per bundle, composed by ftc/bundle.py and evaluated by ftc/optimizer.py "
-        f"over {len(DEFAULT_PROFILES)} scenario profiles x {TRIALS_PER_PROFILE} seeded trials each. "
+        f"over {len(profiles)} scenario profiles x {TRIALS_PER_PROFILE} seeded trials each. "
         f"{summary_data['raw_combinations']} raw combinations collapse to {len(results)} distinct robots "
         "once bundles that buy identical hardware are recognized as the same purchase "
-        f"({len(results) * len(DEFAULT_PROFILES) * TRIALS_PER_PROFILE} matches). Raw data in "
-        "`ftc_optimizer_results.csv`, charts in `ftc_optimizer_frontier.png` and "
-        "`ftc_optimizer_synergy.png`.",
+        f"({len(results) * len(profiles) * TRIALS_PER_PROFILE} matches). Raw data in "
+        f"`{file_stem}_results.csv`, charts in `{file_stem}_frontier.png` and "
+        f"`{file_stem}_synergy.png`.",
         "",
         "Two things make this different from `ftc_suite_writeup.md`'s seven-suite comparison:",
         "",
@@ -491,9 +512,12 @@ def write_writeup(summary_data, path):
         f"${best.cost_usd - best_single.cost_usd:+.2f} -- read the per-dollar column before reading that "
         "as an endorsement.",
         "- Success rates here are lower across the board than `ftc_suite_writeup.md`'s, and that is "
-        "expected, not a discrepancy: these profiles combine deviation axes and include a realistic-"
-        "fidelity one, where the headline sweep isolates a single axis at the optimistic tier. The two "
-        "studies' per-axis numbers agree where they overlap.",
+        "expected, not a discrepancy: these profiles combine deviation axes"
+        + (" and include a realistic-fidelity one, where the headline sweep isolates a single axis at "
+           "the optimistic tier."
+           if any(p.fidelity == "realistic" for p in profiles) else
+           ", where the headline sweep isolates a single axis at the optimistic tier.")
+        + " The two studies' per-axis numbers agree where they overlap.",
         "- Every dollar figure here is hardware only. A bundle's `parts` count is the closest this project "
         "gets to pricing integration effort, and it is not a dollar figure: a 5-part robot is five wiring "
         "harnesses, five failure modes, and five things to debug at 1am before a competition. ImuSuite "
@@ -510,14 +534,31 @@ def write_writeup(summary_data, path):
         f.write("\n".join(lines) + "\n")
 
 
-if __name__ == "__main__":
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--profiles", choices=sorted(PROFILE_CATALOGS), default="default",
+                        help="Which scenario catalog to run at full rigor: 'default' (ftc/optimizer.py's "
+                             "DEFAULT_PROFILES, single-axis isolated -- what Figure 4 and this module's own "
+                             "writeup are built on) or 'match' (MATCH_PROFILES, mixed-axis and match-"
+                             "realistic -- what the poster's scenario-deepdive figure reads). Running with "
+                             "no arguments reproduces the original default-catalog outputs byte-for-byte; "
+                             "'match' writes to separately-named files instead of overwriting them.")
+    args = parser.parse_args()
+
+    profiles = PROFILE_CATALOGS[args.profiles]
+    # Only the match run gets a suffix, so the original, un-suffixed
+    # filenames -- and everything downstream of them (Figure 4, ftc_
+    # optimizer_writeup.md) -- stay untouched by this flag's existence.
+    file_stem = "ftc_optimizer" if args.profiles == "default" else "ftc_optimizer_match"
+
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    profile_labels = {p.name: p.label for p in DEFAULT_PROFILES}
-    optimizer = BundleOptimizer(trials_per_profile=TRIALS_PER_PROFILE,
+    profile_labels = {p.name: p.label for p in profiles}
+    optimizer = BundleOptimizer(profiles=profiles, trials_per_profile=TRIALS_PER_PROFILE,
                                 on_progress=lambda b: print(f"  evaluating {b.parts_label()} "
                                                             f"(${b.cost_usd:.2f}) ..."))
 
+    print(f"Scenario catalog: {args.profiles} ({', '.join(p.label for p in profiles)})")
     print(f"Exhaustive search over {len(DEFAULT_COMPONENTS)} components, up to {MAX_BUNDLE_SIZE} per bundle:")
     results = exhaustive_search(optimizer, DEFAULT_COMPONENTS, min_size=1, max_size=MAX_BUNDLE_SIZE)
     raw_combinations = sum(comb(len(DEFAULT_COMPONENTS), k) for k in range(1, MAX_BUNDLE_SIZE + 1))
@@ -544,23 +585,27 @@ if __name__ == "__main__":
             synergies.append(report)
 
     rows = collect_rows(results, profile_labels)
-    write_csv(rows, OUTPUT_DIR / "ftc_optimizer_results.csv")
-    plot_frontier(results, frontier, per_profile, OUTPUT_DIR / "ftc_optimizer_frontier.png")
-    plot_synergy(synergies, OUTPUT_DIR / "ftc_optimizer_synergy.png")
+    write_csv(rows, OUTPUT_DIR / f"{file_stem}_results.csv")
+    plot_frontier(results, frontier, per_profile, OUTPUT_DIR / f"{file_stem}_frontier.png", profiles)
+    plot_synergy(synergies, OUTPUT_DIR / f"{file_stem}_synergy.png")
     write_writeup({
         "results": results, "frontier": frontier, "synergies": synergies, "per_profile": per_profile,
         "greedy_steps": greedy_steps, "baseline_rate": baseline_rate, "ranked": ranked,
         "robust_ranked": robust_ranked, "budget_picks": budget_picks,
-        "raw_combinations": raw_combinations,
-    }, OUTPUT_DIR / "ftc_optimizer_writeup.md")
+        "raw_combinations": raw_combinations, "profiles": profiles, "file_stem": file_stem,
+    }, OUTPUT_DIR / f"{file_stem}_writeup.md")
 
     print(f"\nWrote {len(rows)} trials ({len(results)} distinct robots) to "
-          f"{OUTPUT_DIR / 'ftc_optimizer_results.csv'}")
-    print(f"Charts saved to {OUTPUT_DIR / 'ftc_optimizer_frontier.png'} and "
-          f"{OUTPUT_DIR / 'ftc_optimizer_synergy.png'}")
-    print(f"Writeup saved to {OUTPUT_DIR / 'ftc_optimizer_writeup.md'}\n")
+          f"{OUTPUT_DIR / (file_stem + '_results.csv')}")
+    print(f"Charts saved to {OUTPUT_DIR / (file_stem + '_frontier.png')} and "
+          f"{OUTPUT_DIR / (file_stem + '_synergy.png')}")
+    print(f"Writeup saved to {OUTPUT_DIR / (file_stem + '_writeup.md')}\n")
     print(f"Best average:   {ranked[0].parts_label} (${ranked[0].cost_usd:.2f}, "
           f"{ranked[0].weighted_success_rate:.0%})")
     print(f"Most robust:    {robust_ranked[0].parts_label} (${robust_ranked[0].cost_usd:.2f}, "
           f"worst-case {robust_ranked[0].worst_profile_rate:.0%})")
     print(f"Significant synergies: {sum(1 for s in synergies if s.significant)} of {len(synergies)} tested")
+
+
+if __name__ == "__main__":
+    main()
