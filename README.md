@@ -11,7 +11,15 @@ controlled, repeatable autonomous-period trials — the statistical power a real
 FTC season's ~10 matches can never supply — to answer one question: **which
 sensors are actually worth the money, and when?**
 
-![The pygame visualizer stepping Dijkstra, A*, and RRT through the identical grid, start, and goal: Dijkstra floods nearly every reachable cell before finding a path, A* reaches the same optimal path exploring a fraction of that area, RRT sketches a rougher tree-based route](screenshots/pygame/forest_corridor.png)
+![Four sensor suites replaying the identical seeded FTC match side by side. Dead reckoning has drifted 18.8 inches from its true position and is stuck; AprilTag, its camera field-of-view drawn as a blue cone, has corrected to 0.8 inches and reached the goal; odometry pods is stuck at 13.0 inches; the distance-sensor suite's three narrow ToF cones are drawn in tan, visibly covering only a fraction of the robot's surroundings](screenshots/pygame/ftc_suite_replay.png)
+
+Four sensor suites driving the *identical* seeded 30-second match, in real
+time (`pygame_app/scenarios/scenario_ftc_suites.py`). The gray outline behind
+each robot is where it *believes* it is; the gap is accumulated pose error.
+AprilTag's camera FOV is the blue cone, the distance suite's three ToF cones
+are the tan wedges — that visible coverage gap is the geometry behind the
+fourth headline result below. This is one scenario, not a ranking: the
+aggregate over 5,775 matches is in [Results](#results).
 
 ## Headline results
 
@@ -248,6 +256,8 @@ at the grid's resolution if one exists); RRT is only probabilistically
 complete (guaranteed as sample count → ∞, not at any fixed budget).
 `nav/scale_benchmark.py` shows that gap as measured incompleteness as grids
 grow:
+
+![The same grid, start, and goal run through all three planners: Dijkstra floods nearly every reachable cell before finding a path, A* reaches an identical-cost path having explored a small fraction of that area, RRT sketches a rougher, longer tree-based route](screenshots/pygame/forest_corridor.png)
 
 | Size | Dijkstra | A\* | RRT (k-d tree) | RRT found path |
 |---:|---:|---:|---:|---:|
