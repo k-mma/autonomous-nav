@@ -1,4 +1,4 @@
-"""Regenerates figure8_severity_curves.png: the one thing none of the other poster figures show --
+"""Regenerates severity_curves.png: the one thing none of the other poster figures show --
 DEGRADATION. Every other chart is a single-point summary; this one
 shows success rate collapsing as the field deviates further from the
 map, and that the three deviation types collapse at very different
@@ -17,7 +17,7 @@ simulation run.
 Regenerate after re-running ftc/suite_benchmark.py (i.e. whenever
 benchmark_results/ftc_suite_results.csv changes):
 
-    python3 "screenshots/poster figures/generate_figure8_severity_curves.py"
+    python3 "screenshots/poster figures/generate_severity_curves.py"
 """
 import csv
 import sys
@@ -35,7 +35,7 @@ sys.path.insert(0, str(OUT_DIR))
 from poster_common import REPO_ROOT  # noqa: E402
 
 RESULTS_CSV = REPO_ROOT / "benchmark_results" / "ftc_suite_results.csv"
-OUT = OUT_DIR / "figure8_severity_curves.png"
+OUT = OUT_DIR / "severity_curves.png"
 
 DEVIATION_ORDER = ["start_drift", "obstacle_drift", "unplanned_blocker"]
 DEVIATION_LABELS = {

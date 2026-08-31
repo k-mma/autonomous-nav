@@ -1,4 +1,4 @@
-"""Regenerates figure6_match_lifecycle.png: what one simulated match actually does, as
+"""Regenerates match_lifecycle.png: what one simulated match actually does, as
 a loop rather than four paragraphs of prose.
 
 Mirrors ftc/match.py's real control flow: plan once from the BELIEVED
@@ -18,7 +18,7 @@ This figure is pure schematic -- it reads no CSV and runs no simulation,
 so it only needs regenerating if ftc/match.py's control flow itself
 changes:
 
-    python3 "screenshots/poster figures/generate_figure6_match_lifecycle.py"
+    python3 "screenshots/poster figures/generate_match_lifecycle.py"
 """
 from pathlib import Path
 
@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 OUT_DIR = Path(__file__).resolve().parent
-OUT = OUT_DIR / "figure6_match_lifecycle.png"
+OUT = OUT_DIR / "match_lifecycle.png"
 
 STEP_FACE, STEP_EDGE = "#dce7f6", "#2f5fb0"
 WIN_FACE, WIN_EDGE = "#d8efdc", "#2e8b3d"

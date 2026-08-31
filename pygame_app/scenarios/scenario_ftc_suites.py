@@ -91,7 +91,7 @@ from nav.algorithms import astar
 from nav.config import COST_INFLUENCE_RADIUS, COST_MAX_EXTRA
 from nav.grid import Grid
 
-from ftc.config import CELL_SIZE_IN, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS
+from ftc.config import CELL_SIZE_IN, FTC_GRID_SIZE, ROBOT_RADIUS_CELLS, usd
 from ftc.field import build_grid, tag_sites_for
 from ftc.sensors import SUITE_LABELS, SUITE_ORDER, SUITES, heading_deg
 from ftc.suite_benchmark import DEVIATION_TYPE_ORDER, DEVIATION_TYPES, MAX_ATTEMPTS_PER_TRIAL, MIN_PATH_LEN
@@ -476,7 +476,7 @@ def draw_panel(screen, font, hud_font, x0, y0, cell_px, grid_size, obstacle_cell
     pygame.draw.rect(screen, PANEL_BG, (x0, y0, panel_w, panel_h))
     pygame.draw.rect(screen, LABEL_BG, (x0, y0, panel_w, LABEL_H))
     name = SUITE_LABELS.get(trace.suite.name, trace.suite.name)
-    screen.blit(font.render(f"{name}  (${trace.suite.cost_usd:.0f})", True, LABEL_TEXT), (x0 + 6, y0 + 4))
+    screen.blit(font.render(f"{name}  (${usd(trace.suite.cost_usd)})", True, LABEL_TEXT), (x0 + 6, y0 + 4))
 
     gx0, gy0 = x0, y0 + LABEL_H
     clip_rect = pygame.Rect(gx0, gy0, panel_w, grid_size * cell_px)

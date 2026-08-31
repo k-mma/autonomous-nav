@@ -1,4 +1,4 @@
-"""Regenerates figure9_deviation_types.png: the three deviation types swept in Pillar 3, as three field
+"""Regenerates deviation_types.png: the three deviation types swept in Pillar 3, as three field
 thumbnails instead of three table rows. Each panel turns ON exactly one
 deviation axis (the other two held at 0), which is the same isolation
 ftc/suite_benchmark.py's sweep uses -- so the panels show the literal
@@ -16,7 +16,7 @@ mostly buys the start-drift and blocker panels.
 
 Regenerate after any change to ftc/field.py or nav/field_variance.py:
 
-    python3 "screenshots/poster figures/generate_figure9_deviation_types.py"
+    python3 "screenshots/poster figures/generate_deviation_types.py"
 """
 import sys
 from pathlib import Path
@@ -37,7 +37,7 @@ from ftc.field import build_grid, eroded_obstacle_cells  # noqa: E402
 from nav.algorithms import astar  # noqa: E402
 from nav.field_variance import generate_ground_truth  # noqa: E402
 
-OUT = OUT_DIR / "figure9_deviation_types.png"
+OUT = OUT_DIR / "deviation_types.png"
 
 LAYOUT = "cluttered"
 START = (21, 2)

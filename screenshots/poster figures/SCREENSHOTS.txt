@@ -24,7 +24,7 @@ is exactly what this renaming pass fixed.
     (unplaced)   figure8 (severity curves)
                  figure9 (deviation types)             -- overlaps figure1
 
-figure6_match_lifecycle.png IS on the poster (Pillar 3, "How one
+match_lifecycle.png IS on the poster (Pillar 3, "How one
 simulated match works") but has no "Figure N" caption there -- it's
 referenced by its section, not by number, so it keeps its descriptive-
 only name rather than taking a poster figure number.
@@ -143,9 +143,9 @@ benchmark_results/ftc_optimizer_results.csv changes):
     python3 "screenshots/poster figures/generate_figure4_bundle_scatter.py"
 
 
-figure5_sensor_coverage.png -- why distance sensors underperform
+sensor_coverage.png -- why distance sensors underperform
 --------------------------------------------------------------------------
-Built by generate_figure5_sensor_coverage.py. The ~75-degrees-of-360
+Built by generate_sensor_coverage.py. The ~75-degrees-of-360
 coverage of the 3-sensor distance suite, computed from ftc/config.py
 (DISTANCE_SENSOR_COUNT, DISTANCE_SENSOR_HALF_ANGLE_DEG,
 DISTANCE_SENSOR_MOUNT_HEADINGS_DEG, DISTANCE_SENSOR_RANGE_CELLS) rather
@@ -153,7 +153,7 @@ than drawn to taste -- change the config and the figure changes. This is
 the mechanism behind the negative bar in figure3 and the worst point in
 figure4.
 
-    python3 "screenshots/poster figures/generate_figure5_sensor_coverage.py"
+    python3 "screenshots/poster figures/generate_sensor_coverage.py"
 
 
 figure6_scenario_deepdive.png -- which robot wins YOUR scenario?
@@ -176,9 +176,9 @@ benchmark_results/ftc_optimizer_results.csv changes):
     python3 "screenshots/poster figures/generate_figure6_scenario_deepdive.py"
 
 
-figure6_match_lifecycle.png -- how one simulated match works
+match_lifecycle.png -- how one simulated match works
 --------------------------------------------------------------------------
-Built by generate_figure6_match_lifecycle.py. On the poster (Pillar 3)
+Built by generate_match_lifecycle.py. On the poster (Pillar 3)
 but unnumbered there -- see the note at the top of this file for why it
 keeps a descriptive-only name instead of a poster figure number. Pure
 schematic (no CSV, no simulation): PLAN -> DRIVE -> SENSE -> RE-PLAN? on
@@ -188,12 +188,12 @@ faithful picture -- ftc/match.py tests all three conditions after every
 step, so hanging "success" off the planning box (as an earlier draft
 did) implied a control flow the code doesn't have.
 
-    python3 "screenshots/poster figures/generate_figure6_match_lifecycle.py"
+    python3 "screenshots/poster figures/generate_match_lifecycle.py"
 
 
-figure8_severity_curves.png -- success rate vs. deviation severity
+severity_curves.png -- success rate vs. deviation severity
 --------------------------------------------------------------------------
-Built by generate_figure8_severity_curves.py from
+Built by generate_severity_curves.py from
 benchmark_results/ftc_suite_results.csv. Not currently placed on the
 poster (see the note at the top of this file). The only figure in this
 set showing DEGRADATION rather than a single-point summary. A
@@ -204,12 +204,12 @@ value / best raw), no CI bands, panels side by side.
 
 Regenerate after re-running ftc/suite_benchmark.py:
 
-    python3 "screenshots/poster figures/generate_figure8_severity_curves.py"
+    python3 "screenshots/poster figures/generate_severity_curves.py"
 
 
-figure9_deviation_types.png -- the three deviation axes
+deviation_types.png -- the three deviation axes
 --------------------------------------------------------------------------
-Built by generate_figure9_deviation_types.py. Not currently placed on
+Built by generate_deviation_types.py. Not currently placed on
 the poster (see the note at the top of this file). Three field
 thumbnails, each turning ON exactly one deviation axis with the other
 two held at 0 -- the same isolation ftc/suite_benchmark.py's sweep
@@ -221,4 +221,4 @@ misleading.
 
 Overlaps figure1 -- see the placement note at the top of this file.
 
-    python3 "screenshots/poster figures/generate_figure9_deviation_types.py"
+    python3 "screenshots/poster figures/generate_deviation_types.py"
