@@ -23,12 +23,17 @@ Two bars per scenario, both always populated (the previous version plotted only 
   - "Best single sensor" -- the highest-success-rate candidate built from a single purchased
     sensor. A free IMU riding along on top of one paid sensor does NOT promote that candidate to
     a bundle here: "odometry pods + IMU" is the odometry pods single wearing a $0 add-on, not a
-    second thing bought (ImuSuite is priced at $0 -- ftc/config.py's IMU_COST_USD -- and at this
-    project's optimistic/default fidelity tiers, which is what every MATCH_PROFILES scenario runs
-    at, it changes zero trial outcomes here: see the tied rows in the CSV itself). Classification
-    is by PAID parts (ftc/config.py's PART_COSTS_USD), not by suite count or suite name, which is
-    also why a two-camera single suite like dual_camera_apriltag counts as a bundle here -- it's
-    two purchased webcams, whatever ftc/sensors.py calls the suite that bolts them together.
+    second thing bought (ImuSuite is priced at $0 -- ftc/config.py's IMU_COST_USD). This is a
+    classification rule, not an empirical one: four of MATCH_PROFILES' five scenarios actually run
+    at "realistic" fidelity (ftc/optimizer.py's DEFAULT_PROFILES/MATCH_PROFILES module comment --
+    only `corridor` stays at "optimistic," the same shared profile figure4's catalog uses), so
+    IMU's heading correction is live there and DOES change some trial outcomes (e.g. dead_reckoning
+    vs. imu differ under pose_drift_match/opponent_match/combined_match in the CSV) -- it just
+    never changes which PAID parts a candidate is built from, which is what this figure classifies
+    by. Classification is by PAID parts (ftc/config.py's PART_COSTS_USD), not by suite count, suite
+    name, or whether a trial's outcome happened to tie, which is also why a two-camera single
+    suite like dual_camera_apriltag counts as a bundle here -- it's two purchased webcams,
+    whatever ftc/sensors.py calls the suite that bolts them together.
   - "Best bundle" -- the highest-success-rate candidate with 2+ distinct PAID parts.
 Colored orange/blue, matching figure4's single-vs-bundle coding, so a reader who's seen that
 chart doesn't relearn a mapping. Ties (bundle bar no taller than single) ARE a finding, not a
