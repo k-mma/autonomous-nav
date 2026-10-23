@@ -98,28 +98,42 @@ def _place_moving_blocker(ground_truth, assumed_grid, start, goal, probability, 
     return obstacle
 
 
+def _build_trial_world(blocker_type, variance_level, trial_seed, grid, start, goal):
+    """The ground truth, the robot's real starting cell, and the opponents
+    for one match. Built fresh for EVERY suite, never shared between
+    them: a MovingObstacle mutates both the ground_truth grid it walks
+    over and its own position and move timer, so a world reused by a
+    second suite would start that suite's match with the opponent
+    wherever the previous suite's match left it, and with a move timer
+    parked at that match's final simulated time (frozen until this
+    match's own clock catches up). Every input here is seeded from
+    trial_seed alone, so rebuilding gives every suite the identical
+    starting world."""
+    probability = min(variance_level, 1.0)
+    if blocker_type == "static":
+        ground_truth, actual_start = generate_ground_truth(
+            grid, start, goal, variance_level, seed=trial_seed,
+            start_drift_scale=0.0, obstacle_drift_scale=0.0, blocker_scale=1.0)
+        return ground_truth, actual_start, ()
+
+    ground_truth, actual_start = generate_ground_truth(
+        grid, start, goal, variance_level, seed=trial_seed,
+        start_drift_scale=0.0, obstacle_drift_scale=0.0, blocker_scale=0.0)
+    placement_rng = random.Random(trial_seed)
+    obstacle = _place_moving_blocker(ground_truth, grid, start, goal, probability, placement_rng,
+                                      OPPONENT_REPOSITION_PERIOD_MS)
+    return ground_truth, actual_start, ((obstacle,) if obstacle is not None else ())
+
+
 def run_combo(blocker_type, variance_level, num_trials, base_seed, grid, free_cells, tag_sites):
     rows = []
-    probability = min(variance_level, 1.0)
     for t in range(num_trials):
         trial_seed = base_seed + t
         start, goal = _solvable_scenario(trial_seed, grid, free_cells)
 
-        if blocker_type == "static":
-            ground_truth, actual_start = generate_ground_truth(
-                grid, start, goal, variance_level, seed=trial_seed,
-                start_drift_scale=0.0, obstacle_drift_scale=0.0, blocker_scale=1.0)
-            moving_obstacles = ()
-        else:
-            ground_truth, actual_start = generate_ground_truth(
-                grid, start, goal, variance_level, seed=trial_seed,
-                start_drift_scale=0.0, obstacle_drift_scale=0.0, blocker_scale=0.0)
-            placement_rng = random.Random(trial_seed)
-            obstacle = _place_moving_blocker(ground_truth, grid, start, goal, probability, placement_rng,
-                                              OPPONENT_REPOSITION_PERIOD_MS)
-            moving_obstacles = (obstacle,) if obstacle is not None else ()
-
         for suite_name in SUITE_ORDER:
+            ground_truth, actual_start, moving_obstacles = _build_trial_world(
+                blocker_type, variance_level, trial_seed, grid, start, goal)
             suite = SUITES[suite_name]()
             result = run_match(suite, grid, start, goal, ground_truth, actual_start, tag_sites,
                                 random.Random(trial_seed), moving_obstacles=moving_obstacles)
@@ -354,24 +368,52 @@ def write_writeup(stats, rows, path):
               "| Suite | Avg. collisions (static) | Avg. collisions (moving) | Avg. replans (static) | "
               "Avg. replans (moving) |", "|---|---:|---:|---:|---:|"]
     levels = [l for l in VARIANCE_LEVELS if l >= SUMMARY_MIN_LEVEL]
+    behavior = {}
     for suite in SUITE_ORDER:
         static_coll = sum(stats[(suite, "static", l)]["avg_collisions"] for l in levels) / len(levels)
         moving_coll = sum(stats[(suite, "moving", l)]["avg_collisions"] for l in levels) / len(levels)
         static_replans = sum(stats[(suite, "static", l)]["avg_replans"] for l in levels) / len(levels)
         moving_replans = sum(stats[(suite, "moving", l)]["avg_replans"] for l in levels) / len(levels)
+        behavior[suite] = (static_coll, moving_coll, static_replans, moving_replans)
         lines.append(f"| {SUITE_LABELS[suite]} | {static_coll:.2f} | {moving_coll:.2f} | "
                       f"{static_replans:.2f} | {moving_replans:.2f} |")
     lines.append("")
-    lines.append(
-        "Suites that sense obstacles (" + ", ".join(SUITE_LABELS[s] for s in sensing_suites) + ") replan "
-        "more against a moving opponent than a static one, since a random-walking obstacle can wander "
-        "back onto an already-cleared path -- extra active work a static blocker never demands, but "
-        "work that still pays off in a lower collision rate (see the table above). The non-sensing "
-        "suites' improvement above is a *passive* benefit (the blocker happens to wander off their fixed "
-        "route); this is the *active* version of the same underlying advantage -- a sensing suite can "
-        "additionally detect and route around the blocker even while it's still nearby, instead of just "
-        "waiting for it to leave."
-    )
+
+    # Worded from the table above, not assumed: an earlier version of
+    # this paragraph asserted that sensing suites replan MORE and
+    # collide LESS against a moving opponent while its own table showed
+    # the reverse for both.
+    def _direction(suite, static_idx, moving_idx):
+        before, after = behavior[suite][static_idx], behavior[suite][moving_idx]
+        return "more" if after > before + 0.005 else "fewer" if after < before - 0.005 else "the same number of"
+
+    sensing_notes = []
+    for suite in sensing_suites:
+        replans_dir = _direction(suite, 2, 3)
+        collisions_dir = _direction(suite, 0, 1)
+        sensing_notes.append(
+            f"{SUITE_LABELS[suite]} replans {replans_dir} times ({behavior[suite][2]:.2f} -> "
+            f"{behavior[suite][3]:.2f}) and averages {collisions_dir} collisions ({behavior[suite][0]:.2f} -> "
+            f"{behavior[suite][1]:.2f})")
+    sensing_helped = all(_direction(s, 0, 1) == "fewer" for s in sensing_suites)
+    lines.append("Static -> moving, for the suites that sense obstacles: " + "; ".join(sensing_notes) + ".")
+    lines.append("")
+    if sensing_helped:
+        lines.append(
+            "Obstacle-sensing suites collide less against a moving opponent, so for them the benefit is "
+            "active as well as passive: they can detect and route around the blocker while it is still "
+            "nearby, not just wait for it to wander off their route."
+        )
+    else:
+        lines.append(
+            "Obstacle sensing does NOT buy these suites the improvement the non-sensing suites get: "
+            "their collision rate is not lower against a moving opponent. The non-sensing suites' "
+            "improvement above is a *passive* timing benefit (the blocker happens to wander off their "
+            "fixed route), and the sensing suites do not capture an *active* version of it on top -- "
+            "a random-walking obstacle can wander back onto an already-cleared path, and the distance "
+            "sensors' blind spots (see `ftc_suite_writeup.md`) plausibly mean it is often not seen "
+            "until the robot is already close -- a hypothesis this sweep does not isolate."
+        )
 
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")

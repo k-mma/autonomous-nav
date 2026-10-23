@@ -1552,42 +1552,64 @@ interior cell of the assumed start->goal path, via the same
 identically and confirming they choose the same cell, not just assumed
 from reading the code.
 
-The result: a moving opponent DOES appear to change which suite is the
-best value, though not cleanly. Distance sensors is the best-value
-suite against a static blocker (+10.1pp/$100, off a 6% free-baseline
-floor) -- the FIRST time in this project that obstacle-sensing suite
-has won a best-value comparison outright, since a parked blocker on the
-planned route is exactly the failure mode it exists to catch. Against a
-moving blocker, AprilTag (front camera) edges out Rear camera
-(+26.0pp/$100 vs. +12.0pp/$100), but the margin is close enough that
-the two suites' success-rate confidence intervals still overlap at this
-trial count -- treat "AprilTag beats Rear camera against a moving
-opponent" as plausible, not confirmed. What doesn't need hedging:
-neither winner is Full suite, and Distance sensors's static-blocker win
-isn't close. This is a different, messier finding than an earlier run
-of this same module produced, when AprilTag's cost and detection range
-were both under-modeled (an unsourced ~$40 and an understated 6ft,
-corrected against a real Logitech C270 price and FTC's own documented
-10ft AprilTag detection range respectively) and, later, than a version
-measured before `ftc/field.py`'s grid-boundary and rotated-footprint-
-collision bugs were fixed (README.md's "Threats to validity") -- each
-correction has genuinely moved which suite this comparison names,
-which is itself the lesson: this specific ranking is not settled
-science, it is conditional on the model underneath it exactly as much
-as the headline sweep is. More surprising, and consistent across every
-version of this study so far: suites that never sense obstacles at all
-(dead reckoning, odometry, AprilTag) still do substantially better
-against a moving opponent than a static one, purely from timing luck --
-a parked obstacle sits on a blind suite's fixed route for the entire
-match, so a plan that ever crosses that cell collides deterministically;
-a wandering obstacle often isn't there anymore by the time that same
+One bug in this benchmark is worth recording, because it sat there for
+a while behind a commit message that said it was fixed. `run_combo` built
+the trial's ground truth and its `MovingObstacle` once and then ran every
+suite in `SUITE_ORDER` against that same pair. A `MovingObstacle` is
+mutable: it rewrites cells of the `ground_truth` grid as it walks, and its
+`next_move_time` ends a match parked at that match's final simulated
+time. So every suite after the first started its match (clock back at
+zero) against an opponent already moved by the previous match and frozen
+until the new clock caught up -- in one inspected trial, a move timer of
+8,048 ms at the start of the second suite's match. A suite's result
+therefore depended on where it sat in `SUITE_ORDER`. The static blocker
+was never affected: with no moving obstacle, `run_match` leaves
+`ground_truth` untouched (checked directly across 45 trial batches, zero
+mutations), and every static row is byte-identical before and after the
+fix. `_build_trial_world` now builds a fresh ground truth and opponent for
+every suite from the same seeds, and
+`check_run_combo_gives_every_suite_a_fresh_opponent` rebuilds each world
+from primitives and requires every `run_combo` row to match that suite run
+alone (it failed on 12 of 70 suite/trial pairs against the old code). 126
+of the 1,925 moving rows changed; the rankings below are the corrected ones.
+
+The result: a moving opponent changes which suite is the best value.
+Distance sensors is the best-value suite against a static blocker
+(+10.1pp/$100, off a 6% free-baseline floor) -- the FIRST time in this
+project that obstacle-sensing suite has won a best-value comparison
+outright, since a parked blocker on the planned route is exactly the
+failure mode it exists to catch. Against a moving blocker, AprilTag
+(front camera) is the best value (+24.0pp/$100 off a 25% baseline),
+ahead of Odometry pods (+15.9pp/$100) with non-overlapping confidence
+intervals, though Odometry pods has the highest raw success rate (56%).
+Neither winner is Full suite. This ranking has moved with every
+correction to the model underneath it -- AprilTag's cost and detection
+range (an unsourced ~$40 and an understated 6ft, corrected against a
+real Logitech C270 price and FTC's own documented 10ft AprilTag
+detection range), `ftc/field.py`'s grid-boundary and rotated-footprint-
+collision bugs (README.md's "Threats to validity"), and this benchmark's
+own shared-state bug -- which is itself the lesson: this specific
+ranking is conditional on the model underneath it exactly as much as the
+headline sweep is. More surprising, and consistent across every version
+of this study so far: suites that never sense obstacles at all (dead
+reckoning, odometry, AprilTag) still do substantially better against a
+moving opponent than a static one, purely from timing luck -- a parked
+obstacle sits on a blind suite's fixed route for the entire match, so a
+plan that ever crosses that cell collides deterministically; a
+wandering obstacle often isn't there anymore by the time that same
 fixed plan actually reaches the cell (the largest such gain: Odometry
-pods, +31 percentage points). A moving opponent is harder to
+pods, +36 percentage points). A moving opponent is harder to
 *reason about*, but this specific deviation type makes it easier to
 *physically avoid* for a suite that isn't reasoning about it at all.
-Full tables (including collision/replan counts, which show the
-obstacle-sensing suites' *active* version of the same underlying
-advantage) in `benchmark_results/ftc_opponent_writeup.md`, chart in
+The obstacle-sensing suites do not capture that benefit: Distance
+sensors falls from 16% to 6% and averages more collisions (0.77 to
+0.86) and slightly fewer replans (0.56 to 0.52) against the moving
+opponent, and Full suite's collisions also edge up (0.70 to 0.73). An
+earlier version of this section and of the generated writeup claimed
+the opposite (more replans, fewer collisions) while the table printed
+right above it showed neither; the generated paragraph is now worded
+from the table's own numbers. Full tables in
+`benchmark_results/ftc_opponent_writeup.md`, chart in
 `ftc_opponent_comparison.png`.
 
 This BOUNDS the "no opponent modeling" limitation -- a random walk with

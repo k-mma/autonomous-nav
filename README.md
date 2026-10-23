@@ -968,22 +968,31 @@ alone.
   `MovingObstacle` (a seeded random walk, ticked on simulated match
   time) for a genuinely moving opponent, added alongside the static
   version rather than replacing it. The finding: a moving opponent
-  DOES appear to change which suite is the best value, though not
-  cleanly -- Distance sensors is best against a static blocker
-  (+10.1pp/$100), while AprilTag (front camera) edges out Rear camera
-  against a moving one (+26.0pp/$100 vs. +12.0pp/$100, close enough
-  that the two suites' success-rate confidence intervals still overlap
-  at this trial count -- treat that particular ranking as plausible,
-  not confirmed). What IS confirmed: neither winner is Full suite, and
-  Distance sensors's static-blocker win isn't close -- see
-  `benchmark_results/ftc_opponent_writeup.md`.
+  changes which suite is the best value -- Distance sensors is best
+  against a static blocker (+10.1pp/$100), while AprilTag (front
+  camera) is best against a moving one (+24.0pp/$100, ahead of
+  Odometry pods at +15.9pp/$100, with non-overlapping confidence
+  intervals; Odometry pods still has the highest raw success rate
+  against a moving opponent, 56%). Neither winner is Full suite --
+  see `benchmark_results/ftc_opponent_writeup.md`.
   Suites that never sense obstacles at all still do substantially
   better against a moving opponent than a static one, purely from
   timing luck (a parked obstacle blocks a fixed plan deterministically;
   a wandering one often isn't there anymore by the time a blind suite's
-  plan reaches that cell). Still not modeled: the opponent has no goals
-  of its own and doesn't react to this robot's presence -- a random
-  walk is a step up from a fixed point, not a full multi-agent model.
+  plan reaches that cell). The obstacle-sensing suites do not capture
+  that benefit: Distance sensors drops from 16% to 6% and averages more
+  collisions per match against a moving opponent (0.77 to 0.86). An
+  earlier version of this benchmark reused one `MovingObstacle` and one
+  ground-truth map across every suite in a trial, so each suite after
+  the first started against an opponent the previous suite's match had
+  already moved, with its move timer parked at that match's final
+  simulated time; it now builds a fresh world per suite
+  (`_build_trial_world`, with a regression test in `ftc/scratch/
+  opponent_benchmark_test.py`). The static-blocker rows were unaffected
+  (byte-identical before and after); 126 of the 1,925 moving rows
+  changed. Still not modeled: the opponent has no goals of its own and
+  doesn't react to this robot's presence -- a random walk is a step up
+  from a fixed point, not a full multi-agent model.
 - One field layout for the headline study -- CLOSED. `ftc/
   suite_benchmark.py` still runs on the `'cluttered'` layout only, but
   `ftc/layout_benchmark.py` reruns the identical full-rigor sweep on

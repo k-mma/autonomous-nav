@@ -34,8 +34,10 @@ import random
 
 import ftc.match as match_module
 from ftc.field import build_grid, tag_sites_for
-from ftc.opponent_benchmark import _place_moving_blocker
-from ftc.sensors import DeadReckoningSuite, DistanceSensorSuite
+from ftc.config import OPPONENT_REPOSITION_PERIOD_MS
+from ftc.opponent_benchmark import _place_moving_blocker, run_combo
+from ftc.sensors import SUITES, SUITE_ORDER, DeadReckoningSuite, DistanceSensorSuite
+from ftc.suite_benchmark import _solvable_scenario
 from nav.field_variance import _place_unplanned_blocker, generate_ground_truth
 from nav.grid import Grid
 
@@ -175,6 +177,50 @@ def check_deterministic_given_same_seed():
     return ok
 
 
+def check_run_combo_gives_every_suite_a_fresh_opponent():
+    """run_combo runs all of SUITE_ORDER against one trial. A MovingObstacle
+    carries mutable state -- its position on the map and its move timer --
+    so reusing one instance (and one ground_truth) across suites means
+    every suite after the first starts its match against whatever the
+    previous match left behind: an opponent already moved, and a move
+    timer that sits at the previous match's final simulated time, so it
+    is frozen until this match's own clock catches up. A suite's result
+    must not depend on where it sits in SUITE_ORDER, so every row
+    run_combo reports has to equal that suite run alone, against an
+    opponent freshly built from the same seeds. Built here from the
+    primitives (not via run_combo's own helper) so this fails against a
+    run_combo that shares the world."""
+    grid = build_grid(LAYOUT)
+    free_cells = [(r, c) for r in range(grid.size) for c in range(grid.size) if grid.cells[r][c] == 0]
+    tag_sites = tag_sites_for(LAYOUT)
+    base_seed, level, num_trials = 9_700_000, 1.0, 10
+    rows = run_combo("moving", level, num_trials, base_seed, grid, free_cells, tag_sites)
+    by_key = {(r["suite"], r["trial"]): r for r in rows}
+
+    mismatches = []
+    for t in range(num_trials):
+        trial_seed = base_seed + t
+        start, goal = _solvable_scenario(trial_seed, grid, free_cells)
+        for suite_name in SUITE_ORDER:
+            ground_truth, actual_start = generate_ground_truth(
+                grid, start, goal, level, seed=trial_seed,
+                start_drift_scale=0.0, obstacle_drift_scale=0.0, blocker_scale=0.0)
+            obstacle = _place_moving_blocker(ground_truth, grid, start, goal, min(level, 1.0),
+                                              random.Random(trial_seed), OPPONENT_REPOSITION_PERIOD_MS)
+            moving_obstacles = (obstacle,) if obstacle is not None else ()
+            alone = match_module.run_match(SUITES[suite_name](), grid, start, goal, ground_truth, actual_start,
+                                            tag_sites, random.Random(trial_seed), moving_obstacles=moving_obstacles)
+            row = by_key[(suite_name, t)]
+            if (row["success"], row["collisions"], row["replans"]) != (alone.success, alone.collisions,
+                                                                      alone.replans):
+                mismatches.append((suite_name, t))
+    ok = not mismatches
+    print(f"  suite/trial pairs whose run_combo row differs from the suite run alone: {mismatches}")
+    print(f"every suite in run_combo faces a freshly built opponent, independent of SUITE_ORDER position: "
+          f"{'OK' if ok else 'FAIL'}")
+    return ok
+
+
 # --- pytest entry points --------------------------------------------------
 # Thin wrappers so `pytest` collects and runs the checks above as real
 # tests; the checks themselves (and the standalone `python3 <this file>`
@@ -197,11 +243,16 @@ def test_deterministic_given_same_seed():
     assert check_deterministic_given_same_seed()
 
 
+def test_run_combo_gives_every_suite_a_fresh_opponent():
+    assert check_run_combo_gives_every_suite_a_fresh_opponent()
+
+
 if __name__ == "__main__":
     checks = [
         check_empty_moving_obstacles_is_a_true_no_op(),
         check_candidate_cell_selection_matches_static(),
         check_run_match_ticks_on_simulated_time(),
         check_deterministic_given_same_seed(),
+        check_run_combo_gives_every_suite_a_fresh_opponent(),
     ]
     print("\nALL PASS" if all(checks) else "\nSOME CHECKS FAILED")
