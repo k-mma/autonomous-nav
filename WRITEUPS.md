@@ -2979,3 +2979,148 @@ the same mechanism, visible in one suite at once. Pose error and
 obstacle error remain, under yet another lens, genuinely different
 failure modes with genuinely different dependence on live replanning --
 not a matter of degree, a matter of mechanism.
+
+## Repo layout: the full annotated tree
+
+The file-by-file version of the README's short layout summary. Pygame-only
+and PyBullet-only code live in their own top-level
+directories, separate from each other and from the shared `nav/` core.
+(Neither is named literally `pygame/` or `pybullet/` -- a directory with
+that exact name, sitting on `sys.path`, would shadow the real installed
+library of the same name for `import pygame`/`import pybullet` anywhere
+in the project.)
+
+```
+nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ import from this
+  grid.py          Grid model: cells, obstacles, start/goal, neighbors, cost map, size param
+  algorithms.py    Dijkstra, A*, edge-case handling, path cost
+  rrt.py           RRT (Rapidly-exploring Random Tree)
+  rrt_star.py      RRT* -- RRT plus rewiring toward asymptotic optimality
+  kdtree.py        k-d tree over (row, col) points -- RRT/RRT*'s nearest/within-radius queries
+  dstar_lite.py    D* Lite -- incremental replanner that repairs a persistent search
+  cbs.py           Conflict-Based Search -- joint conflict-free planning for 3+ agents
+  sensor.py        Simulated lidar (2D radius) + the KnownGrid the robot plans against
+  heuristics.py    Manhattan / Euclidean / Chebyshev / Octile / scaled
+  obstacles.py     Moving obstacles + the replanning policy
+  maze.py          Recursive-backtracking maze generator
+  scenario_helpers.py Shared obstacle/terrain-scattering helpers for pygame_app/ and pybullet_app/
+  benchmark.py        20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
+  scale_benchmark.py  20x20 - 200x200 grid-size scaling benchmark -> CSV + plot
+  replan_benchmark.py D* Lite vs fresh A* on moving-obstacle/sensor-discovery replanning -> CSV + plot
+  occupancy.py        Log-odds occupancy grid + BeliefGrid -- plans against expected cost, not binary known/unknown
+  field_variance.py   Turns "how far reality deviates from the assumed map" into a sweepable, 3-type knob
+  policies.py         OpenLoopPolicy / ReactivePolicy / BeliefPolicy behind one shared interface
+  uncertainty_benchmark.py  Open-loop vs reactive vs belief under swept deviation -> CSV + plot + statistical crossover
+  stats.py            Pure-stdlib bootstrap CIs, plus a PAIRED difference bootstrap for shared-scenario comparisons
+  estimation.py       Confidence-weighted fusion of two 2D position estimates; domain-neutral, ftc/fusion.py's consumer
+  kalman.py           predict()/update()/gated_update() -- a real, variance-aware Kalman estimator, domain-neutral
+  scratch/         Standalone throwaway scripts proving each piece before it's wired in (framework-agnostic only)
+
+ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
+                    in this repo where FTC-specific names/numbers belong.
+  config.py          Field/robot/match/sensor constants, each with its real-world source noted;
+                     includes MODEL_FIDELITY's 3 tiers and the drivetrain/coverage/new-suite constants
+  field.py           Parameterized field layouts (not tied to one season's game) -> a real-footprint-inflated nav.grid.Grid
+  sensors.py         8 sensor suites (7 headline, 1 non-headline AprilTag+IMU), each fixing POSE,
+                     OBSTACLE, or (IMU) HEADING error. No lidar-class hardware modeled -- not legal
+                     FTC equipment (see [VALIDITY.md](VALIDITY.md))
+  drivetrain.py      TANK/MECANUM -- an axis orthogonal to sensor suite, not part of SUITE_ORDER
+  match.py           30-second autonomous-period budget model: drive + turn + replan time,
+                     (row, col, heading) pose-error mechanic, fidelity-tier + drivetrain + gearing hooks
+  suite_benchmark.py The headline study -- suite x deviation type x deviation level x trials -> CSV + 2 plots + writeup
+  robustness.py      Tipping-point sweep on suite_benchmark.py's own estimated constants -> CSV + plot + writeup
+  layout_benchmark.py Reruns the headline sweep on all 3 field layouts -> CSV + plot + writeup
+  budget_benchmark.py Sweeps AUTONOMOUS_PERIOD_S downward -> CSV + plot + writeup
+  opponent_benchmark.py Static vs. moving (nav/obstacles.py MovingObstacle) opponent -> CSV + plot + writeup
+  fidelity_benchmark.py The headline sweep rerun at all 3 MODEL_FIDELITY tiers -> CSV + plot + writeup
+  drivetrain_benchmark.py Tank vs. mecanum x fidelity tier, plus a 2nd sweep across 3 MECANUM heading policies -> CSV + plot + writeup
+  drivetrain_suite_benchmark.py Tank vs. mecanum, full-rigor headline sweep, all 7 suites -> CSV + plot + writeup
+  coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} -> CSV + plot + writeup
+  newsuites_benchmark.py AprilTag+IMU x fidelity tier -> CSV + plot + writeup
+  gearing_benchmark.py (optional, Priority 5) Motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
+  planning_latency_benchmark.py Real per-call astar() latency (median/p99/max) across 5 sizes x 3 layouts x 7 suites -> CSV + plot + writeup
+  calibration.py     Fits variance_level from real measurement CSVs (or a labeled placeholder) -- the two inputs nav/kalman.py needs
+  recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
+  bundle.py          Composes 2+ suites into one working suite -- part-level costing, capability merging, dedup
+  optimizer.py       Searches the bundle space: scenario profiles, paired significance, Pareto frontier, greedy search
+  fusion.py          Wires nav/estimation.py's fuse() into an AprilTag+odometry tag-detection event, opt-in (None/"kalman")
+  fusion_benchmark.py Confidence-weighted fusion vs. optimistic merging for AprilTag+odometry -> CSV + plot + writeup
+  fusion_kalman_benchmark.py A third fusion condition (Kalman) added to the comparison above -> CSV + plot + writeup
+  optimizer_benchmark.py The bundle study -- every buildable combination x 5 scenario profiles -> CSV + 2 plots + writeup
+  scripted_auto_benchmark.py Live replanning vs. a fixed, never-reconsidered route x 7 suites x 3 deviation types -> CSV + plot + writeup
+  trace.py           record_match() -- captures a tick-by-tick replay trace via on_tick; what the pygame FTC visualizer is built on
+  scratch/         Same role as nav/scratch/, for the FTC-specific pieces
+
+pygame_app/        Everything that touches pygame
+  main.py            Entry point: opens the interactive visualizer
+  visualizer.py      The pygame app
+  scenario.py        ScenarioConfig -- preset state for scenarios/*.py
+  scenarios/         Standalone launchers that open the visualizer into a preset scene (maze, cost
+                      map, bottleneck, noisy sensor, step replay, uncertainty comparison); the FTC
+                      suite-comparison (`scenario_ftc_suites.py`) and bundle-browser
+                      (`scenario_ftc_bundles.py`) replays are their own animated, real-time viewers
+  ftc_viz/           Drawing primitives both FTC scenario viewers share (field_view.py) -- pure
+                      functions of an ftc/trace.py MatchTrace + tick index, no simulation of its own
+  scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths
+
+pybullet_app/      Everything that touches PyBullet
+  pybullet_main.py             Single-robot PyBullet demo (plan -> smooth -> drive, + --sensor/--terrain)
+  pybullet_multi_robot_main.py Two-robot corridor-conflict + priority/deadlock demo
+  pybullet_cbs_main.py         N-robot intersection demo, coordinated by CBS
+  sim3d/           PyBullet world-building, path smoothing, robot control
+    coords.py        Grid-cell <-> world-meter conversion
+    world.py         Ground plane, obstacle bodies, debug-line path drawing
+    smoothing.py     Collinear simplification, Chaikin corner-cutting, Catmull-Rom spline
+    robot.py         Robot: drives a body (Husky or r2d2) toward waypoints via velocity control
+    lidar.py         Lidar3D: real raycast sensor (pybullet.rayTestBatch)
+    hud.py           World-space debug-text HUD and per-robot follow labels
+  scratch/         PyBullet-specific standalone sanity checks (setup, raycast
+                    lidar, lidar noise, multi-robot) -- same role as nav/scratch/,
+                    just for the pieces that need a real PyBullet connection
+
+benchmark_results/  Generated CSVs, plots, and writeups from all three benchmarks
+WRITEUPS.md         Algorithm explanations, replanning policy, cost map,
+                     sensor model, PyBullet port, 3D lidar, multi-robot
+                     coordination, and the heuristic experiments' findings
+```
+
+## Command reference
+
+The quickstart in [README.md](README.md#how-to-run) covers the venv
+setup, the test suite, the pygame visualizer, and the three commands
+most people actually want (`ftc.suite_benchmark`, `ftc.recommend`,
+`ftc.optimizer`). Every other entry point this repo ships:
+
+```bash
+python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
+python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner/MeepMeep-style), real-time playback, all 7 headline suites side by side
+python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag                     # one suite, one big panel
+python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite         # an arbitrary side-by-side comparison
+python3 pygame_app/scenarios/scenario_ftc_suites.py --suites all --fidelity pessimistic  # every suite ftc/sensors.py defines, at the pessimistic tier
+python3 pygame_app/scenarios/scenario_ftc_suites.py --opponent moving                    # a second, wandering robot on the field
+python3 pygame_app/scenarios/scenario_ftc_bundles.py                                     # SEPARATE visualizer: browse all 19 buildable 2+-suite combinations (ftc/bundle.py) -- press Left/Right to step through every one, each shown as its own components running alone next to the combined BUNDLE panel
+python3 pygame_app/scenarios/scenario_ftc_bundles.py --sort parts --candidates odometry_pods,apriltag,imu,dual_camera_apriltag --max-size 2  # a smaller candidate pool, pairs only
+python3 -m nav.benchmark                         # regenerate benchmark_results/
+python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
+python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
+python3 -m nav.uncertainty_benchmark             # regenerate the open-loop/reactive/belief uncertainty study
+python3 -m ftc.robustness                        # tipping-point sweep on the headline study's estimated constants
+python3 -m ftc.layout_benchmark                  # does the best-value suite change on a different field layout?
+python3 -m ftc.budget_benchmark                  # sweep AUTONOMOUS_PERIOD_S -- when does the budget start to bind?
+python3 -m ftc.opponent_benchmark                # static vs. moving opponent -- does it change which suite wins?
+python3 -m ftc.fidelity_benchmark                # headline sweep at all 3 MODEL_FIDELITY tiers side by side
+python3 -m ftc.drivetrain_benchmark              # tank vs. mecanum -- does holding heading toward a tag wall pay off (AprilTag-focused, reduced rigor)?
+python3 -m ftc.drivetrain_suite_benchmark        # tank vs. mecanum, full-rigor headline sweep, all 7 suites -- does the best-value suite change?
+python3 -m ftc.coverage_benchmark                # distance-sensor count sweep {3,4,6,8} -- how much of the blind spot closes, and how much structurally can't?
+python3 -m ftc.newsuites_benchmark               # AprilTag+IMU (IMU and dual-camera AprilTag are now headline suites, see ftc.suite_benchmark)
+python3 -m ftc.gearing_benchmark                 # faster motor gearing vs. wheel slip, crossed with the budget
+python3 -m ftc.optimizer_benchmark               # bundle study: every combination of suites, Pareto frontier + synergy significance
+python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
+python3 -m ftc.optimizer --budget 150            # ... best robot for $150
+python3 -m ftc.optimizer --objective worst_case  # ... most robust across scenarios, not best on average
+python3 -m ftc.optimizer --search greedy --require-significant   # ... marginal value of each sensor added, stopping when it stops paying
+python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
+python3 pybullet_app/pybullet_main.py --sensor    # ... with the raycast lidar instead of a perfect map
+python3 pybullet_app/pybullet_multi_robot_main.py # two robots, forced corridor conflict
+python3 pybullet_app/pybullet_cbs_main.py         # N robots through an intersection, coordinated by CBS
+```

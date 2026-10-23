@@ -1,507 +1,146 @@
 # autonomous-nav
 
+### Less is More: Feature Selection for Autonomous Navigation
+
 [![tests](https://github.com/k-mma/autonomous-nav/actions/workflows/tests.yml/badge.svg)](https://github.com/k-mma/autonomous-nav/actions/workflows/tests.yml)
 
-Research question: which sensing investment actually buys reliability
-in a 30-second FTC (*FIRST* Tech Challenge) autonomous period, and at
-what level of field/reality deviation does each one become necessary?
+**A pathfinding and sensor-strategy testbed for *FIRST* Tech Challenge (FTC)
+robotics.** Five path-planning algorithms (Dijkstra, A\*, RRT, RRT\*, D\* Lite)
+sit under a belief-planning and sensor-fusion layer that runs thousands of
+controlled, repeatable autonomous-period trials — the statistical power a real
+FTC season's ~10 matches can never supply — to answer one question: **which
+sensors are actually worth the money, and when?**
 
-![Sensor suite success rate vs. deviation, one row per deviation type, with 95% bootstrap CI bands](benchmark_results/ftc_suite_comparison.png)
+![Four sensor suites replaying the identical seeded FTC match side by side. Dead reckoning has drifted 18.8 inches from its true position and is stuck; AprilTag, its camera field-of-view drawn as a blue cone, has corrected to 0.8 inches and reached the goal; odometry pods is stuck at 13.0 inches; the distance-sensor suite's three narrow ToF cones are drawn in tan, visibly covering only a fraction of the robot's surroundings](screenshots/pygame/ftc_suite_replay.png)
 
-The finding: Odometry pods (~$195) has the highest raw success rate --
-FullSuite (distance sensors + AprilTag + odometry, ~$315) isn't even
-the runner-up anymore -- but AprilTag alone (~$25, a single Logitech
-C270) delivers 32 times FullSuite's success-rate gain per dollar
-spent over the free dead-reckoning baseline -- and the most useful
-result is negative: DistanceSensorSuite collides in the large majority
-of its trials (77%) even
-at *zero* field deviation, because 3 narrow ToF cones cover only ~75° of
-the 360° around the robot, not because of anything the field did. Which
-deviation type actually dominates depends on what a suite fixes -- pose
-error vs. obstacle error are different failure modes with different
-fixes, not one generic "uncertainty" axis. Full numbers in "FTC
-sensor-suite study: results" below and `benchmark_results/
-ftc_suite_writeup.md`; `ftc/suite_benchmark.py` is the study that
-produced them.
+Four sensor suites driving the *identical* seeded 30-second match, in real
+time (`pygame_app/scenarios/scenario_ftc_suites.py`). The gray outline behind
+each robot is where it *believes* it is; the gap is accumulated pose error.
+AprilTag's camera FOV is the blue cone; the distance suite's three ToF cones
+are the tan wedges, and the unshaded space between them is what it cannot see.
+This is one scenario, not a ranking — the aggregate over 5,775 matches is in
+[Results](#results).
 
-An FTC team gets roughly 10 matches a season -- one noisy, unrepeatable
-trial each, no ground truth to compare against, and no control over how
-much the real field/robot deviates from what the autonomous routine
-assumed. That's not enough data to answer the research question
-empirically, no matter how many matches a team plays. A testbed
-calibrated against real field/robot deviation lets them run the
-hundreds of controlled, repeatable trials the physical process could
-never supply. That's this project's actual thesis: simulation here is
-the only viable instrument for this question, not a stand-in for
-hardware you'd use if only you had more of it. See "Research
-question" below for the full framing.
+## Headline results
 
-Everything else in this repo -- the pathfinding planners, the
-weighted-terrain cost map, the sensor/occupancy/belief-planning models,
-`nav/uncertainty_benchmark.py`'s open-loop-vs-reactive-vs-belief study
--- exists because it's the belief-planning machinery the FTC study is
-built on top of. It grew as a tour of pathfinding algorithms first (see
-"Planners the testbed swaps between" below and `WRITEUPS.md` for that
-narrative, which continues toward ROS 2 / Nav2); `ftc/` is where that
-machinery gets pointed at one specific, answerable question.
+- **Best value is not best performance.** A $25 AprilTag webcam returns 32x
+  the success-rate gain per dollar of the $314 "buy everything" bundle
+  (+16.0 vs. +0.5 points per $100), even though odometry pods alone post the
+  highest raw success rate (30%). Stacking sensors hits diminishing returns
+  fast. *(This ranking is tier-dependent — see the caveat under
+  [Results](#results).)*
+- **The "obviously better" fix backfires.** Naively merging AprilTag +
+  odometry pods looks good (35% success), but a real confidence-weighted
+  fusion of those same two sensors *drops* it to 22% — below odometry alone
+  (25%). More sensors, fused more carefully, made the robot less reliable.
+- **A "safe-looking" sensor can be the worst buy.** The 3-sensor distance
+  suite is the only paid upgrade to land *below* the free baseline (10% vs.
+  14%, p=0.003). Its cones see ~75° of 360°, and reacting to that fragment
+  routes the robot into the 285° it cannot see.
+- **Underneath it all, A\* explores 68.9% fewer cells than Dijkstra** for an
+  identical-cost path — 241 vs. 75 cells across 20 random 25x25 grids. The
+  planner is infrastructure here, not the finding; picking it was a
+  completeness argument, not a speed one.
 
-## Research question
+Numbers and 95% bootstrap CIs behind each claim: [Results](#results) below,
+`benchmark_results/ftc_suite_writeup.md`, and [VALIDITY.md](VALIDITY.md).
 
-FTC autonomous is a 30-second dash: drive from a known start to a
-scoring position using a pre-programmed route, with no driver input.
-Every team already senses *something* -- at minimum, motor encoders --
-and can buy more: odometry pods, distance sensors, AprilTag-based
-vision, or all three together. Each option costs real money and real
-integration time a team could spend elsewhere. Nothing about which one
-is worth it is obvious from specs alone, because the answer depends on
-*which kind* of deviation actually shows up on a given field: a robot
-that starts a few inches off its mark needs pose correction, not
-obstacle sensing; a field with elements that don't quite match the
-CAD, or an opponent robot parked somewhere unplanned, needs the
-opposite. `ftc/suite_benchmark.py` sweeps 7 sensor suites
-(`ftc/sensors.py`) against 3 independently-scaled deviation types
-(`nav/field_variance.py`, Phase 2's ablation) at 11 deviation levels, on
-a real 30-second time budget (`ftc/match.py`) -- the study a real season
-can't run, because it would need hundreds of matches to get the same
-statistical power this testbed gets in about a minute.
+## Poster
 
-## nav/ vs ftc/: a deliberate boundary
+The one-page version of everything here, built for a research symposium at
+UC Berkeley.
 
-`nav/` stays domain-neutral on purpose: `nav/policies.py`,
-`nav/occupancy.py`, `nav/field_variance.py`, `nav/algorithms.py`,
-`nav/grid.py`, and everything else under `nav/` read as a general
-belief-planning library, with no FTC-specific identifiers anywhere in
-them. `ftc/` is a separate top-level package that holds the domain
-specialization -- FTC names are correct and expected there, because
-that's literally what the code models (an 18in robot, a 144in field, a
-30-second clock, AprilTags). Keeping the boundary at the package level
-rather than scattering FTC-specific `if` branches through `nav/` is
-what lets `nav/`'s machinery keep being reusable for a different robot,
-a different field, or a different competition entirely -- the FTC study
-is one specific consumer of it, not what it's *for*.
+[![Conference poster: Less is More — Feature Selection for Autonomous Navigation](docs/poster-preview.png)](docs/poster.pdf)
 
-## Planners the testbed swaps between
+**[Full-size PDF →](docs/poster.pdf)**
 
-This project started as a tour of pathfinding algorithms, and that tour
-is still here -- but it's infrastructure the FTC study runs on top of,
-not the point. Every planner below is a backend `nav/algorithms.py`'s
-`find_path` can swap in; `ftc/`'s policies and sensor suites all use A*
-exclusively (see "Research question" above), because A* is the correct
-tool at this grid scale (25x25-ish) and RRT/RRT* are not. It's not
-(only) a speed argument -- `nav/kdtree.py`'s spatial index means RRT is
-no longer even the slow one (see "Scale benchmark" below) -- it's a
-completeness-class argument: Dijkstra/A* are resolution-complete on a
-grid (guaranteed to find a path at the grid's resolution if one
-exists), RRT is only probabilistically complete (guaranteed as sample
-count -> infinity, not at any fixed budget), and `nav/scale_benchmark.py`
-shows that gap showing up as real, measured incompleteness (8/8 -> 5/8)
-as grid size grows even with a fast nearest-neighbor search. RRT/RRT*
-stay in this repo as explicit baselines -- useful for seeing *why* an
-exhaustive heuristic-guided search beats a sampling-based one here --
-not as something the FTC study, or a real autonomous routine built on
-this code, should actually reach for at this scale.
+## Quickstart
 
-- Click to draw obstacles on a 25x25 grid, place a start and goal, and run
-  Dijkstra, A\*, or RRT to watch the search expand cell by cell (or, for
-  RRT, watch its tree grow edge by edge).
-- Handles the edge cases a naive search would crash on: start/goal on an
-  obstacle, no path to the goal, start == goal.
-- Toggle a weighted-terrain cost map: obstacles get an inflated-cost
-  "buffer zone" (like Nav2's costmap), and A\*/Dijkstra route around them
-  with clearance instead of hugging every wall.
-- Toggle a simulated lidar sensor: the robot only knows about obstacles
-  within its sensor radius, plans against that partial knowledge, and
-  replans live as it discovers new obstacles -- real obstacles it hasn't
-  sensed yet are drawn as free with a faint outline, so you can see the
-  gap between what's true and what the robot knows.
-- Drop moving obstacles that random-walk between free neighboring cells;
-  send a robot down the computed path and watch it automatically replan
-  when an obstacle blocks its route.
-- Cycle A\*'s heuristic live (Manhattan / Euclidean / Octile / an
-  intentionally inadmissible one) to see search effort and path quality
-  change.
-- Toggle 8-directional movement, or generate a fresh maze with recursive
-  backtracking.
-- `nav/rrt_star.py` extends RRT with rewiring toward asymptotic
-  optimality, using the same `nav/kdtree.py` k-d tree RRT uses for its
-  nearest-neighbor/within-radius queries. `nav/dstar_lite.py` is an
-  incremental replanner (Koenig & Likhachev, 2002) that repairs a
-  persistent search around a changed edge instead of resolving from
-  scratch on every replan -- `nav/replan_benchmark.py` measures it against
-  fresh A* on this project's own moving-obstacle and sensor-discovery
-  replanning scenarios (see `benchmark_results/replan_writeup.md`).
-- `pygame_app/scenarios/*.py` are standalone launchers that open the
-  visualizer straight into a preset scene (e.g.
-  `pygame_app/scenarios/scenario_maze.py`,
-  `pygame_app/scenarios/scenario_costmap.py`) instead of needing manual
-  clicks to reach it -- built on `pygame_app/scenario.py`'s
-  `ScenarioConfig`. `pygame_app/scenarios/scenario_uncertainty.py` is the
-  one exception (its own standalone pygame loop, not built on
-  `ScenarioConfig`): a live, watchable replay of nav/uncertainty_
-  benchmark.py's headline open-loop/reactive/belief comparison, ground
-  truth on the left and the policy's current belief on the right.
-- `nav/benchmark.py` runs all three original algorithms across 20 random
-  grids and plots the comparison (see results below); `nav/scale_benchmark.py`
-  reruns the comparison holding density fixed and scaling grid size instead
-  (20x20 through 200x200) -- see "Scale benchmark" below.
-- `pybullet_app/pybullet_main.py` ports the grid into a real 3D PyBullet
-  world: the same `find_path`/A* code plans a route around a 3D obstacle
-  block, a Catmull-Rom spline smooths it into something a robot base can
-  actually follow, and a Husky robot drives it with velocity control (not
-  teleportation). `--sensor` swaps that for a real raycast lidar
-  (`pybullet.rayTestBatch`) that only knows what it's actually seen and
-  replans as it explores. See "PyBullet 3D port" below.
-- `pybullet_app/pybullet_multi_robot_main.py` runs two robots at once
-  through a single-width corridor, forcing a head-on conflict, resolved
-  with a priority policy (one robot always has right of way; the other
-  detours around or waits for it) plus a hard safety-distance stop as a
-  failsafe. See "Multiple robots" below.
-- `pybullet_app/pybullet_cbs_main.py` runs N robots (default 4) through a
-  shared 4-way intersection at once, coordinated by `nav/cbs.py`'s
-  Conflict-Based Search -- every robot's route is planned jointly,
-  offline, as a single conflict-free set of time-indexed paths, rather
-  than replanning live like the two-robot corridor demo.
-
-## How to run
+Python 3.11+.
 
 ```bash
 python3 -m venv nav-env
 source nav-env/bin/activate
 pip install -r requirements.txt
-
-pip install -r requirements-dev.txt              # adds pytest (requirements-dev.txt already includes requirements.txt)
-python3 -m pytest                                # run the test suite (ftc/, nav/, pygame_app/, pybullet_app/'s scratch/ dirs); CI runs this on every push
-
-python3 pygame_app/main.py                       # the pygame visualizer
-python3 pygame_app/scenarios/scenario_maze.py    # ... or straight into a preset scenario
-python3 pygame_app/scenarios/scenario_ftc_suites.py              # animated FTC suite comparison (RoadRunner/MeepMeep-style), real-time playback, all 7 headline suites side by side
-python3 pygame_app/scenarios/scenario_ftc_suites.py --suite apriltag                     # one suite, one big panel
-python3 pygame_app/scenarios/scenario_ftc_suites.py --suites apriltag,full_suite         # an arbitrary side-by-side comparison
-python3 pygame_app/scenarios/scenario_ftc_suites.py --suites all --fidelity pessimistic  # every suite ftc/sensors.py defines, at the pessimistic tier
-python3 pygame_app/scenarios/scenario_ftc_suites.py --opponent moving                    # a second, wandering robot on the field
-python3 pygame_app/scenarios/scenario_ftc_bundles.py                                     # SEPARATE visualizer: browse all 19 buildable 2+-suite combinations (ftc/bundle.py) -- press Left/Right to step through every one, each shown as its own components running alone next to the combined BUNDLE panel
-python3 pygame_app/scenarios/scenario_ftc_bundles.py --sort parts --candidates odometry_pods,apriltag,imu,dual_camera_apriltag --max-size 2  # a smaller candidate pool, pairs only
-python3 -m nav.benchmark                         # regenerate benchmark_results/
-python3 -m nav.scale_benchmark                   # regenerate the grid-size scaling results
-python3 -m nav.replan_benchmark                  # regenerate the D* Lite vs A* replanning results
-python3 -m nav.uncertainty_benchmark             # regenerate the open-loop/reactive/belief uncertainty study
-python3 -m ftc.suite_benchmark                   # regenerate the FTC sensor-suite study -- the headline result
-python3 -m ftc.robustness                        # tipping-point sweep on the headline study's estimated constants
-python3 -m ftc.layout_benchmark                  # does the best-value suite change on a different field layout?
-python3 -m ftc.budget_benchmark                  # sweep AUTONOMOUS_PERIOD_S -- when does the budget start to bind?
-python3 -m ftc.opponent_benchmark                # static vs. moving opponent -- does it change which suite wins?
-python3 -m ftc.fidelity_benchmark                # headline sweep at all 3 MODEL_FIDELITY tiers side by side
-python3 -m ftc.drivetrain_benchmark              # tank vs. mecanum -- does holding heading toward a tag wall pay off (AprilTag-focused, reduced rigor)?
-python3 -m ftc.drivetrain_suite_benchmark        # tank vs. mecanum, full-rigor headline sweep, all 7 suites -- does the best-value suite change?
-python3 -m ftc.coverage_benchmark                # distance-sensor count sweep {3,4,6,8} -- how much of the blind spot closes, and how much structurally can't?
-python3 -m ftc.newsuites_benchmark               # AprilTag+IMU (IMU and dual-camera AprilTag are now headline suites, see ftc.suite_benchmark)
-python3 -m ftc.gearing_benchmark                 # faster motor gearing vs. wheel slip, crossed with the budget
-python3 -m ftc.optimizer_benchmark               # bundle study: every combination of suites, Pareto frontier + synergy significance
-python3 -m ftc.calibration                       # fit variance_level from real CSVs (or the synthetic placeholder)
-python3 -m ftc.recommend                         # decision CLI: suite ranking + predicted success/time/cost
-python3 -m ftc.optimizer                         # bundle optimizer CLI: which COMBINATION of sensors to buy
-python3 -m ftc.optimizer --budget 150            # ... best robot for $150
-python3 -m ftc.optimizer --objective worst_case  # ... most robust across scenarios, not best on average
-python3 -m ftc.optimizer --search greedy --require-significant   # ... marginal value of each sensor added, stopping when it stops paying
-python3 pybullet_app/pybullet_main.py             # the PyBullet 3D demo (single robot)
-python3 pybullet_app/pybullet_main.py --sensor    # ... with the raycast lidar instead of a perfect map
-python3 pybullet_app/pybullet_multi_robot_main.py # two robots, forced corridor conflict
-python3 pybullet_app/pybullet_cbs_main.py         # N robots through an intersection, coordinated by CBS
 ```
 
-Pygame-only files live under `pygame_app/`, PyBullet-only files under
-`pybullet_app/`; `nav/` holds the shared, framework-agnostic core (grid,
-search algorithms, sensor model, benchmarks) both of them import from.
-See "Repo layout" below. (Neither app directory is literally named
-`pygame` or `pybullet` -- that would shadow the real installed libraries
-of the same name for any script that adds the repo root to `sys.path`.)
+```bash
+python3 pygame_app/main.py       # interactive visualizer (screenshot above)
+python3 -m ftc.suite_benchmark   # regenerate the headline study (~1 min)
+python3 -m ftc.recommend         # "which sensors should I buy" decision CLI
+python3 -m ftc.optimizer         # which COMBINATION of sensors to buy
+```
 
-If `pip install` fails building `pybullet` from source (no prebuilt wheel
-for your platform/Python combo, common on very new macOS/Xcode Command
-Line Tools), see "A build problem worth documenting" in `WRITEUPS.md` for
-the exact fix -- it's a one-line patch to a bundled third-party header,
-not an issue with this repo's code.
+```bash
+pip install -r requirements-dev.txt   # adds pytest
+python3 -m pytest                     # CI runs this on every push
+```
 
-### Controls
+Preset scenarios, the PyBullet 3D demos, and every side-study benchmark are in
+[WRITEUPS.md's command reference](WRITEUPS.md#command-reference). If `pip
+install` fails building `pybullet` from source (common on very new
+macOS/Xcode), the one-line fix is in WRITEUPS.md's "A build problem worth
+documenting".
+
+### Visualizer controls
 
 | Key / click | Action |
 |---|---|
 | Left-click | Toggle obstacle |
 | Shift + Left-click | Place/remove a moving obstacle |
-| Right-click | Place start |
-| Shift + Right-click | Place goal |
-| `D` / `A` / `R` | Switch active algorithm (Dijkstra / A\* / RRT) |
+| Right-click / Shift + Right-click | Place start / goal |
+| `D` / `A` / `R` | Switch algorithm (Dijkstra / A\* / RRT) |
 | Space | Run the active algorithm |
-| `W` | Start/stop the robot walking the current path |
+| `W` | Start/stop the robot walking the path |
 | `H` | Cycle A\*'s heuristic |
 | `X` | Toggle 8-directional movement |
-| `M` | Generate a new maze |
-| `K` | Toggle the weighted-terrain cost map |
-| `S` | Toggle the lidar sensor model |
-| `C` | Clear the grid |
+| `M` / `K` / `S` / `C` | New maze / cost map / lidar sensor / clear |
 
-## The algorithms, briefly
+## The research question
 
-Dijkstra always expands the cheapest-so-far cell. It's guaranteed
-optimal and doesn't need any notion of "closer to the goal" -- it just
-explores outward in cost order, which is why it explores in ripples that
-don't obviously point at the goal.
+FTC autonomous is a 30-second dash: drive from a known start to a scoring
+position on a pre-programmed route, with no driver input. Every team already
+senses *something* — at minimum, motor encoders — and can buy more: odometry
+pods, distance sensors, AprilTag vision, or all three. Each costs real money
+and integration time.
 
-A\* expands the cell with the lowest `f = g + h`, where `g` is cost so
-far (same as Dijkstra) and `h` is a heuristic estimate of the remaining
-cost. As long as `h` never overestimates the true remaining cost
-("admissible"), A\* is still guaranteed optimal, but explores dramatically
-fewer cells because the heuristic steers it toward the goal instead of
-outward in every direction.
+Which one is worth it isn't obvious from specs, because the answer depends on
+*which kind* of deviation shows up on a given field. A robot that starts a few
+inches off its mark needs pose correction, not obstacle sensing; a field whose
+elements don't match the CAD, or an opponent parked somewhere unplanned, needs
+the opposite. These are two different failure modes with two different fixes,
+not one generic "uncertainty" axis.
 
-RRT (Rapidly-exploring Random Tree) doesn't search a fixed neighbor
-graph at all: it grows a tree from the start by repeatedly sampling a
-random free point, stepping toward it from the tree's nearest node, and
-keeping that step if it doesn't cross an obstacle, until a node lands near
-the goal. It finds *a* path fast in open space and isn't restricted to
-grid-aligned moves, but -- unlike Dijkstra/A\* here -- it gives up
-optimality and determinism: the same grid produces a different tree, and a
-different path, every run. This is the wrong tool at this project's
-grid scale (see "Scale benchmark" below and "Planners the testbed
-swaps between" above) -- kept as an explicit, measured baseline showing
-why, not a planner anything downstream (`ftc/`, the replanning policies)
-actually uses.
+![Two field diagrams side by side. Left, pose error: the robot's true position has diverged from where it believes it is, its gold true track peeling away from the blue planned route. Right, obstacle error: the map said one thing and the field says another, with a red obstacle blocking the planned route that the map never had](screenshots/poster%20figures/figure1_pose_vs_obstacle_error.png)
 
-Full mechanics, the admissibility argument, the replanning policy, the
-cost-map/sensor-model design, and the heuristic-breaking experiments are
-written up in `WRITEUPS.md`.
+A team gets roughly 10 matches a season — one noisy, unrepeatable trial each,
+no ground truth, no control over how far reality deviates from what the
+routine assumed. That is not enough data to answer this empirically, no matter
+how many matches they play. That's the actual thesis here: simulation is the
+only viable instrument for this question, not a stand-in for hardware you'd
+use if you had more of it.
 
-## Dijkstra vs A\* vs RRT: benchmark results
+`ftc/suite_benchmark.py` sweeps 7 sensor suites (`ftc/sensors.py`) against 3
+independently-scaled deviation types (`nav/field_variance.py`) at 11 deviation
+levels on a real 30-second budget (`ftc/match.py`) — 5,775 matches, in about a
+minute. One match runs like this:
 
-20 random 25x25 grids, 10-35% obstacle density, all three algorithms run on
-the identical grid/start/goal. Full data in `benchmark_results/results.csv`,
-plot in `benchmark_results/comparison.png`, analysis in
-`benchmark_results/writeup.md`.
+![Flow diagram of a single simulated match: PLAN an A* route from the believed start over the assumed map, DRIVE one step while pose error grows with distance driven, SENSE to correct pose and reveal real obstacles, RE-PLAN if the map changed, repeating every step; after each step the match checks for success when the true position reaches the goal, or failure by collision or by the 30-second period expiring](screenshots/poster%20figures/match_lifecycle.png)
 
-| Trial | Density | Path len | Dijkstra cells | A\* cells | RRT nodes | RRT waypoints | RRT path len | Dijkstra ms | A\* ms | RRT ms |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 0.260 | 11 | 79 | 20 | 32 | 12 | 21.666 | 0.25 | 0.07 | 0.64 |
-| 2 | 0.154 | 33 | 455 | 163 | 29 | 15 | 30.416 | 1.28 | 0.51 | 0.24 |
-| 3 | 0.327 | 27 | 292 | 76 | 50 | 15 | 27.895 | 0.77 | 0.23 | 1.08 |
-| 4 | 0.178 | 27 | 402 | 81 | 34 | 12 | 24.125 | 1.10 | 0.26 | 0.25 |
-| 5 | 0.214 | 33 | 450 | 152 | 117 | 17 | 32.724 | 1.62 | 0.49 | 3.27 |
-| 6 | 0.193 | 24 | 390 | 115 | 28 | 11 | 20.601 | 1.10 | 0.36 | 0.26 |
-| 7 | 0.234 | 5 | 30 | 11 | 4 | 2 | 4.236 | 0.08 | 0.03 | 0.02 |
-| 8 | 0.171 | 7 | 85 | 12 | 6 | 3 | 6.236 | 0.24 | 0.04 | 0.02 |
-| 9 | 0.298 | 19 | 108 | 40 | 179 | 19 | 38.125 | 0.28 | 0.11 | 6.37 |
-| 10 | 0.111 | 21 | 212 | 62 | 23 | 12 | 23.18 | 0.57 | 0.20 | 0.15 |
-| 11 | 0.172 | 12 | 153 | 29 | 21 | 6 | 11.122 | 0.42 | 0.09 | 0.18 |
-| 12 | 0.158 | 29 | 350 | 97 | 59 | 14 | 27.309 | 1.17 | 0.34 | 0.86 |
-| 13 | 0.137 | 18 | 244 | 25 | 24 | 10 | 20.067 | 0.66 | 0.08 | 0.18 |
-| 14 | 0.177 | 15 | 286 | 52 | 20 | 8 | 16.122 | 0.78 | 0.18 | 0.15 |
-| 15 | 0.180 | 25 | 310 | 91 | 42 | 13 | 28.597 | 0.83 | 0.28 | 0.53 |
-| 16 | 0.330 | 7 | 34 | 15 | 13 | 3 | 5.064 | 0.10 | 0.04 | 0.18 |
-| 17 | 0.231 | 14 | 257 | 33 | 23 | 7 | 13.301 | 0.70 | 0.12 | 0.17 |
-| 18 | 0.306 | 43 | 399 | 321 | 132 | 20 | 36.674 | 1.04 | 0.95 | 4.91 |
-| 19 | 0.151 | 8 | 88 | 19 | 129 | 8 | 14.537 | 0.25 | 0.06 | 3.09 |
-| 20 | 0.203 | 22 | 187 | 84 | 75 | 9 | 16.715 | 0.51 | 0.25 | 1.38 |
+The split that makes the whole study work: the robot only ever acts on what it
+**believes**, and the match is scored on what is **true**.
 
-A\* explored 68.9% fewer cells than Dijkstra on average; the gap collapses
-on trial 18 -- the longest, most obstacle-dense route in the set -- because
-a forced detour makes Manhattan distance a much weaker predictor of true
-travel cost. RRT found *a* path in all 20/20 trials (3,000-iteration
-budget), but averaged 9.1% longer paths than the optimal Dijkstra/A* route
--- and its own path length swings from -27.7% to +100.7% run to run on
-grids of similar difficulty, since tree growth depends on where random
-samples happen to land rather than on the grid itself. Full breakdown,
-including why RRT sometimes beats "optimal" (it isn't grid-constrained the
-way Dijkstra/A* are here), in `benchmark_results/writeup.md`.
+## Results
 
-## PyBullet 3D port
+25 trials x 7 suites x 3 deviation types x 11 levels, on the "cluttered" field
+layout. Full breakdown in `benchmark_results/ftc_suite_writeup.md`.
 
-`pybullet_app/pybullet_main.py` builds the identical `nav.grid.Grid` the
-pygame visualizer uses -- a 25x25 grid with a 9x9 obstacle block sitting
-directly between a start and goal placed on the same row, forcing a
-detour around it -- projects it into a 3D PyBullet world (one static box
-per obstacle cell, 1 grid cell = 1 meter), and plans across it with
-`nav.algorithms.find_path`, completely unmodified from the pygame version. It then:
+![Three side-by-side line charts, one per deviation type -- start drift (pose error), obstacle drift (map error), and unplanned blocker (opponent robot) -- tracking success rate against deviation severity for dead reckoning, AprilTag, and odometry pods. Each suite degrades on a different curve, and which one leads changes between panels](screenshots/poster%20figures/severity_curves.png)
 
-1. Plans the route twice: once with the cost map off (binary
-   obstacles) and once with it on, and draws both as debug lines in the
-   GUI (red vs blue) so you can see the clearance routing directly.
-2. Smooths the chosen route -- corner-cutting first, then a Catmull-Rom
-   spline (`pybullet_app/sim3d/smoothing.py`) -- since A*'s sharp
-   90-degree grid waypoints aren't something a robot base can track
-   without stopping to pivot at every one.
-3. Drives a Husky robot along the result using velocity control
-   (`pybullet.resetBaseVelocity`, not teleportation) -- the same
-   turn-then-drive controller for every smoothing mode; the visible
-   smoothness difference comes entirely from how closely spaced the
-   waypoints it's given are, not from anything robot-specific.
+Three suites shown for legibility; the all-7 version with 95% bootstrap CI
+bands is `benchmark_results/ftc_suite_comparison.png`.
 
-```bash
-python3 pybullet_app/pybullet_main.py                     # cost-map path, spline-smoothed (default)
-python3 pybullet_app/pybullet_main.py --smooth raw        # raw A* waypoints, sharp turns, no smoothing
-python3 pybullet_app/pybullet_main.py --smooth corner_cut # Chaikin corner-cutting instead of a spline
-python3 pybullet_app/pybullet_main.py --no-cost-map       # binary obstacles only, no clearance routing
-python3 pybullet_app/pybullet_main.py --headless          # DIRECT mode, no GUI window
-```
-
-`pybullet_app/scratch/pybullet_setup_test.py` is the standalone sanity
-check this was built on top of: load `plane.urdf` + `r2d2.urdf`, let it
-settle, confirm the GUI window actually opens.
-
-Full writeup -- the grid-to-world coordinate mapping, why velocity
-control instead of teleporting, the corner-cutting/spline math, and why
-this specific obstacle layout (not a maze) was needed to make the
-cost-map routing visible -- is in `WRITEUPS.md`.
-
-## Lidar sensor in 3D
-
-`--sensor` swaps the perfect-map planning above for
-`pybullet_app/sim3d/lidar.py`'s `Lidar3D`: a real raycast sensor
-(`pybullet.rayTestBatch`, 48 rays in a circle) instead of pygame's 2D
-radius circle -- a wall can block the view of what's behind it now,
-which a radius circle can't represent. The robot plans against
-`nav.sensor.KnownGrid` (the *exact* class the pygame sensor mode uses,
-unchanged) built from whatever the lidar has actually hit, rescans every
-0.3s as it moves, and replans the instant it discovers something new:
-
-```bash
-python3 pybullet_app/pybullet_main.py --sensor                # lidar-limited knowledge, replans on discovery
-python3 pybullet_app/pybullet_main.py --sensor --smooth raw   # same, but undo the path smoothing too
-```
-
-`pybullet_app/scratch/pybullet_lidar_test.py` is the standalone sanity
-check: one scan from a fixed position against a hardcoded wall, confirming the raycasts
-actually find it. Building the real version surfaced a genuine bug worth
-knowing about: a ray hits an obstacle's surface at an exact cell boundary
-(e.g. `x=8.5` for a 1-meter cell), which is ambiguous to round to a grid
-cell and can even round to the *free* cell in front of the wall instead
-of the wall itself. Fixed by nudging the hit point slightly further along
-the ray, past the surface, before converting it to a cell -- see
-`WRITEUPS.md` for the full failure mode (it briefly made the robot
-"discover" that its own current cell was an obstacle).
-
-## Multiple robots
-
-`pybullet_app/pybullet_multi_robot_main.py`: four buildings, one per quadrant, leave a
-3-cell-wide "plus" of open street down the middle of the grid -- a real
-cross-street intersection. Robot A drives the north-south street start to
-finish; robot B drives the east-west street start to finish. All four
-points (A's start/goal, B's start/goal) are different cells -- an earlier
-version of this demo had goal(A) == start(B) by construction (a
-"swap sides through one corridor" layout) and that coincidence turned out
-to cause its own class of bugs, so the two robots' paths now only ever
-meet at the crossing in the middle, not at either one's start or goal.
-The two routes are the same length, so left alone they'd reach the
-crossing at close to the same moment -- both robots' start *and* goal
-cells are marked (a disc for start, a diamond for goal, colored and
-labeled per robot) so it's clear at a glance where each is headed. The
-coordination policy:
-
-- Both robots replan, symmetrically. Every `REPLAN_PERIOD_S = 0.05` s,
-  each one runs A* against the real grid *plus* a block placed around the
-  *other's* current cell (`cell_block`) -- the same technique the pygame
-  `MovingObstacle` replanning logic used, just with a robot standing in
-  for the moving obstacle on both sides at once. Detecting the other robot
-  nearby produces a genuinely different, grid-verified route -- using the
-  street's spare width to slide into an adjacent lane -- not a steering
-  offset layered on top of an unrelated path. A replan is only actually
-  issued when the blocked cells changed or the last attempt found nothing,
-  to avoid interrupting a perfectly good drive already in progress every
-  single tick.
-- If a route genuinely isn't there, the blocked robot holds position
-  (`waiting = True`) and retries on the next replan tick, rather than
-  crashing on `None` or driving into a wall.
-- A hard safety-distance stop is layered on top as an absolute last
-  resort, not the primary mechanism: if the two robots' actual distance
-  ever closes below 0.55m (r2d2's own footprint radius is about 0.17m, so
-  contact needs centers within roughly 0.34m), both are forced to stop
-  that frame regardless of what their plans say -- checked
-  unconditionally, every step, with no exceptions. With replanning doing
-  its job, this rarely fires in practice.
-
-An earlier version of this avoided collisions with a per-frame *steering*
-nudge on top of a fixed plan, rather than replanning -- it visibly
-narrowed the crossing distance, but didn't reliably prevent actual
-contact, and nudging a robot's aim point risks steering it into a wall
-its plan never accounted for (real, and it happened). Replanning doesn't
-have that problem: a shifted route is A*-verified against the real grid
-every time, for both robots, so it can never point either one through a
-wall. `pybullet_app/scratch/pybullet_multi_robot_test.py` is the standalone sanity
-check: two robots on non-conflicting paths, no avoidance needed,
-confirming the basics work before adding the forced conflict.
-
-Both robots are also spawned already facing their first direction of
-travel (`baseOrientation` computed from each route's initial heading),
-not the URDF's default -- without that, one robot always happened to
-already face the right way while the other needed a real turn first,
-giving it a head start that was enough on its own to make the two miss
-each other by 7+ meters despite their routes crossing at the exact
-center of the grid on paper. With spawn headings synchronized, both
-robots genuinely detour around each other at the crossing -- confirmed by
-watching the replanned waypoints themselves shift into the next lane over
-and back -- landing a comfortable ~1.6m apart at closest, consistent
-across repeated runs in every smoothing mode (there's no randomness
-anywhere in this simulation, so identical inputs reliably reproduce the
-same outcome).
-
-Several real bugs turned up building this -- a permanently-parked robot
-blocking the other's goal, a replan loop that looked like a robot was
-frozen solid, a safety check with a loophole that let an actual collision
-through, a steering-based avoidance layer that made a robot orbit forever
-or steered it into a wall (and, even once those were fixed, still didn't
-reliably prevent contact -- which is why it was replaced with replanning
-entirely), a slow turn-in-place controller that made one robot sit
-motionless for half a second before a 90-degree turn even started moving
-it, and a second, smaller version of that same head-start problem hiding
-underneath it -- see "Multiple robots" in `WRITEUPS.md` for the full
-account of each one and its fix.
-
-```bash
-python3 pybullet_app/pybullet_multi_robot_main.py --headless --max-seconds 60
-```
-
-## Scale benchmark
-
-`nav/scale_benchmark.py` holds obstacle density fixed (20%) and
-varies grid size (20x20, 50x50, 100x100, 200x200; 8 trials each) instead
-of the other way around -- the direct answer to "how does this scale to
-a bigger grid?" Full data in `benchmark_results/scale_results.csv`, plot
-in `benchmark_results/scale_comparison.png`, analysis in
-`benchmark_results/scale_writeup.md`.
-
-| Size | Cells | Dijkstra avg | A\* avg | RRT avg (k-d tree) | RRT found path |
-|---:|---:|---:|---:|---:|---:|
-| 20x20 | 400 | 0.465ms | 0.227ms | 0.443ms | 8/8 |
-| 50x50 | 2,500 | 2.679ms | 0.762ms | 1.520ms | 8/8 |
-| 100x100 | 10,000 | 9.732ms | 1.156ms | 15.162ms | 7/8 |
-| 200x200 | 40,000 | 56.511ms | 9.968ms | 58.548ms | 5/8 |
-
-A 100x increase in cells grows Dijkstra's runtime ~120x but A\*'s only
-~44x -- A\*'s search effort actually shrinks as a *fraction* of the grid
-as it grows (15.4% of the grid at 20x20, 7.0% at 200x200), since a
-heuristic-guided search tracks start-to-goal distance far more than
-total grid area. RRT's *speed* used to be the outlier here (620x slower
-over the same increase with a linear-scan nearest-neighbor search) but
-`nav/kdtree.py`'s spatial index closed most of that gap -- RRT is now
-faster than Dijkstra at every size above. Its *completeness* is a
-separate story the k-d tree doesn't touch: 8/8 -> 8/8 -> 7/8 -> 5/8 even
-with step size and iteration budget both scaled up for fairness, because
-Dijkstra/A\* are resolution-complete (guaranteed to find a path at
-the grid's resolution if one exists) while RRT is only
-probabilistically complete (guaranteed only as sample count ->
-infinity) -- a fixed iteration budget against a growing space is exactly
-the situation that guarantee doesn't cover. Full breakdown, including
-the before/after k-d tree numbers, in `benchmark_results/
-scale_writeup.md`.
-
-## FTC sensor-suite study: results
-
-The answer to this project's research question, from `ftc/suite_benchmark.py`
-(25 trials x 7 suites x 3 independently-scaled deviation types x 11
-deviation levels, on the "cluttered" field layout). Full breakdown,
-including the per-deviation-type charts and the reliability-per-dollar
-chart, in `benchmark_results/ftc_suite_writeup.md`,
-`ftc_suite_comparison.png`, and `ftc_reliability_per_dollar.png`.
-
-| Suite | Cost | Overall success rate (variance_level >= 0.3) |
+| Suite | Cost | Success rate (variance_level >= 0.3) |
 |---|---:|---:|
 | Odometry pods | $195 | 30% |
 | AprilTag (front camera) | $25 | 18% |
@@ -511,413 +150,133 @@ chart, in `benchmark_results/ftc_suite_writeup.md`,
 | IMU | $0 | 14% |
 | Distance sensors | $95 | 10% |
 
-IMU and Rear camera were promoted into this headline table from
-Priority-3/4 side studies that used to be the only place they were
-benchmarked (`ftc/newsuites_benchmark.py`, still around for the one
-suite that remains non-headline, AprilTag+IMU stacked). At this table's
-own `MODEL_FIDELITY = "optimistic"` tier, both ties are exact, not
-approximate -- IMU is byte-for-byte identical to Dead reckoning (no
-heading error exists at this tier for an IMU to correct), and Rear
-camera is byte-for-byte identical to AprilTag (an omnidirectional
-camera already sees everything a second one could add). Both suites
-separate measurably from their single-sensor baseline at the
-`realistic`/`pessimistic` tiers -- see "Model fidelity" below.
+![Horizontal bar chart of success-rate gain per $100 spent, highest value first: AprilTag front camera at $25 returns +16.0 points per $100, front plus rear cameras +8.0, odometry pods +7.8, the $314 full suite only +0.5, and distance sensors a negative -4.2](screenshots/poster%20figures/figure3_reliability_per_dollar.png)
 
-Every cost above is a real, currently-listed vendor price, not a
-ballpark placeholder -- REV Robotics, Optii, and Logitech street
-prices as of this writing; see `ftc/config.py`'s per-constant source
-comments for the exact product each figure comes from (e.g. AprilTag's
-$25 is a single Logitech C270, the webcam FTC's own vision docs call
-the workhorse of the program; Odometry pods' $195 is three Optii
-Odometry V2 pods at $64.95 each, wired straight into a REV hub's
-encoder ports with no separate fusion computer needed, per Optii's own
-wiring docs; IMU's $0 is the integrated Bosch IMU every REV Control
-Hub already ships with).
+Odometry pods wins on raw success rate; AprilTag wins on value by a wide
+margin (+16.0 points per $100 over the free baseline, vs. the full suite's
++0.5 — a 32x gap). The suites the full bundle stacks on top run into
+diminishing returns rather than each adding its standalone value again. Every
+cost is a real, currently-listed vendor price (REV Robotics, Optii, Logitech);
+see `ftc/config.py`'s per-constant source comments.
 
-CORRECTION: this used to price odometry pods at goBILDA's $279.99
-2-pod-plus-Pinpoint-computer bundle, on the assumption that dead-wheel
-odometry needs a separate fusion computer to read. It doesn't -- Optii's
-wiring docs confirm their pods plug directly into a hub encoder port,
-and goBILDA's own pods are readable the same way. Fixing it changes
-this project's own reliability-per-dollar headline; see the table
-above and `benchmark_results/ftc_suite_writeup.md`.
+**The value ranking is tier-dependent, and this is the honest caveat.** Every
+number in this section assumes `ftc/config.py`'s `"optimistic"` fidelity tier —
+an omnidirectional camera and perfect heading knowledge, both real unmodeled
+optimisms. `ftc/fidelity_benchmark.py` reruns the identical sweep one step
+down, and best value flips from AprilTag (+16.0/$100) to **Odometry pods**
+(+8.8/$100) at `"realistic"`, staying there at `"pessimistic"`. AprilTag's
+raw-success and cost figures hold; its *best-value crown* does not survive
+leaving the optimistic tier. [Detail](VALIDITY.md#camera-fov-heading-error)
 
-(AprilTag's correction model accounts for range- and viewing-angle-
-dependent degradation, not a flat correction whenever a tag is merely
-in view -- see `ftc/sensors.py`'s `AprilTagSuite.tag_correction` and
-`ftc/config.py`'s `APRILTAG_RANGE_DEGRADATION`/`APRILTAG_ANGLE_
-DEGRADATION`. The headline finding below was re-checked against this
-more pessimistic model specifically to see if it would survive a less
-generous assumption about its own winner -- it did.)
+### The most useful result is negative
 
-Odometry pods wins on raw success rate, but AprilTag is the best value
-by a wide margin: its success-rate gain over the free dead-reckoning
-baseline, per $100 spent, is over 40 times FullSuite's (+16.0pp/$100
-vs. +0.4pp/$100, `benchmark_results/ftc_suite_writeup.md`) -- the suites
-FullSuite stacks on top of AprilTag run into diminishing returns rather
-than each adding their standalone value again. Which deviation type
-actually dominates depends on the suite: dead reckoning's worst failure
-mode is pose error (start drift), not obstacle error, which is exactly
-what AprilTag (a pose-only fix) targets.
+The distance-sensor suite is the only paid upgrade that lands *below* the free
+baseline — 10% vs. 14%, a paired difference of -4.0% (95% CI [-6.7%, -1.3%],
+p=0.003). Adding a sensor measurably hurt.
 
-This result was measured on the `'cluttered'` layout only; `ftc/
-layout_benchmark.py` reruns the identical sweep on `ftc/field.py`'s
-other two layouts (sparse, corridor) and finds AprilTag stays the
-best-value suite on both -- see `benchmark_results/
-ftc_layout_writeup.md` and "Threats to validity" below.
+![Polar diagram of the robot's surroundings: three narrow green wedges, one forward and one to each side, cover about 75 degrees in total, while the remaining 285 degrees is shaded as unsensed, with an obstacle marked in the blind region annotated as invisible until the robot drives into it](screenshots/poster%20figures/sensor_coverage.png)
 
-All of the above is measured at `ftc/config.py`'s `MODEL_FIDELITY =
-"optimistic"` tier -- the assumption every previously-published number
-in this repo (this table, the conference poster, both PDFs) rests on:
-an omnidirectional camera (AprilTag detects a tag regardless of which
-way the robot's camera actually faces) and perfect heading knowledge
-(no heading error, only a translation pose-error vector). Both are
-real, unmodeled optimisms -- heading drift compounding into lateral
-error over distance is the dominant real dead-reckoning failure mode,
-and a real camera only sees what it's actually pointed at. `ftc/
-fidelity_benchmark.py` reruns the identical headline sweep at two more
-tiers, "realistic" (real camera-FOV gating + heading drift) and
-"pessimistic" (narrower FOV, more drift, AprilTag detection dropout);
-the best-value suite does not survive even the first step off the
-optimistic tier -- it flips from AprilTag (+16.0pp/$100) to Odometry
-pods at "realistic" (+6.1pp/$100, still well ahead of FullSuite's
-+0.8) and stays there at "pessimistic" (+5.8pp/$100, vs.
-FullSuite's +0.5) -- see
-`benchmark_results/ftc_fidelity_writeup.md` for
-the full three-tier table and "Threats to validity" below for what this
-does and doesn't prove. `ftc/drivetrain_benchmark.py`, `ftc/
-drivetrain_suite_benchmark.py`, and `ftc/coverage_benchmark.py` close
-three more previously-open gaps (mecanum strafing, whether the
-best-value suite holds on mecanum specifically, distance-sensor blind
-spots) the same way -- see "Threats to validity" below and
-`WRITEUPS.md`.
+The geometry is manufacturer spec, not an estimate: the REV-31-1505 has a 25°
+field of view and 2m range, so three of them mounted front/left/right — the
+usual FTC pattern — see ~75° of 360°. But the coverage gap alone would predict
+*no benefit*, not active harm. The mechanism behind the harm shows up in the
+per-trial data: these robots collide barely more often than dead reckoning
+(79.5% vs. 77.3%), but they do it after 3.1 steps instead of 6.6. **Acting on a
+fragment of obstacle truth diverts them into the 285° they cannot see**, where
+dead reckoning at least follows a route planned against the whole assumed map.
+More sensors don't rescue it — `ftc/coverage_benchmark.py` sweeps up to 8 ToF
+sensors ($252) and success only moves 14% → 16%, because a 160° blind arc
+survives any FTC-legal count.
 
-The most useful negative result: DistanceSensorSuite collides in the
-large majority of its trials (77%) even at zero field deviation. A
-controlled check (same trials, pose drift forced to zero) shows about
-two-thirds
-of those collisions persist regardless -- the dominant cause isn't pose
-drift, it's that 3 narrow ToF cones at ~12.5&deg; half-angle each cover
-only about 75&deg; of the 360&deg; around the robot. A sparse fixed-cone
-sensor suite has real, geometry-driven blind spots -- and `ftc/
-coverage_benchmark.py` finds the problem is structural, not just
-currently unmet: sweeping the sensor count up to 8 (the most this
-project prices as legal FTC hardware -- lidar-class 360&deg; scanners
-aren't, see "Threats to validity") only closes coverage to 200&deg; of
-360&deg;, leaving a 160&deg; blind arc no FTC-legal ToF count tested
-here can close. Buying distance sensors without covering enough of the
-robot's perimeter can be worse than not sensing at all, and there's no
-purchasable option in this project's model that covers all of it.
+**Scope this one carefully.** It is a finding about using ToF sensors as
+general obstacle detectors, which is how this model deploys them. Real teams
+more often use them for wall alignment and short-range squaring against a
+*known* target — a use this study doesn't model at all, and one where a narrow
+cone pointed where you already expect something is exactly the right tool. Read
+it as "narrow-cone sensing plus reactive replanning is a bad general obstacle
+strategy," not as "don't buy distance sensors."
 
-`nav/uncertainty_benchmark.py`'s own (domain-neutral) study still holds
-at the retrofit-statistical-rigor bar Phase 3 asked for: reactive
-replanning's success-rate CI separates from open-loop's by
-variance_level=0.2 and stays separated the rest of the way, and belief-
-based planning still collides in a handful of trials even at
-variance_level=0.0 (see `benchmark_results/uncertainty_writeup.md`) --
-the same class of finding as DistanceSensorSuite above, just for a
-different reason (stale occupancy belief crossing the hard-obstacle
-threshold too late, not an unseen blind spot).
+### Which combination to buy
 
-Turn a real field/robot's own measurements into where it actually sits
-on this study's deviation axis with `ftc/calibration.py`, and get a
-suite recommendation for it with `ftc/recommend.py` -- see "How to run"
-above. Both ship a clearly labeled synthetic placeholder dataset and
-print which one (real or placeholder) they're actually running on; see
-the next section for why that distinction matters as much as the
-numbers themselves.
+The table above compares fixed suites; a team's real question is a shopping
+question. `ftc/bundle.py` composes suites into one working suite — costed over
+the **union of their parts**, which is what reduces 63 raw combinations to 23
+genuinely distinct robots — and `ftc/optimizer.py` searches that space.
 
-## Sensor bundle optimizer: which COMBINATION to buy
+![Grouped bar chart across five scenarios, comparing the best single sensor against the best 2-or-more-part bundle in each. The bundle wins or ties everywhere: the $245 odometry-plus-two-cameras build takes four scenarios, and in the tight-corridor case the $220 odometry-plus-front-camera build reaches 62 percent against the best single sensor's 39 percent](screenshots/poster%20figures/figure5_scenario_deepdive.png)
 
-The suite study above compares seven fixed suites. A team's real question
-is a shopping question -- given everything on the shelf, which
-*combination* should we buy, is combining actually better than buying
-the single best sensor, and what's the best robot for the money we
-have? `ftc/bundle.py` composes any 2+ suites into one working suite,
-and `ftc/optimizer.py` searches that space; `ftc/optimizer_benchmark.py`
-runs the study (23 distinct robots x 5 scenario profiles x 25 trials,
-full writeup in `benchmark_results/ftc_optimizer_writeup.md`).
+This ran over two scenario catalogs, and they name different robots — worth
+being explicit about, because the difference is the point rather than a
+discrepancy:
 
-![Every buildable robot: cost vs. success with the Pareto frontier, and the winning robot per scenario](benchmark_results/ftc_optimizer_frontier.png)
+| | Baseline catalog | Match-realistic catalog |
+|---|---|---|
+| Profiles / trials | 5 x 25 (2,875 matches) | 5 x 90 (10,350 matches) |
+| Fidelity | optimistic | realistic |
+| **Best average** | odometry + front camera ($220, 34%) | odometry + front + rear camera ($245, 26%) |
+| **Best worst-case** | *everything ties at 0%* — so $0 wins | odometry + front + rear camera ($245, 12%) |
+| Writeup | `ftc_optimizer_writeup.md` | `ftc_optimizer_match_writeup.md` |
 
-Bundles are costed over the **union of their parts**, not the sum of
-their prices: AprilTag ($25, one webcam) + AprilTag-with-IMU ($25, the
-same webcam and a free IMU) is a $25 robot with one camera, and the two
-descriptions collapse to the same candidate before anything is
-simulated. That's what makes 63 raw combinations reduce to 23 genuinely
-distinct robots.
+Read that worst-case row carefully: in the baseline catalog *every* robot has
+some scenario it never finishes, so "most robust" is a tie the free option wins
+on price, not evidence that encoders are sturdy. The match-realistic catalog
+separates them properly.
 
-Because every candidate runs the *identical* seeded scenarios, "is this
-bundle better?" is answered with a **paired** bootstrap
-(`nav/stats.py`'s `bootstrap_paired_diff_ci`) rather than by checking
-whether two independent CIs overlap. That distinction is not cosmetic:
-in `ftc/scratch/optimizer_test.py`'s constructed case, two candidates
-whose independent CIs overlap heavily (20-50% vs. 35-65%) have a paired
-difference of [+5.0%, +27.5%], p=0.004. Scenario difficulty is the
-dominant source of variance here, and pairing removes it.
+The match-realistic catalog is the one to trust for a purchasing decision: it
+runs at realistic fidelity with mixed deviation axes per scenario, and there
+best-average and most-robust name the *same* robot, so there's no tradeoff to
+weigh. The optimistic catalog's headline $220 robot is the cheaper answer to an
+easier question.
 
-| Question | Answer from the sweep |
-|---|---:|
-| Best average across scenarios | odometry pods + front camera ($220, 34%) |
-| Best worst-case (minimax) | encoders only ($0, 0% worst case) |
-| Best robot under $200 | odometry pods ($195, 26%) |
-| Cheapest *significant* upgrade over one sensor | + AprilTag (front camera) over odometry pods (+8.8%, 95% CI [+4.0%, +14.4%]) |
+Per scenario (chart above), a bundle wins or ties everywhere — the $245 build
+takes four of the five, and the $220 build takes the tight-corridor case, where
+the rear camera has no room to earn its $25. The cost-vs-success Pareto
+frontier over all 23 buildable robots is
+`benchmark_results/ftc_optimizer_match_frontier.png`.
 
-Best-average and most-robust are different robots at different price
-points (an earlier version of this table, before lidar was removed as
-a candidate component -- see "Threats to validity" -- reported odometry
-pods + IMU + 2 cameras + lidar as the $430 best average and a
-$100-cheaper 2-camera bundle as the more robust pick). The current
-best-average robot -- odometry pods + front camera ($220, 34%) -- has a
-0% worst-case success rate; the free baseline (encoders only) ties that
-exact worst-case number. Money above $0 buys average-case performance
-here, not worst-case robustness -- no robustness is being given up by
-taking the best-average robot, since the two objectives already agree
-on worst-case performance.
+Either way the cheapest *significant* upgrade is the same: adding AprilTag to
+odometry pods, +8.8% (95% CI [+4.0%, +14.4%], p<0.001) for $25.
 
-Three findings worth stating plainly:
+Because every candidate runs the *identical* seeded scenarios, "is this bundle
+better?" is answered with a **paired** bootstrap, not by checking whether two
+independent CIs overlap. That distinction is not cosmetic: two candidates whose
+independent CIs overlap heavily (20-50% vs. 35-65%) can have a paired
+difference of [+5.0%, +27.5%], p=0.004.
 
-- **Bundling genuinely works, but only across capability categories.**
-  Every bundle that significantly beat its own best single component
-  spans more than one category (pose fixing / obstacle sensing / drift
-  reduction / heading holding) *and* adds a category that single
-  component lacked. Two sensors that fix the same failure mode largely
-  don't stack -- the second is correcting an error the first already
-  removed. Buy across failure modes, not the two best sensors.
-- **The frontier gap shrank once the odometry-pod price was fixed.**
-  The best robot at a $50 budget and a $150 budget is still the same
-  $25 front camera -- nothing between $25 and $195 beats it. But under
-  the old ($280/$305) pricing, the top-of-frontier bundle needed a $500
-  budget to reach; under the corrected ($195/$220) pricing it's
-  affordable at $300 with $80 to spare (see `ftc_optimizer_writeup.md`'s
-  "Best robot at each budget"). There's no longer a budget tier where odometry pods
-  alone, rather than the full bundle, is the right call.
-- **Greedy "buy the best thing, then the next best thing" reasoning
-  happens to work here.** Forward selection lands on the same robot as
-  exhaustive search (odometry pods + front camera): starting from
-  odometry pods alone (26%, $195), its one addition -- AprilTag (front
-  camera) -- is itself statistically significant (+8.8%, 95% CI [+4.0%,
-  +14.4%], p<0.001), and the search finds nothing further worth adding,
-  landing on the actual optimum for this catalog in a single step.
+Two findings worth stating plainly:
 
-## Threats to validity / limitations
+- **Bundling works, but only across capability categories.** Every bundle that
+  significantly beat its own best single component spans more than one
+  category (pose fixing / obstacle sensing / drift reduction / heading
+  holding) *and* adds one that component lacked. Two sensors fixing the same
+  failure mode don't stack. Buy across failure modes, not the two best sensors.
+- **Greedy reasoning happens to work here.** On the baseline catalog, forward
+  selection lands on the same robot as exhaustive search: from odometry pods
+  (26%, $195), its one addition — AprilTag — is itself significant (p<0.001),
+  and nothing further is worth adding.
 
-Naming these plainly is what separates a research testbed from a demo
--- none of them are secret, and none of them are fixed by this repo
-alone.
+## Threats to validity
 
-- Synthetic ground truth. Every trial's "ground truth" grid
-  (`nav/field_variance.py`'s `generate_ground_truth`) is a
-  procedurally-perturbed copy of the assumed map, not a measurement of
-  a real field. The perturbation model (start drift, obstacle drift,
-  an unplanned blocker) is a hypothesis about what kinds of deviation
-  matter, not a validated model of what FTC fields actually do.
-- No sensor-fusion conflict -- BOUNDED for one pairing (AprilTag vs.
-  odometry pods), still open for every other. `ftc/bundle.py` merges a
-  bundle's capabilities optimistically: obstacle sensors union their
-  detections, the best localization hardware sets the drift rate, and
-  multiple cameras feed one detection pipeline. Two sensors
-  *disagreeing* about where the robot is -- and the filter/fusion work
-  of resolving that -- was not modeled at all, so the optimizer's
-  bundle results were an upper bound on what combining buys, size
-  unknown. `nav/estimation.py` (domain-neutral confidence-weighted
-  fusion of two position estimates) and `ftc/fusion.py` (the wiring
-  that applies it to a tag detection disagreeing with odometry's own
-  tracked position, opt-in via `run_match`'s `fusion=None` default --
-  see `ftc/scratch/fusion_test.py` for the byte-for-byte no-op
-  guarantee) measure that size for the one bundle this project's own
-  research question centers on. `benchmark_results/
-  ftc_fusion_writeup.md`'s finding: at this project's estimated fusion
-  constants, the AprilTag+odometry bundle's advantage over its best
-  single component doesn't just shrink, it inverts -- 35% success under
-  optimistic merging vs. 22% under confidence-weighted fusion (paired
-  95% CI [-18.5%, -9.0%], a statistically significant drop), which
-  puts the fused bundle *below* its own best single component, Odometry
-  pods (25%). The mechanism:
-  AprilTag corrects pose often enough in this project's matches that a
-  5%-per-detection chance of an outright bad reading (a misidentified
-  or occluded tag, `APRILTAG_BAD_DETECTION_PROBABILITY`) compounds to a
-  real chance of at least one happening per match, and this project's
-  match model has no recovery from a single badly wrong correction by
-  default (`on_collision="halt"`). Every fusion constant is an
-  engineering estimate with no real AprilTag-vs-odometry disagreement
-  measurement behind it -- the same uncalibrated status as every other
-  constant in this file -- so this bounds how loose the optimistic-
-  merge upper bound *could* be at a plausible bad-detection rate, it
-  does not calibrate how loose it *actually* is, and it says nothing
-  about any other bundle pairing (a bundle with obstacle-sensing
-  suites, or two pose-fixing suites other than this one, is untouched
-  by any of this). Real fusion also costs integration effort this
-  project's dollar model can't price; the `parts` count is the only
-  proxy for it. A THIRD fusion strategy -- `nav/kalman.py`'s
-  variance-aware Kalman update, `run_match(fusion="kalman")` -- narrows
-  this further; see "Uncalibrated variance" below and
-  `benchmark_results/ftc_fusion_kalman_writeup.md` for what it changes
-  and, just as importantly, what it still doesn't.
-- Uncalibrated variance -- BOUNDED, not closed, until real
-  measurements are supplied. `variance_level` and `ftc/sensors.py`'s
-  drift-rate constants are order-of-magnitude engineering estimates
-  (see ftc/config.py's per-constant source comments) until `ftc/
-  calibration.py` is run against real CSVs. `ftc/robustness.py` sweeps
-  every estimated constant from 0.25x-4x its documented value and
-  checks whether the best-value recommendation (AprilTag) survives
-  being wrong by that much -- see `benchmark_results/
-  ftc_robustness_writeup.md` for exactly which parameters tip the
-  ranking and at what multiplier, and which never do across the swept
-  range. A tipping point bounds how wrong an estimate can be before the
-  conclusion changes; it does not tell you whether the *real* value is
-  inside or outside that bound. Only `ftc/calibration.py` run against
-  real measurements closes this -- right now, none of it has been
-  checked against a real field or robot; the synthetic placeholder
-  dataset exists to make the pipeline runnable, not to make its output
-  trustworthy.
+Naming these plainly is what separates a research testbed from a demo. Full
+mechanism, numbers, and CIs for all 12 are in [VALIDITY.md](VALIDITY.md);
+the three that most constrain the headline result:
 
-  What changed: this project deliberately never used a Kalman filter
-  for AprilTag/odometry fusion, for exactly this reason -- a Kalman
-  filter's whole mechanism compares the VARIANCE of a prior estimate
-  against the variance of a new observation, and there was no real
-  variance anywhere in this project to compare, only a single scalar
-  drift value (see `ftc/fusion.py`'s original module docstring, still
-  true of the confidence-weighted default). `ftc/calibration.py` now
-  fits BOTH halves a real Kalman filter needs: `fit_apriltag_
-  measurement_variance` (an OLS fit of position-error variance against
-  real detection range/incidence scatter, replacing `APRILTAG_RANGE_
-  DEGRADATION`/`APRILTAG_ANGLE_DEGRADATION`'s ASSUMED linear shape) and
-  `fit_process_variance_per_cell` (the odometry drift-rate fit already
-  in this file, squared into the variance a Kalman predict step
-  actually consumes). `nav/kalman.py` is the estimator itself (proven
-  standalone in `nav/scratch/kalman_test.py`); `ftc/fusion.py`'s
-  `fused_tag_correction_kalman` wires it into `ftc/match.py` as a THIRD
-  opt-in fusion mode (`run_match(fusion="kalman")`, alongside the
-  existing `None`/confidence-weighted paths, which are unaffected --
-  see `ftc/scratch/fusion_kalman_test.py`'s cross-call-interference
-  check). `benchmark_results/ftc_fusion_kalman_writeup.md` is the
-  fusion-strategy comparison this unlocks: at this project's SYNTHETIC
-  placeholder variance (the machinery is built, the real measurement
-  still is not), Kalman fusion (26%) beats confidence-weighted fusion
-  (22%) by a statistically real margin (+5.0%, 95% CI [+2.0%, +8.5%]),
-  and edges narrowly back above its own best single component (Odometry
-  pods, 25%) -- the inversion doesn't just shrink under Kalman
-  specifically, it reverses, if only barely (+2%, not separately tested
-  for significance against the single-component floor). Optimistic
-  merging still wins outright (35% vs. 26% Kalman), just by a much
-  smaller margin than confidence-weighted fusion (22%) leaves on the
-  table. This BOUNDS the "would a real Kalman filter have
-  fixed the inversion" question -- the math genuinely helps, but not
-  enough to flip the verdict at this project's own estimated fusion
-  constants -- it does not CLOSE it, since "this project's own
-  estimated fusion constants" is still the load-bearing uncertainty:
-  real AprilTag detection scatter run through `ftc/calibration.py`
-  (`--apriltag`, `fit_apriltag_measurement_variance`) is the only thing
-  that would.
-- Simplified kinematics -- BOUNDED. `ftc/match.py` now charges
-  drive time via a trapezoidal (accelerate/cruise/decelerate) velocity
-  profile bounded by `MAX_ACCEL_MPS2` (`ftc/match.py`'s
-  `_trapezoidal_drive_time_s`) rather than assuming instantaneous
-  acceleration to `MAX_DRIVE_SPEED_MPS` -- a real, if still simplified,
-  improvement (a single 6in cell step is almost always too short to
-  reach cruise speed at all, so drive time per step is now ~4-5x the
-  old naive distance/speed figure). `ftc/config.py`'s optional
-  `GEARING_OPTIONS` (`ftc/gearing_benchmark.py`), now built directly
-  from goBILDA's own published 5203-series RPM/torque table rather than
-  invented multipliers, surfaces a sharper and more surprising finding
-  than "faster costs drift": because motor torque falls as RPM rises,
-  and every gearing option's accel-to-cruise distance is far larger
-  than one 6in grid cell, a faster ratio is strictly SLOWER per cell in
-  this model, not faster, on top of drifting more (`slip_factor`) --
-  buying speed doesn't even buy the thing it promises at this project's
-  short-hop grid scale. Measured: at every budget tested (30s/15s/10s),
-  faster gearing options measurably lose to stock, averaged across all
-  7 headline suites (a single suite that already fixes pose, e.g.
-  AprilTag or odometry pods, would likely absorb the extra drift better
-  -- not checked per-suite here). What's still not modeled:
-  velocity isn't carried across consecutive collinear steps (each step
-  starts and ends at rest, the same assumption the existing
-  per-90-degree turn cost already makes), and wheel slip beyond what
-  speed alone predicts (cornering, robot mass, floor traction). A real
-  robot's actual time-to-goal will still differ from this model's
-  prediction by some amount this repo doesn't measure.
-- Planning-time model validated at the scale this repo actually
-  publishes at, not beyond it, and not on real hardware -- BOUNDED.
-  `ftc/match.py`'s `elapsed_s`/`over_budget` accounting never reads the
-  wall-clock time it measures around each `astar()` call
-  (`MatchResult.planning_time_s`) -- only a flat `PLANNING_OVERHEAD_S`
-  (50ms, a documented estimate of real onboard-compute cost, not raw
-  Python search time) is charged, on every replan after the first.
-  Structurally, this means no measured planning latency, however
-  large, can change a match outcome under the model as implemented --
-  confirmed directly in `ftc/scratch/planning_latency_test.py` by
-  artificially delaying every `astar()` call and checking `elapsed_s`
-  comes out byte-for-byte identical either way. `ftc/planning_
-  latency_benchmark.py` measures the real per-call latency distribution
-  (median/p99/max) this repo had never looked at, across 5 grid sizes
-  (24 through 384 cells/side) x 3 layouts x 7 suites, and asks the
-  question that actually matters: would a match currently reported as
-  under budget flip to over budget if `elapsed_s` used each match's own
-  REAL measured planning time instead of the flat constant? At this
-  project's native, published grid scale, no -- 0 of 1260 matches tested
-  flip under that counterfactual (`benchmark_results/planning_
-  latency_writeup.md`), and none do at any synthetic size tested either,
-  because a bounded-path-length scenario design (deliberate, to keep
-  drive time from confounding the grid-size axis) keeps A*'s own search
-  cost small regardless of total grid size -- a supplementary,
-  unbounded-path check in that same writeup shows latency growing to
-  175ms (>3x PLANNING_OVERHEAD_S) once path length itself is allowed to
-  grow, confirming path length, not raw cell count, is what actually
-  drives this cost. This BOUNDS the question, it does not CLOSE it: it
-  says tail latency doesn't matter at the scale and path lengths this
-  repo's own published numbers were measured at, on one developer
-  laptop (Apple M1, macOS -- see the writeup for exact versions), not
-  that it could never matter on slower, FTC-legal onboard hardware (a
-  REV Control Hub) or at longer path lengths -- only real onboard
-  timing data run through `ftc/calibration.py` could calibrate
-  `PLANNING_OVERHEAD_S` itself, which this study does not attempt.
-- No mecanum-specific strafing advantage -- BOUNDED across three
-  documented heading policies now, still not a universally closed
-  question. `ftc/field.py` defaulted to 8-directional movement "on the
-  assumption of a holonomic drivetrain" without ever actually modeling
-  one; `ftc/drivetrain.py` adds TANK/MECANUM as an axis orthogonal to
-  sensor suite (TANK pays the existing flat per-90-degree turn cost on
-  every direction change; MECANUM pays none, but a speed/drift penalty
-  on any step that isn't roughly forward relative to whatever heading
-  it currently holds). `ftc/drivetrain_benchmark.py`'s original
-  finding: mecanum's $130 premium (`MECANUM_WHEEL_COST_USD -
-  TANK_WHEEL_COST_USD`) is NOT repaid under the one heading policy that
-  study tested (hold heading toward the nearest AprilTag wall FIXED
-  from match start) -- a route's travel direction changes far more
-  often than that one fixed heading does, so most steps end up
-  strafing, and the resulting drift penalty swamps the camera-stays-
-  aimed-at-tags benefit the policy was chosen to demonstrate. See
-  `benchmark_results/ftc_drivetrain_writeup.md` for the full diagnosis
-  -- unchanged by everything below, since that study and its numbers
-  are already cited elsewhere in this repo.
+- **Synthetic ground truth.** Every trial's "ground truth" is a procedurally
+  perturbed copy of the assumed map, not a measurement of a real field — a
+  hypothesis about what deviation matters, not a validated one.
+  [Detail](VALIDITY.md#synthetic-ground-truth)
+- **Camera FOV and heading error.** Every number above assumes the
+  `"optimistic"` fidelity tier (omnidirectional camera, perfect heading). The
+  best-value suite does *not* survive the first step off it — it flips from
+  AprilTag to Odometry pods at "realistic".
+  [Detail](VALIDITY.md#camera-fov-heading-error)
+- **No sensor-fusion conflict.** Bounded for AprilTag vs. odometry pods, open
+  for every other pairing — this is the fusion reversal in the headline
+  results above. [Detail](VALIDITY.md#sensor-fusion-conflict)
 
-  What changed: `heading_policy` (`ftc/drivetrain.py`) is now a
-  swappable field on `Drivetrain`, not a single hardcoded shape --
-  `fixed_at_start` (the original, unchanged default), `nearest_tag_
-  current` (re-aim toward whichever tag is nearest wherever the robot
-  actually is right now), and `route_dominant` (aim along the
-  currently-planned route's own circular-mean travel direction, which
-  minimizes total strafe against that specific route rather than
-  against any tag at all). `ftc/drivetrain_benchmark.py`'s SECOND,
-  separate sweep (`benchmark_results/
-  ftc_drivetrain_heading_policy_writeup.md`, own output files, own base
-  seed, doesn't touch the original study's numbers) measures what
-  re-aiming actually buys: `route_dominant` is a real, paired-
-  bootstrap-significant improvement over `fixed_at_start` (7% -> 9%
-  pooled success rate at the `realistic` fidelity tier), while
-  `nearest_tag_current` is not distinguishable from the fixed baseline
-  at this trial count. Neither alternative closes the gap to tank
-  (18%), and neither changes which sensor suite is the best value on
-  mecanum (still Odometry pods, not AprilTag or Rear camera, under
-  every heading policy tested) -- re-aiming genuinely helps, exactly the mechanism
-  the original study predicted but had no policy to demonstrate with,
-  it just doesn't help enough to flip either headline verdict. A
-  policy that minimizes strafe against the route's own IMMEDIATE next
-  leg (rather than the route's average direction, or a fixed tag)
-  remains untested -- see `ftc_drivetrain_heading_policy_writeup.md`'s
-  own closing section.
+## How it fits together
 
+<<<<<<< HEAD
   A separate, full-rigor question neither sweep above answers: does
   the *headline* best-value recommendation itself (AprilTag, measured
   under the default tank-equivalent drivetrain) hold for the large
@@ -1099,144 +458,77 @@ directories, separate from each other and from the shared `nav/` core.
 that exact name, sitting on `sys.path`, would shadow the real installed
 library of the same name for `import pygame`/`import pybullet` anywhere
 in the project.)
+=======
+`nav/` is a domain-neutral belief-planning library — grid, planners, sensor
+and occupancy models, benchmarks — with no FTC-specific identifiers anywhere
+in it. `ftc/` is a separate package holding the domain specialization (an 18in
+robot, a 144in field, a 30-second clock, AprilTags). Keeping the boundary at
+the package level, rather than scattering FTC `if` branches through `nav/`, is
+what lets the core stay reusable for a different robot, field, or competition.
+>>>>>>> 94b3de02fe0017fee7a0ea44740e3647d1a8320c
 
 ```
-nav/               Framework-agnostic core: both pygame_app/ and pybullet_app/ import from this
-  grid.py          Grid model: cells, obstacles, start/goal, neighbors, cost map, size param
-  algorithms.py    Dijkstra, A*, edge-case handling, path cost
-  rrt.py           RRT (Rapidly-exploring Random Tree)
-  rrt_star.py      RRT* -- RRT plus rewiring toward asymptotic optimality
-  kdtree.py        k-d tree over (row, col) points -- RRT/RRT*'s nearest/within-radius queries
-  dstar_lite.py    D* Lite -- incremental replanner that repairs a persistent search
-  cbs.py           Conflict-Based Search -- joint conflict-free planning for 3+ agents
-  sensor.py        Simulated lidar (2D radius) + the KnownGrid the robot plans against
-  heuristics.py    Manhattan / Euclidean / Chebyshev / Octile / scaled
-  obstacles.py     Moving obstacles + the replanning policy
-  maze.py          Recursive-backtracking maze generator
-  scenario_helpers.py Shared obstacle/terrain-scattering helpers used by both
-                       pygame_app/scenarios/*.py and pybullet_app/pybullet_main.py
-  benchmark.py        20-trial Dijkstra vs A* vs RRT benchmark -> CSV + plot
-  scale_benchmark.py  20x20 - 200x200 grid-size scaling benchmark -> CSV + plot
-  replan_benchmark.py D* Lite vs fresh A* on moving-obstacle/sensor-discovery replanning -> CSV + plot
-  occupancy.py        Log-odds occupancy grid + BeliefGrid -- plans against expected cost, not a binary known/unknown split
-  field_variance.py   Turns "how far reality deviates from the assumed map" into a sweepable knob, 3 independently-scalable deviation types
-  policies.py         OpenLoopPolicy / ReactivePolicy / BeliefPolicy behind one shared interface
-  uncertainty_benchmark.py  Open-loop vs reactive vs belief under swept map/reality deviation -> CSV + plot + statistical crossover
-  stats.py            Pure-stdlib bootstrap confidence intervals, plus a PAIRED difference bootstrap
-                       (shared-scenario comparisons: resamples trial indices, not each list separately)
-  estimation.py       Confidence-weighted fusion of two 2D position estimates that might disagree --
-                       domain-neutral (no FTC identifiers); ftc/fusion.py is the one consumer today
-  kalman.py            predict()/update()/gated_update() -- a real, variance-aware Kalman estimator,
-                       domain-neutral; needs a real variance (ftc/calibration.py), never invents one
-  scratch/         Standalone throwaway scripts used to prove each piece
-                    works before it was wired into the visualizer/pybullet_main
-                    (framework-agnostic tests only -- pygame/PyBullet-specific
-                    ones live under pygame_app/ and pybullet_app/ instead)
-
-ftc/               FTC domain layer -- see "nav/ vs ftc/" above. The only place
-                    in this repo where FTC-specific names/numbers belong.
-  config.py          Field/robot/match/sensor constants, each with its real-world source noted;
-                     includes MODEL_FIDELITY's 3 tiers and the drivetrain/coverage/new-suite constants
-  field.py           Parameterized field layouts (not tied to one season's game) -> a real-footprint-inflated nav.grid.Grid
-  sensors.py         8 sensor suites (7 headline: dead reckoning / odometry / distance sensors /
-                     AprilTag / IMU / dual-camera AprilTag (Rear camera) / full; 1 remaining
-                     Priority-4 addition: AprilTag+IMU) -- which fix POSE error, OBSTACLE error,
-                     or (IMU) HEADING error. No lidar-class hardware is modeled anywhere in this
-                     package -- it isn't legal FTC equipment (see "Threats to validity")
-  drivetrain.py      TANK/MECANUM -- an axis orthogonal to sensor suite, not part of SUITE_ORDER
-  match.py           30-second autonomous-period budget model: drive + turn + replan time,
-                     (row, col, heading) pose-error mechanic, fidelity-tier + drivetrain + gearing hooks
-  suite_benchmark.py The headline study -- suite x deviation type x deviation level x trials -> CSV + 2 plots + writeup
-  robustness.py      Tipping-point sweep on suite_benchmark.py's own estimated constants -- does the best-value suite change if they're wrong? -> CSV + plot + writeup
-  layout_benchmark.py Reruns the headline sweep on all 3 field layouts -- does the best-value suite change with the layout? -> CSV + plot + writeup
-  budget_benchmark.py Sweeps AUTONOMOUS_PERIOD_S downward -- when does the budget start to bind, and does it change the ranking? -> CSV + plot + writeup
-  opponent_benchmark.py Static vs. moving (nav/obstacles.py MovingObstacle) opponent -- does a real-ish opponent change which suite wins? -> CSV + plot + writeup
-  fidelity_benchmark.py The headline sweep rerun at all 3 MODEL_FIDELITY tiers -> CSV + plot + writeup
-  drivetrain_benchmark.py Tank vs. mecanum x fidelity tier -- does holding heading toward a tag wall pay off?
-                     -> CSV + plot + writeup; a SECOND sweep in the same module crosses tank against all
-                     3 MECANUM heading policies (fixed_at_start/nearest_tag_current/route_dominant) ->
-                     own CSV + plot + writeup, doesn't touch the first sweep's numbers
-  drivetrain_suite_benchmark.py Tank vs. mecanum, FULL-RIGOR headline sweep (all 7 suites, same
-                     rigor as suite_benchmark.py) -- does the best-value suite hold on mecanum?
-                     -> CSV + plot + writeup, separate from drivetrain_benchmark.py's own
-  coverage_benchmark.py Distance-sensor count sweep {3,4,6,8} -- how much of the blind spot closes,
-                     and how much is structurally unclosable by any FTC-legal ToF count? -> CSV + plot + writeup
-  newsuites_benchmark.py AprilTag+IMU x fidelity tier (IMU and dual-camera AprilTag are themselves
-                     now headline suites, see sensors.py above) -> CSV + plot + writeup
-  gearing_benchmark.py (optional, Priority 5) Faster motor gearing vs. wheel slip, crossed with budget -> CSV + plot + writeup
-  planning_latency_benchmark.py Does planning-time TAIL latency (not just average) ever change a match
-                     outcome? Non-invasively times every astar() call run_match makes (patches
-                     ftc.match.astar for the duration of one call, restores it after) across 5 grid
-                     sizes x 3 layouts x 7 suites -> CSV + plot + writeup
-  calibration.py     Fits variance_level components from real measurement CSVs (or a clearly-labeled
-                     synthetic placeholder) -- including AprilTag measurement variance (range/incidence
-                     scatter -> OLS fit) and odometry process variance, the two inputs nav/kalman.py needs
-  recommend.py       Decision CLI -- suite ranking / predicted success rate + CI / time vs. budget / cost
-  bundle.py          Composes 2+ suites into one working suite -- part-level costing (shared hardware counted
-                     once), capability merging, duplicate-robot detection; a 1-suite bundle is byte-for-byte
-                     that suite, and distance+AprilTag+odometry IS FullSuite (ftc/scratch/bundle_test.py)
-  optimizer.py       Searches the bundle space: scenario profiles, PAIRED significance testing of bundle vs.
-                     best single sensor, Pareto frontier, best-under-budget, exhaustive + greedy search
-  fusion.py          Wires nav/estimation.py's fuse() into a tag-detection event for the AprilTag+odometry
-                     pairing -- a small systematic bias and an outright bad detection, opt-in via
-                     run_match's fusion=None default (byte-for-byte no-op otherwise); also holds
-                     fused_tag_correction_kalman, the nav/kalman.py-backed alternative (fusion="kalman")
-  fusion_benchmark.py Does the AprilTag+odometry bundle's advantage over its best single component survive
-                     confidence-weighted fusion, or was optimistic merging doing the work? -> CSV + plot + writeup
-  fusion_kalman_benchmark.py A THIRD fusion condition (Kalman, on ftc/calibration.py's synthetic placeholder
-                     variance) added to fusion_benchmark.py's comparison -- separate output files, doesn't
-                     touch fusion_benchmark.py's own numbers -> CSV + plot + writeup
-  optimizer_benchmark.py The bundle study -- every buildable combination x 5 scenario profiles -> CSV + 2 plots + writeup
-  scripted_auto_benchmark.py Live A* replanning vs. a fixed, never-reconsidered "scripted auto" route
-                     (run_match's scripted_auto=True) x 7 suites x 3 deviation types -- does an
-                     obstacle-sensing suite's advantage depend on being able to act on what it senses?
-                     -> CSV + plot + writeup
-  trace.py           record_match() -- runs run_match() once and additionally captures a full tick-by-tick
-                     replay trace via its on_tick hook (purely additive, doesn't change the simulation) --
-                     what pygame_app/ftc_viz/'s animated visualizer is built on
-  scratch/         Same role as nav/scratch/, for the FTC-specific pieces (includes fidelity_test.py,
-                     drivetrain_test.py, coverage_test.py, newsuites_test.py, gearing_test.py, trace_test.py,
-                     bundle_test.py, optimizer_test.py, calibration_test.py, fusion_kalman_test.py,
-                     heading_policy_test.py, and scripted_auto_test.py for this addition)
-
-pygame_app/        Everything that touches pygame
-  main.py            Entry point: opens the interactive visualizer
-  visualizer.py      The pygame app
-  scenario.py        ScenarioConfig -- preset state for scenarios/*.py
-  scenarios/         Standalone launchers that open the visualizer into a preset scene
-                      (maze, cost map, bottleneck, noisy sensor, step replay, uncertainty comparison,
-                      scenario_ftc_suites.py's RoadRunner/MeepMeep-style FTC suite-comparison replay --
-                      robots drawn at true 18in scale, real-time (not tick-stepped) playback via
-                      field_view.interp_snapshot, an opponent-robot option, on_collision="replan"
-                      stuck/recovery behavior local to this visualizer only (see ftc/match.py); a SEPARATE
-                      scenario_ftc_bundles.py browses every buildable 2+-suite combination (ftc/bundle.py) --
-                      Left/Right (PageUp/PageDown to jump 5, Home/End for first/last) steps through all 19
-                      at the default candidate set, each shown as its own components running alone next to
-                      the combined BUNDLE panel, window resizing to fit whichever combination's size is
-                      currently selected, ...)
-  ftc_viz/           Drawing primitives BOTH scenario_ftc_suites.py's and scenario_ftc_bundles.py's animated
-                      field panels share (field_view.py) -- pure functions of an ftc/trace.py MatchTrace +
-                      tick index, no simulation of its own; suite_sensor_visuals draws every active sensor
-                      type a suite or bundle has (cone and/or camera together, not just one)
-  scratch/         Headless (SDL_VIDEODRIVER=dummy) smoke tests for pygame-specific rendering paths
-
-pybullet_app/      Everything that touches PyBullet
-  pybullet_main.py             Single-robot PyBullet demo (plan -> smooth -> drive, + --sensor/--terrain)
-  pybullet_multi_robot_main.py Two-robot corridor-conflict + priority/deadlock demo
-  pybullet_cbs_main.py         N-robot intersection demo, coordinated by CBS
-  sim3d/           PyBullet world-building, path smoothing, robot control
-    coords.py        Grid-cell <-> world-meter conversion
-    world.py         Ground plane, obstacle bodies, debug-line path drawing
-    smoothing.py     Collinear simplification, Chaikin corner-cutting, Catmull-Rom spline
-    robot.py         Robot: drives a body (Husky or r2d2) toward waypoints via velocity control
-    lidar.py         Lidar3D: real raycast sensor (pybullet.rayTestBatch)
-    hud.py           World-space debug-text HUD and per-robot follow labels
-  scratch/         PyBullet-specific standalone sanity checks (setup, raycast
-                    lidar, lidar noise, multi-robot) -- same role as nav/scratch/,
-                    just for the pieces that need a real PyBullet connection
-
-benchmark_results/  Generated CSVs, plots, and writeups from all three benchmarks
-WRITEUPS.md         Algorithm explanations, replanning policy, cost map,
-                     sensor model, PyBullet port, 3D lidar, multi-robot
-                     coordination, and the heuristic experiments' findings
+nav/           Framework-agnostic core: grid, planners, sensor/occupancy
+               models, field variance, policies, stats, benchmarks
+ftc/           FTC domain layer: field, sensor suites, match model, the
+               headline study, bundle optimizer, decision CLIs
+pygame_app/    2D interactive visualizer + preset scenarios
+pybullet_app/  3D port: single-robot, multi-robot, and CBS demos
+benchmark_results/  Generated CSVs, plots, and writeups
+docs/          Symposium poster
 ```
+
+Neither app directory is named literally `pygame` or `pybullet` — a directory
+with that exact name on `sys.path` would shadow the real installed library.
+The file-by-file tree is in
+[WRITEUPS.md](WRITEUPS.md#repo-layout-the-full-annotated-tree).
+
+### Planners
+
+Every planner is a backend `nav/algorithms.py`'s `find_path` can swap in, but
+`ftc/` uses A\* exclusively — and the reason is a completeness argument, not a
+speed one. Dijkstra and A\* are resolution-complete (guaranteed to find a path
+at the grid's resolution if one exists); RRT is only probabilistically
+complete (guaranteed as sample count → ∞, not at any fixed budget).
+`nav/scale_benchmark.py` shows that gap as measured incompleteness as grids
+grow:
+
+![Horizontal bar chart of planning time on a log scale for five algorithms: A* selected at 0.25ms exploring 75 cells, 69 percent fewer than Dijkstra's 241 at 0.74ms; RRT at 0.99ms taking a 9.2 percent longer route; RRT* at 67.72ms for a 25 percent shorter route but 268 times longer to compute; and D* Lite noted as a route repairer that is no faster than A* at FTC field scale](screenshots/poster%20figures/figure2_ftc_field.png)
+
+![The same grid, start, and goal run through all three planners: Dijkstra floods nearly every reachable cell before finding a path, A* reaches an identical-cost path having explored a small fraction of that area, RRT sketches a rougher, longer tree-based route](screenshots/pygame/forest_corridor.png)
+
+| Size | Dijkstra | A\* | RRT (k-d tree) | RRT found path |
+|---:|---:|---:|---:|---:|
+| 20x20 | 0.465ms | 0.227ms | 0.443ms | 8/8 |
+| 50x50 | 2.679ms | 0.762ms | 1.520ms | 8/8 |
+| 100x100 | 9.732ms | 1.156ms | 15.162ms | 7/8 |
+| 200x200 | 56.511ms | 9.968ms | 58.548ms | **5/8** |
+
+A 100x increase in cells grows Dijkstra's runtime ~120x but A\*'s only ~44x.
+`nav/kdtree.py`'s spatial index made RRT faster than Dijkstra at every size
+above (it used to be 620x slower) — but the completeness gap is untouched by
+that, which is the point. RRT/RRT\* stay in the repo as measured baselines for
+*why* an exhaustive heuristic search wins here, not as something `ftc/` should
+reach for. `nav/rrt_star.py` and `nav/dstar_lite.py` (measured against fresh
+A\* in `nav/replan_benchmark.py`) round out the set.
+
+`pybullet_app/` ports the identical `nav.grid.Grid` into 3D and plans with the
+same unmodified `find_path`: a Husky driven by velocity control along a
+spline-smoothed route, a real raycast lidar (`pybullet.rayTestBatch`, 48 rays)
+that replans on discovery, a two-robot corridor conflict, and an N-robot
+intersection coordinated by `nav/cbs.py`'s Conflict-Based Search. Mechanics,
+build stories, and the bugs found along the way are in
+[WRITEUPS.md](WRITEUPS.md).
+
+## Further reading
+
+- **[WRITEUPS.md](WRITEUPS.md)** — algorithm mechanics, the admissibility
+  argument, cost map and sensor model design, the PyBullet port, sweep
+  parallelization, the full repo tree, and the command reference.
+- **[VALIDITY.md](VALIDITY.md)** — all 12 threats to validity, each with its
+  mechanism, numbers, and current status.
+- **`benchmark_results/`** — every study's raw CSV, plot, and writeup.
+
+---
+
+Independent project, inspired by my time on an FTC team in high school.

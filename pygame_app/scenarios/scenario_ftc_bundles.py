@@ -118,7 +118,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import pygame
 
 from ftc.bundle import enumerate_bundles
-from ftc.config import FTC_GRID_SIZE
+from ftc.config import FTC_GRID_SIZE, usd
 from ftc.optimizer import DEFAULT_COMPONENTS
 from ftc.sensors import SUITE_LABELS, SUITES, heading_deg
 from ftc.suite_benchmark import DEVIATION_TYPE_ORDER
@@ -233,7 +233,7 @@ def draw_bundle_panel(screen, font, hud_font, x0, y0, cell_px, grid_size, obstac
     # guarantees the SAME name renders in full, untruncated, on the
     # status bar's own bundle-label line below every frame, which is
     # what "each bundle's name can be seen" actually rests on.
-    label_text = _truncate_to_width(font, f"{title}  (${cost_usd:.0f})", panel_w - 12)
+    label_text = _truncate_to_width(font, f"{title}  (${usd(cost_usd)})", panel_w - 12)
     screen.blit(font.render(label_text, True, LABEL_TEXT), (x0 + 6, y0 + 4))
 
     gx0, gy0 = x0, y0 + LABEL_H

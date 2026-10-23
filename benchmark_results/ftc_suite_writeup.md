@@ -43,7 +43,8 @@ With no sensing at all (DeadReckoningSuite, the baseline every FTC team already 
 - Distance sensors ($95): -4% success rate over the free baseline -- -4.2pp/$100.
 - IMU ($0): +0% success rate over the free baseline -- undefined (cost_usd == 0).
 
-AprilTag (front camera) is the best value by success-rate-gained-per-dollar. FullSuite -- the most expensive option -- is also the best raw performer, but its per-dollar return (+0.5pp/$100) is lower than AprilTag (front camera)'s: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
+AprilTag (front camera) is the best value by success-rate-gained-per-dollar. Full suite -- the most expensive option at $314 -- returns only +0.5pp/$100, against AprilTag (front camera)'s +16.0pp/$100: the extra suites it stacks on top run into diminishing returns rather than each adding its standalone value again.
+Best raw success rate is a separate question, and here it has a separate answer: Odometry pods (30%) at $195.
 
 IMU gained +0% success rate over dead reckoning for $0 -- a real gain (or loss) with no dollar figure to divide it by (every REV Control Hub already ships one; the only real cost is the integration effort of reading and fusing it, ftc/sensors.py's ImuSuite, which this project's dollar-based cost model has no way to price). "Is the free hardware worth the code" has to be answered by the gain itself, not a per-dollar ranking.
 

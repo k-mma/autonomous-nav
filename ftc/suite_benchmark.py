@@ -449,18 +449,33 @@ def write_writeup(stats, rows, path):
 
     priced_value_lines = [v for v in value_lines if v[3] is not None]
     best_value = max(priced_value_lines, key=lambda x: x[3])
-    full_suite_value = next(v for v in value_lines if v[0] == "full_suite")
+    # best_suite (the highest RAW success rate) is computed above and is
+    # not necessarily the most expensive suite -- this used to be hardcoded
+    # as "FullSuite ... is also the best raw performer", which silently went
+    # stale the moment Odometry pods overtook FullSuite on raw success rate.
+    # Derive both the raw winner and the priciest suite from the data instead.
+    most_expensive = max(SUITE_ORDER, key=lambda s: SUITES[s].cost_usd)
+    most_expensive_value = next(v for v in value_lines if v[0] == most_expensive)
     lines += ["", (
         f"{SUITE_LABELS[best_value[0]]} is the best value by success-rate-gained-per-dollar. "
         + (
-            "FullSuite -- the most expensive option -- is also the best raw performer, but its "
-            f"per-dollar return ({full_suite_value[3]:+.1f}pp/$100) is lower than "
-            f"{SUITE_LABELS[best_value[0]]}'s: the extra suites it stacks on top run into diminishing "
-            "returns rather than each adding its standalone value again."
-            if best_value[0] != "full_suite" else
+            f"{SUITE_LABELS[most_expensive]} -- the most expensive option at "
+            f"${usd(SUITES[most_expensive].cost_usd)} -- returns only "
+            f"{most_expensive_value[3]:+.1f}pp/$100, against "
+            f"{SUITE_LABELS[best_value[0]]}'s {best_value[3]:+.1f}pp/$100: the extra suites it "
+            "stacks on top run into diminishing returns rather than each adding its standalone "
+            "value again."
+            if best_value[0] != most_expensive else
             "It's also the most expensive option, and still wins on a per-dollar basis, not just in raw "
             "success rate -- the combination doesn't just perform best, it's actually the efficient choice."
         )
+    ), (
+        f"Best raw success rate is a separate question, and here it has a separate answer: "
+        f"{SUITE_LABELS[best_suite]} ({overall[best_suite]:.0%}) at "
+        f"${usd(SUITES[best_suite].cost_usd)}."
+        if best_suite != best_value[0] else
+        f"{SUITE_LABELS[best_suite]} happens to win both questions here -- best value AND best raw "
+        f"success rate ({overall[best_suite]:.0%})."
     ), ""]
 
     free_value_lines = [v for v in value_lines if v[3] is None]

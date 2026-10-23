@@ -1,5 +1,4 @@
-"""Regenerates figure3_reliability_per_dollar.png for the SEED symposium
-poster: "of the sensors we tested, which one is the best buy?"
+"""Regenerates figure3_reliability_per_dollar.png: "of the sensors we tested, which one is the best buy?"
 
 Same underlying metric as ftc/suite_benchmark.py's own
 plot_reliability_per_dollar (success-rate gain over the free
